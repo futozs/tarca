@@ -30,6 +30,6 @@ Before writing code, read the package docs from `node_modules/tarca/agents/`:
 - [ ] Every create path goes through `createOnce` with a stable `vendorId`.
 - [ ] Errors are handled by category, and `validation` errors surface `fieldErrors`.
 - [ ] List code uses `all()` or loops pages with `perPage` at most 100.
-- [ ] Non-retryable webhook errors (`validation`, a `refund-proposal`) go to a human instead of being rethrown forever.
+- [ ] Non-retryable webhook results (`validation`, a `refund-proposal`, a `refund-failed`) go to a human instead of being rethrown forever; an `in_progress` refund (its payment has no document yet) is rethrown so the provider redelivers it.
 - [ ] PDFs are stored with `tarca/storage` or fetched again with `documents.pdf`, not kept as base64 in the database.
 - [ ] There is a unit test with `createMockTarca()`, including a `failNext(..., { afterSuccess: true })` case for the issuing path.

@@ -89,6 +89,16 @@ function skipped(vendorId: string, reason: string): SkippedPayment {
   return { kind: 'skipped', vendorId, reason }
 }
 
+export function refundBeforeDocumentError(payment: PaymentEvent, vendorId: string): BillingoError {
+  return new BillingoError(
+    `A(z) ${payment.provider} visszatérítéshez (${payment.id}) még nincs kiállított bizonylat (vendorId: ${vendorId}): a fizetés eseménye valószínűleg még nem futott le, például egy korábbi hiba után újraküldésre vár.`,
+    {
+      category: 'in_progress',
+      hint: 'A webhook 500-at ad, így a szolgáltató később újraküldi a visszatérítést; addigra a fizetés bizonylata elkészül, és a visszatérítés sztornózza vagy módosítja. Ha ehhez a fizetéshez soha nem készül bizonylat (például a tárca bevezetése előtti fizetés), kezeld kézzel, és az onPayment-ben nyugtázd ezt az in_progress hibát.',
+    },
+  )
+}
+
 function requestOptions(options: IssueForPaymentOptions): RequestOptions {
   return options.signal === undefined ? {} : { signal: options.signal }
 }
@@ -353,12 +363,7 @@ export async function issueForPartialRefund(
     )
   }
   const document = await tarca.documents.findByVendorId(vendorId, requestOptions(options))
-  if (!document) {
-    return skipped(
-      vendorId,
-      `A(z) ${payment.provider} részleges visszatérítéshez (${payment.id}) nem található kiállított bizonylat.`,
-    )
-  }
+  if (!document) throw refundBeforeDocumentError(payment, vendorId)
   if (document.cancelled === true) {
     return skipped(
       vendorId,
@@ -402,8 +407,24 @@ export async function issueForRemainder(
     }
   }
   const total = context.items.reduce((sum, item) => sum + item.grossMinor, 0)
+  const related = await relatedModifications(tarca, document, requestOptions(options))
+  if (!related.complete) {
+    throw validation(
+      `A(z) ${labelOf(document)} számla módosító számláit a tárca nem tudta mind végignézni (a partnernek a számla kelte óta több mint 500 bizonylata van), így a teljes visszatérítés maradéka nem számolható biztosan.`,
+      'Állítsd ki a módosító számlát kézzel a ténylegesen még vissza nem térített összegre.',
+    )
+  }
+  if (related.documents.length === 0 && document.correctionType === 'modified') {
+    throw new BillingoError(
+      `A(z) ${labelOf(document)} számlát már módosították, de a módosító számla még nem látszik a Billingo bizonylatlistájában, így a teljes visszatérítés maradéka nem számolható.`,
+      {
+        category: 'in_progress',
+        hint: 'A Billingo listája 15-30 másodpercet késik. A webhook 500-at ad, a szolgáltató újraküldi a visszatérítést, és akkor a tárca a már látható módosító számlával számol. Ne állíts ki kézzel módosító számlát.',
+      },
+    )
+  }
   let modified = 0
-  for (const modification of await relatedModifications(tarca, document, requestOptions(options))) {
+  for (const modification of related.documents) {
     const minor =
       modification.grossTotal === undefined
         ? undefined

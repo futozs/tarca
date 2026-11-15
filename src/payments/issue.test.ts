@@ -251,6 +251,20 @@ describe('issueForPayment: sikeres fizetés nyugtával', () => {
     ).resolves.toMatchObject({ kind: 'receipt', created: true })
   })
 
+  test('allowAmountMismatch mellett a nyugta vagy számla döntés a kifizetett összegből indul, nem a tételekből', async () => {
+    const { billingo, tarca } = setup()
+    const result = await issueForPayment(tarca, paid({ amount: huf(950_000), customer: PERSON }), {
+      items: [{ name: 'Tanfolyam', grossUnitPrice: 850_000, vat: 27 }],
+      allowAmountMismatch: true,
+      recoveryDelayMs: 0,
+    })
+    expect(result).toMatchObject({
+      kind: 'invoice',
+      decision: { type: 'invoice', grossTotalHuf: 950_000 },
+    })
+    expect(billingo.count('CreateReceipt')).toBe(0)
+  })
+
   test('egy fillér eltérést is észrevesz (egész minor unitban hasonlít, tűrés nélkül)', async () => {
     const { billingo, tarca } = setup()
     await expect(
@@ -770,12 +784,110 @@ describe('issueForPayment: teljes visszatérítés', () => {
     expect(billingo.count('CancelDocument')).toBe(1)
   })
 
-  test('bizonylat nélkül kihagyja a visszatérítést', async () => {
+  test('a bizonylat előtt érkező visszatérítés in_progress hibát ad, a fizetés újraküldése után pedig sztornózza', async () => {
     const { billingo, tarca } = setup()
-    await expect(issueForPayment(tarca, refunded(), OPTIONS)).resolves.toMatchObject({
-      kind: 'skipped',
-      reason: expect.stringContaining('nem található'),
+    billingo.fail({ status: 503 }, { operation: 'CreateReceipt', times: 1 })
+    await expect(issueForPayment(tarca, paid(), OPTIONS)).rejects.toMatchObject({
+      category: 'server',
     })
+
+    await expect(issueForPayment(tarca, refunded(), OPTIONS)).rejects.toMatchObject({
+      category: 'in_progress',
+      message: expect.stringContaining('STRIPE-pi_123'),
+    })
+    const late = await issueForPayment(tarca, paid(), OPTIONS)
+    const redelivered = await issueForPayment(tarca, refunded(), OPTIONS)
+
+    expect(late).toMatchObject({ kind: 'receipt', created: true })
+    expect(redelivered).toMatchObject({ kind: 'cancellation', created: true })
+    expect(billingo.count('CancelDocument')).toBe(1)
+    const [receipt] = [...billingo.data.documents.values()].filter(
+      (record) => record.vendorId === 'STRIPE-pi_123',
+    )
+    expect(receipt?.document.cancelled).toBe(true)
+  })
+
+  test('két egyidejű teljes visszatérítés egy folyamatban egyetlen sztornó kérést küld', async () => {
+    const billingo = createFakeBillingoFetch({ now: () => NOW })
+    const tarca = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      retryDelayMs: 0,
+      fetch: async (resource, init) => {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        return billingo.fetch(resource, init)
+      },
+    })
+    await issueForPayment(tarca, paid(), OPTIONS)
+
+    const results = await Promise.all([
+      issueForPayment(tarca, refunded(), OPTIONS),
+      issueForPayment(tarca, refunded(), OPTIONS),
+    ])
+
+    expect(results.map((result) => result.kind)).toEqual(['cancellation', 'cancellation'])
+    expect(
+      results.map((result) => result.kind === 'cancellation' && result.created).sort(),
+    ).toEqual([false, true])
+    expect(billingo.count('CancelDocument')).toBe(1)
+  })
+
+  test('két folyamat egyidejű teljes visszatérítése a közös ledgerrel egyetlen sztornó kérést küld', async () => {
+    const billingo = createFakeBillingoFetch({ now: () => NOW })
+    const client = () =>
+      createTarca({
+        apiKey: 'tarca-teszt-kulcs',
+        retryDelayMs: 0,
+        fetch: async (resource, init) => {
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          return billingo.fetch(resource, init)
+        },
+      })
+    const first = client()
+    const second = client()
+    const ledger = memoryLedger()
+    await issueForPayment(first, paid(), OPTIONS)
+
+    const results = await Promise.allSettled([
+      issueForPayment(first, refunded(), { ...OPTIONS, ledger }),
+      issueForPayment(second, refunded(), { ...OPTIONS, ledger }),
+    ])
+
+    expect(billingo.count('CancelDocument')).toBe(1)
+    const created = results.filter(
+      (result) =>
+        result.status === 'fulfilled' &&
+        result.value.kind === 'cancellation' &&
+        result.value.created,
+    )
+    expect(created).toHaveLength(1)
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        expect(result.reason).toMatchObject({ category: 'in_progress' })
+      }
+    }
+    expect(ledger.values.size).toBe(0)
+    await expect(
+      issueForPayment(second, refunded(), { ...OPTIONS, ledger }),
+    ).resolves.toMatchObject({ kind: 'cancellation', created: false })
+  })
+
+  test('a sztornó zárához setIfAbsent nélküli ledger konfigurációs hiba, az elérhetetlen ledger store_unavailable, sztornó nélkül', async () => {
+    const { billingo, tarca } = setup()
+    await issueForPayment(tarca, paid(), OPTIONS)
+    const { setIfAbsent: _ignored, ...plain } = memoryLedger()
+    const broken: KeyValueStore = {
+      ...memoryLedger(),
+      setIfAbsent: () => {
+        throw new Error('a Redis nem érhető el')
+      },
+    }
+
+    await expect(
+      issueForPayment(tarca, refunded(), { ...OPTIONS, ledger: plain }),
+    ).rejects.toMatchObject({ category: 'configuration' })
+    await expect(
+      issueForPayment(tarca, refunded(), { ...OPTIONS, ledger: broken }),
+    ).rejects.toMatchObject({ category: 'store_unavailable' })
     expect(billingo.count('CancelDocument')).toBe(0)
   })
 
@@ -1005,6 +1117,69 @@ describe('issueForPayment: teljes visszatérítés', () => {
     expect(billingo.count('CreateModificationDocument')).toBe(1)
   })
 
+  test('ha a módosított számla módosítója még nem látszik a listában, in_progress hibát ad, és nem módosítja a teljes összegre', async () => {
+    const { billingo, tarca } = setup()
+    const issued = await issueForPayment(tarca, paid({ customer: COMPANY }), OPTIONS)
+    if (issued.kind !== 'invoice') throw new Error('számla várt')
+    await tarca.documents.createModification(issued.document.id ?? 0, {
+      items: [{ name: 'Kézi jóváírás', quantity: 1, grossUnitPrice: -540, vat: 27 }],
+    })
+    let lagging = true
+    const lagged = {
+      ...tarca,
+      documents: {
+        ...tarca.documents,
+        list: async (...args: Parameters<typeof tarca.documents.list>) => {
+          const page = await tarca.documents.list(...args)
+          return lagging
+            ? { ...page, data: page.data.filter((document) => document.type !== 'modification') }
+            : page
+        },
+      },
+    }
+    const ledger = memoryLedger()
+
+    await expect(issueForPayment(lagged, refunded(), { ...OPTIONS, ledger })).rejects.toMatchObject(
+      { category: 'in_progress' },
+    )
+    expect(billingo.count('CreateModificationDocument')).toBe(1)
+    lagging = false
+    await expect(
+      issueForPayment(lagged, refunded(), { ...OPTIONS, ledger }),
+    ).resolves.toMatchObject({ modifications: [{ amount: { minor: -200_000 } }] })
+  })
+
+  test('ha a módosítók keresése az 5. oldalon túlra érne, a maradékot nem számolja, kiállítás nélkül', async () => {
+    const { billingo, tarca } = setup()
+    const issued = await issueForPayment(tarca, paid({ customer: COMPANY }), OPTIONS)
+    if (issued.kind !== 'invoice') throw new Error('számla várt')
+    await tarca.documents.createModification(issued.document.id ?? 0, {
+      items: [{ name: 'Kézi jóváírás', quantity: 1, grossUnitPrice: -540, vat: 27 }],
+    })
+    const pages: number[] = []
+    const crowded = {
+      ...tarca,
+      documents: {
+        ...tarca.documents,
+        list: async (...args: Parameters<typeof tarca.documents.list>) => {
+          const page = await tarca.documents.list(...args)
+          pages.push(args[0]?.page ?? 1)
+          return {
+            ...page,
+            data: page.data.filter((document) => document.type !== 'modification'),
+            lastPage: 8,
+          }
+        },
+      },
+    }
+
+    await expect(
+      issueForPayment(crowded, refunded(), { ...OPTIONS, ledger: memoryLedger() }),
+    ).rejects.toMatchObject({ category: 'validation', message: expect.stringContaining('500') })
+    expect(pages).toEqual([1, 2, 3, 4, 5])
+    expect(billingo.count('CreateModificationDocument')).toBe(1)
+  })
+
   test('a teljesen visszatérített módosított számlánál kihagyja', async () => {
     const { billingo, tarca } = setup()
     const issued = await issueForPayment(tarca, paid({ customer: COMPANY }), OPTIONS)
@@ -1017,5 +1192,41 @@ describe('issueForPayment: teljes visszatérítés', () => {
       issueForPayment(tarca, refunded(), { ...OPTIONS, ledger: memoryLedger() }),
     ).resolves.toMatchObject({ kind: 'skipped', reason: expect.stringContaining('módosító') })
     expect(billingo.count('CreateModificationDocument')).toBe(1)
+  })
+})
+
+describe('issueForPayment: meghiúsult visszatérítés', () => {
+  function failedRefund(): PaymentEvent {
+    return paid({
+      kind: 'refund-failed',
+      amount: undefined,
+      refunds: [{ id: 're_1', amount: huf(2540) }],
+    })
+  }
+
+  test('a már sztornózott bizonylatot megnevezi emberi döntésre, írás nélkül', async () => {
+    const { billingo, tarca } = setup()
+    const issued = await issueForPayment(tarca, paid(), OPTIONS)
+    await issueForPayment(tarca, refunded(), OPTIONS)
+    const writes = billingo.requests.filter((request) => request.method !== 'GET').length
+
+    const result = await issueForPayment(tarca, failedRefund(), OPTIONS)
+
+    expect(result).toMatchObject({
+      kind: 'refund-failed',
+      vendorId: 'STRIPE-pi_123',
+      document: { id: issued.kind === 'receipt' ? issued.document.id : -1, cancelled: true },
+      reason: expect.stringContaining('re_1'),
+    })
+    expect(billingo.requests.filter((request) => request.method !== 'GET')).toHaveLength(writes)
+  })
+
+  test('bizonylat nélkül kihagyja', async () => {
+    const { billingo, tarca } = setup()
+    await expect(issueForPayment(tarca, failedRefund(), OPTIONS)).resolves.toMatchObject({
+      kind: 'skipped',
+      reason: expect.stringContaining('re_1'),
+    })
+    expect(billingo.requests.filter((request) => request.method !== 'GET')).toHaveLength(0)
   })
 })

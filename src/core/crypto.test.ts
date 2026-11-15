@@ -83,6 +83,12 @@ describe('timingSafeEqual', () => {
     expect(timingSafeEqual('', 'a')).toBe(false)
   })
 
+  test('a nulla bájtos toldalékot sem fogadja el egyezésnek, egyik irányban sem', () => {
+    expect(timingSafeEqual('abc', 'abc\u0000')).toBe(false)
+    expect(timingSafeEqual('abc\u0000', 'abc')).toBe(false)
+    expect(timingSafeEqual('', '\u0000')).toBe(false)
+  })
+
   test('UTF-8 bájtokat hasonlít, így az ékezetes karaktereket is helyesen kezeli', () => {
     expect(timingSafeEqual('árvíz', 'árvíz')).toBe(true)
     expect(timingSafeEqual('árvíz', 'arviz')).toBe(false)

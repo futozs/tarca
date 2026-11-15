@@ -1,4 +1,5 @@
 import { digestHex, hmacHex, timingSafeEqual } from '../core/crypto'
+import { todayInBudapest } from '../core/dates'
 import { configurationError } from '../core/errors'
 import { ToolInputError } from './arguments'
 
@@ -85,19 +86,25 @@ export function createConfirmations(options: ConfirmationOptions): Confirmations
   const ttlMs = resolveTtl(options.ttlMs)
   const spent = new Map<string, number>()
 
-  const sign = async (action: string, expiresAt: number, payload: unknown): Promise<string> => {
+  const sign = async (
+    action: string,
+    expiresAt: number,
+    day: string,
+    payload: unknown,
+  ): Promise<string> => {
     const signature = await hmacHex(
       'SHA-256',
       secret,
-      `${action}\n${expiresAt}\n${canonicalJson(payload)}`,
+      `${action}\n${expiresAt}\n${day}\n${canonicalJson(payload)}`,
     )
     return signature.slice(0, SIGNATURE_LENGTH)
   }
 
   return {
     async issue(action, payload) {
-      const expiresAt = options.now().getTime() + ttlMs
-      const signature = await sign(action, expiresAt, payload)
+      const now = options.now()
+      const expiresAt = now.getTime() + ttlMs
+      const signature = await sign(action, expiresAt, todayInBudapest(now), payload)
       return {
         token: `${expiresAt.toString(36)}.${signature}`,
         expiresAt: new Date(expiresAt).toISOString(),
@@ -114,11 +121,22 @@ export function createConfirmations(options: ConfirmationOptions): Confirmations
       if (!match?.[2] || !Number.isSafeInteger(expiresAt)) {
         throw confirmationError(`A megerősítő kód formátuma érvénytelen. ${again}`)
       }
-      if (options.now().getTime() > expiresAt) {
+      const now = options.now()
+      if (now.getTime() > expiresAt) {
         throw confirmationError(`A megerősítő kód lejárt. ${again}`)
       }
-      const expected = await sign(action, expiresAt, payload)
+      const today = todayInBudapest(now)
+      const expected = await sign(action, expiresAt, today, payload)
       if (!timingSafeEqual(expected, match[2])) {
+        const previewDay = todayInBudapest(new Date(expiresAt - ttlMs))
+        if (
+          previewDay !== today &&
+          timingSafeEqual(await sign(action, expiresAt, previewDay, payload), match[2])
+        ) {
+          throw confirmationError(
+            `A megerősítő kód egy előző napi (${previewDay}) előnézethez tartozik, budapesti idő szerint éjfél után nem érvényes. ${again}`,
+          )
+        }
         throw confirmationError(
           `A megerősítő kód nem ehhez a kéréshez tartozik (az adatok eltérnek az előnézettől). ${again}`,
         )

@@ -468,6 +468,40 @@ describe('stripePaymentEvent', () => {
     })
   })
 
+  test('a meghiúsult vagy visszavont visszatérítésből refund-failed eseményt ad, a sikereset kihagyja', () => {
+    const failed = {
+      id: 're_1',
+      object: 'refund',
+      status: 'failed',
+      failure_reason: 'lost_or_stolen_card',
+      charge: 'ch_1',
+      payment_intent: 'pi_1',
+      amount: 302_300,
+      currency: 'huf',
+    }
+    for (const type of ['charge.refund.updated', 'refund.updated', 'refund.failed']) {
+      expect(stripePaymentEvent(parsed(type, failed))).toMatchObject({
+        provider: 'stripe',
+        kind: 'refund-failed',
+        id: 'pi_1',
+        eventType: type,
+        refundedAmount: huf(3023),
+        refunds: [{ id: 're_1', amount: huf(3023) }],
+      })
+    }
+    expect(
+      stripePaymentEvent(
+        parsed('charge.refund.updated', { ...failed, status: 'canceled', payment_intent: null }),
+      ),
+    ).toMatchObject({ kind: 'refund-failed', id: 'ch_1' })
+    expect(
+      stripePaymentEvent(parsed('charge.refund.updated', { ...failed, status: 'succeeded' })),
+    ).toBeUndefined()
+    expect(
+      stripePaymentEvent(parsed('refund.updated', { ...CHARGE, status: 'failed' })),
+    ).toBeUndefined()
+  })
+
   test('az ismeretlen eseménytípust figyelmen kívül hagyja', () => {
     expect(stripePaymentEvent(parsed('customer.created', { id: 'cus_1' }))).toBeUndefined()
   })
@@ -681,6 +715,45 @@ describe('stripeWebhook', () => {
     expect(onPayment.mock.calls[0]?.[0]?.items).toBeUndefined()
   })
 
+  test('API-kulcs nélkül a PaymentIntent fizetést other-ként adja tovább, mert a vevő adatai a Checkoutban vannak', async () => {
+    const onPayment = vi.fn()
+    const handler = stripeWebhook({ secret: SECRET, now, onPayment })
+    const response = await deliver(
+      handler,
+      event('payment_intent.succeeded', {
+        id: 'pi_1',
+        object: 'payment_intent',
+        amount_received: 302_300,
+        currency: 'huf',
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect(onPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'other', id: 'pi_1', eventType: 'payment_intent.succeeded' }),
+    )
+  })
+
+  test('a meghiúsult visszatérítést refund-failed eseményként adja az onPayment-nek', async () => {
+    const onPayment = vi.fn()
+    const handler = stripeWebhook({ secret: SECRET, now, onPayment })
+    const response = await deliver(
+      handler,
+      event('charge.refund.updated', {
+        id: 're_1',
+        object: 'refund',
+        status: 'failed',
+        charge: 'ch_1',
+        payment_intent: 'pi_1',
+        amount: 302_300,
+        currency: 'huf',
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect(onPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'refund-failed', id: 'pi_1' }),
+    )
+  })
+
   test('PaymentIntent eseménynél a Checkout munkamenetből tölti be a tételeket és a vevőt', async () => {
     const api = stripeApi([SESSION])
     const onPayment = vi.fn()
@@ -889,6 +962,57 @@ describe('stripeWebhook a hamis Billingo fölött', () => {
       (record) => record.document.type === 'receipt',
     )
     expect(receipts.map((record) => record.vendorId)).toEqual(['STRIPE-pi_1'])
+  })
+
+  test('API-kulcs nélkül a Checkout előtt érkező PaymentIntent nem dönt: a céges munkamenet számlát ad, nyugta nélkül', async () => {
+    const { billingo, handler } = setup()
+    const intent = event(
+      'payment_intent.succeeded',
+      { id: 'pi_1', object: 'payment_intent', amount_received: 302_300, currency: 'huf' },
+      {},
+      'evt_2',
+    )
+    const session = event('checkout.session.completed', {
+      ...SESSION,
+      customer_details: {
+        ...SESSION.customer_details,
+        business_name: 'Példa Kft.',
+        tax_ids: [{ type: 'hu_tin', value: '12345678-2-41' }],
+      },
+    })
+
+    expect((await deliver(handler, intent)).status).toBe(200)
+    expect((await deliver(handler, session)).status).toBe(200)
+
+    expect(billingo.count('CreateReceipt')).toBe(0)
+    expect(billingo.count('CreateDocument')).toBe(1)
+    const [issued] = [...billingo.data.documents.values()].filter(
+      (record) => record.vendorId === 'STRIPE-pi_1',
+    )
+    expect(issued?.document.type).toBe('invoice')
+  })
+
+  test('a fizetés előtt érkező visszatérítésre 500-at ad, az újraküldés a fizetés után sztornóz', async () => {
+    const { billingo, handler } = setup()
+    const session = event('checkout.session.completed', SESSION)
+    const refund = event(
+      'charge.refunded',
+      { ...CHARGE, amount_refunded: 302_300, refunded: true },
+      { previous_attributes: { amount_refunded: 0 } },
+      'evt_refund',
+    )
+    billingo.fail({ status: 503 }, { operation: 'CreateReceipt', times: 1 })
+
+    expect((await deliver(handler, session)).status).toBe(500)
+    expect((await deliver(handler, refund)).status).toBe(500)
+    expect((await deliver(handler, session)).status).toBe(200)
+    expect((await deliver(handler, refund)).status).toBe(200)
+
+    expect(billingo.count('CancelDocument')).toBe(1)
+    const [receipt] = [...billingo.data.documents.values()].filter(
+      (record) => record.vendorId === 'STRIPE-pi_1',
+    )
+    expect(receipt?.document.cancelled).toBe(true)
   })
 
   test('ha a Billingo bizonytalanul hibázik, 500 után az újraküldés pontosan egy nyugtát ad', async () => {

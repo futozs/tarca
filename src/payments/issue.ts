@@ -1,9 +1,9 @@
-import { type RequestOptions, sleep } from '../core/context'
+import { abortable, type RequestOptions, sleep } from '../core/context'
 import { digestHex } from '../core/crypto'
 import { toBillingoDate, toBudapestDate } from '../core/dates'
 import { BillingoError, configurationError, isBillingoError } from '../core/errors'
 import { lineAmounts, roundHalfUp } from '../core/money'
-import { isUncertainOutcome } from '../core/once-guard'
+import { DEFAULT_LOCK_TTL_SECONDS, isUncertainOutcome } from '../core/once-guard'
 import type { KeyValueStore } from '../core/store'
 import type { CurrenciesApi } from '../currencies/currencies'
 import type { DocumentsApi } from '../documents/documents'
@@ -16,6 +16,7 @@ import type { PartnerInput } from '../partners/partners'
 import type { ReceiptOnceInput, ReceiptsApi } from '../receipts/receipts'
 import { currencyExponent, decimalToMinor, isBillingoCurrency, normalizeCurrency } from './amounts'
 import { chooseDocument, type DocumentDecision } from './choose'
+import { refundLedgerKey } from './modification'
 import {
   type IssuedModification,
   type IssuedRefundProposal,
@@ -23,6 +24,7 @@ import {
   issueForRemainder,
   type PartialRefundMode,
   type RefundItemsResolver,
+  refundBeforeDocumentError,
 } from './partial-refund'
 import { partnerFromCustomer } from './partner'
 import type { PaymentAmount, PaymentEvent, PaymentLineItem, PaymentVat } from './types'
@@ -110,6 +112,13 @@ export interface IssuedCancellation {
   readonly created: boolean
 }
 
+export interface IssuedRefundFailure {
+  readonly kind: 'refund-failed'
+  readonly vendorId: string
+  readonly document: Document
+  readonly reason: string
+}
+
 export interface SkippedPayment {
   readonly kind: 'skipped'
   readonly vendorId: string
@@ -122,6 +131,7 @@ export type IssuedDocument =
   | IssuedCancellation
   | IssuedModification
   | IssuedRefundProposal
+  | IssuedRefundFailure
   | SkippedPayment
 
 interface ResolvedItem {
@@ -142,6 +152,7 @@ const VENDOR_ID_SAFE = /^[A-Za-z0-9_.:-]+$/
 const PROVIDER_NAME = /^[A-Z0-9_]+$/
 const MAX_VENDOR_ID = 64
 const CANNOT_CANCEL = /^Cannot cancel the document/
+const CANCEL_LOCK_REFUND_ID = 'sztorno'
 const ALL_VATS: readonly (Vat | ReceiptVat)[] = [...VATS, 'none']
 
 function validation(message: string, hint?: string): BillingoError {
@@ -703,24 +714,42 @@ function cancellation(
   }
 }
 
-async function issueForRefund(
+const refundsInFlight = new WeakMap<object, Map<string, Promise<unknown>>>()
+
+async function oneAtATime<T>(
+  scope: object,
+  key: string,
+  signal: AbortSignal | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  let running = refundsInFlight.get(scope)
+  if (!running) {
+    running = new Map()
+    refundsInFlight.set(scope, running)
+  }
+  for (;;) {
+    const pending = running.get(key)
+    if (!pending) break
+    await abortable(pending, signal).catch(() => undefined)
+    signal?.throwIfAborted()
+  }
+  const current = run()
+  running.set(key, current)
+  try {
+    return await current
+  } finally {
+    if (running.get(key) === current) running.delete(key)
+  }
+}
+
+async function cancelDocument(
   tarca: PaymentTarca,
   payment: PaymentEvent,
   vendorId: string,
+  document: Document,
   options: IssueForPaymentOptions,
 ): Promise<IssuedDocument> {
-  const document = await tarca.documents.findByVendorId(vendorId, requestOptions(options))
-  if (!document) {
-    return skipped(
-      vendorId,
-      `A(z) ${payment.provider} visszatérítéshez (${payment.id}) nem található kiállított bizonylat.`,
-    )
-  }
   const id = idOf(document)
-  if (document.cancelled === true) return cancellation(vendorId, document, undefined, false)
-  if (kindOf(document) === 'invoice' && document.correctionType === 'modified') {
-    return issueForRemainder(tarca, payment, vendorId, document, options)
-  }
   try {
     const cancelled = await tarca.documents.cancel(id, {}, requestOptions(options))
     return cancellation(vendorId, document, cancelled, true)
@@ -741,6 +770,117 @@ async function issueForRefund(
   }
 }
 
+function cancelLockUnavailable(error: unknown): BillingoError {
+  return new BillingoError(
+    'A visszatérítési főkönyv (ledger) nem érhető el, ezért a tárca nem sztornózta a bizonylatot: nem tudta kizárni, hogy egy másik folyamat éppen sztornózza.',
+    {
+      category: 'store_unavailable',
+      hint: 'Ellenőrizd a ledger tároló elérhetőségét; a webhook újraküldésekor a tárca folytatja.',
+      cause: error,
+    },
+  )
+}
+
+async function releaseCancelLock(ledger: KeyValueStore, key: string, value: string): Promise<void> {
+  try {
+    if (ledger.deleteIfEquals) await ledger.deleteIfEquals(key, value)
+    else if ((await ledger.get(key)) === value) await ledger.delete(key)
+  } catch {
+    return
+  }
+}
+
+async function cancelOnce(
+  tarca: PaymentTarca,
+  payment: PaymentEvent,
+  vendorId: string,
+  document: Document,
+  options: IssueForPaymentOptions,
+): Promise<IssuedDocument> {
+  const ledger = options.ledger
+  if (!ledger) return cancelDocument(tarca, payment, vendorId, document, options)
+  const setIfAbsent = ledger.setIfAbsent?.bind(ledger)
+  if (!setIfAbsent) {
+    throw configurationError(
+      'A visszatérítési főkönyvhöz (ledger) setIfAbsent műveletet ismerő tároló kell (például Redis vagy Durable Object); e nélkül két folyamat egyszerre sztornózhatna.',
+    )
+  }
+  const id = idOf(document)
+  const key = await refundLedgerKey(vendorId, id, CANCEL_LOCK_REFUND_ID)
+  const value = JSON.stringify({ state: 'pending', at: new Date().toISOString() })
+  let reserved: boolean
+  try {
+    reserved = await setIfAbsent(key, value, DEFAULT_LOCK_TTL_SECONDS)
+  } catch (error) {
+    throw cancelLockUnavailable(error)
+  }
+  if (!reserved) {
+    const current = await tarca.documents.get(id, requestOptions(options))
+    if (current.cancelled === true) return cancellation(vendorId, current, undefined, false)
+    throw new BillingoError(
+      `Egy másik folyamat éppen sztornózza a(z) ${current.invoiceNumber ?? id} bizonylatot (vendorId: ${vendorId}).`,
+      {
+        category: 'in_progress',
+        hint: 'Ne sztornózd kézzel. A webhook 500-at ad, a szolgáltató újraküldi a visszatérítést, és akkor a tárca a bizonylat cancelled jelzője alapján dönt.',
+      },
+    )
+  }
+  try {
+    return await cancelDocument(tarca, payment, vendorId, document, options)
+  } finally {
+    await releaseCancelLock(ledger, key, value)
+  }
+}
+
+async function refundOnce(
+  tarca: PaymentTarca,
+  payment: PaymentEvent,
+  vendorId: string,
+  options: IssueForPaymentOptions,
+): Promise<IssuedDocument> {
+  const document = await tarca.documents.findByVendorId(vendorId, requestOptions(options))
+  if (!document) throw refundBeforeDocumentError(payment, vendorId)
+  if (document.cancelled === true) return cancellation(vendorId, document, undefined, false)
+  if (kindOf(document) === 'invoice' && document.correctionType === 'modified') {
+    return issueForRemainder(tarca, payment, vendorId, document, options)
+  }
+  return cancelOnce(tarca, payment, vendorId, document, options)
+}
+
+function issueForRefund(
+  tarca: PaymentTarca,
+  payment: PaymentEvent,
+  vendorId: string,
+  options: IssueForPaymentOptions,
+): Promise<IssuedDocument> {
+  return oneAtATime(tarca.documents, vendorId, options.signal, () =>
+    refundOnce(tarca, payment, vendorId, options),
+  )
+}
+
+async function issueForRefundFailure(
+  tarca: PaymentTarca,
+  payment: PaymentEvent,
+  vendorId: string,
+  options: IssueForPaymentOptions,
+): Promise<IssuedRefundFailure | SkippedPayment> {
+  const refundIds = (payment.refunds ?? []).map((refund) => refund.id).join(', ')
+  const which = refundIds === '' ? payment.id : refundIds
+  const document = await tarca.documents.findByVendorId(vendorId, requestOptions(options))
+  if (!document) {
+    return skipped(
+      vendorId,
+      `A(z) ${payment.provider} visszatérítés (${which}) meghiúsult vagy visszavonták, és a fizetéshez nem tartozik kiállított bizonylat, így nincs mit javítani.`,
+    )
+  }
+  return {
+    kind: 'refund-failed',
+    vendorId,
+    document,
+    reason: `A(z) ${payment.provider} visszatérítés (${which}) meghiúsult vagy visszavonták, a pénz nem ment vissza a vevőnek. A tárca a visszatérítésre kiállított sztornót vagy módosító számlát nem fordítja vissza magától: ellenőrizd a(z) ${document.invoiceNumber ?? idOf(document)} bizonylatot és a hozzá tartozó javító bizonylatokat, és ha kell, állíts ki kézzel új számlát a vevőnél maradt összegről.`,
+  }
+}
+
 export async function issueForPayment(
   tarca: PaymentTarca,
   payment: PaymentEvent,
@@ -755,6 +895,13 @@ export async function issueForPayment(
       return issueForRefund(tarca, payment, vendorId, options)
     case 'partially-refunded':
       return issueForPartialRefund(tarca, payment, vendorId, options)
+    case 'refund-failed':
+      return issueForRefundFailure(tarca, payment, vendorId, options)
+    case 'other':
+      return skipped(
+        vendorId,
+        `A(z) ${payment.provider} esemény (${payment.eventType ?? 'other'}) nem olyan fizetés vagy visszatérítés, amelyből a tárca bizonylatot állít ki.`,
+      )
     default:
       return skipped(
         vendorId,

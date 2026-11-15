@@ -55,6 +55,29 @@ describe('megerősítő kódok', () => {
     ).rejects.toThrow('lejárt')
   })
 
+  test('a kód csak az előnézet budapesti napján érvényes, éjfél után érthető hibát ad', async () => {
+    let now = new Date('2026-11-16T22:55:00.000Z')
+    const confirmations = createConfirmations({ secret: MCP_SECRET, now: () => now })
+    const issued = await confirmations.issue('cancel_document', { id: 1 })
+
+    now = new Date('2026-11-16T22:59:59.000Z')
+    await expect(
+      confirmations.verify('cancel_document', { id: 1 }, issued.token, 'preview_cancellation'),
+    ).resolves.toBe(issued.token)
+    now = new Date('2026-11-16T23:00:00.000Z')
+    const failure = await confirmations
+      .verify('cancel_document', { id: 1 }, issued.token, 'preview_cancellation')
+      .catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(ToolInputError)
+    expect(failure).toMatchObject({ category: 'confirmation' })
+    expect((failure as Error).message).toContain('2026-11-16')
+    expect((failure as Error).message).toContain('éjfél')
+    await expect(
+      confirmations.verify('cancel_document', { id: 2 }, issued.token, 'preview_cancellation'),
+    ).rejects.toThrow('eltérnek')
+  })
+
   test('a lejárati idő a kódba van írva: a meghosszabbított lejárat nem fogadható el', async () => {
     const confirmations = createConfirmations({ secret: MCP_SECRET, now: MCP_NOW })
     const issued = await confirmations.issue('create_document', { a: 1 })

@@ -50,7 +50,10 @@
 ## Webhooks, stores and AI tools
 
 - Payment webhooks verify the raw body. Mount them before `express.json()` (`toNodeHandler` from `tarca/node`), and never re-serialize the body before passing it on.
-- Let a webhook answer 500 when issuing fails: the provider redelivers and `createOnce` returns the existing document. Do not catch and swallow errors in `onPayment`, except for a `refund-proposal` or a `validation` error that needs a human.
+- Let a webhook answer 500 when issuing fails: the provider redelivers and `createOnce` returns the existing document. Do not catch and swallow errors in `onPayment`, except for a `refund-proposal`, a `refund-failed` or a `validation` error that needs a human.
+- A refund whose payment has no document yet throws `in_progress` on purpose: the paid event may still be waiting for redelivery, and acknowledging the refund would let that redelivery issue a document for returned money. Acknowledge it only for payments that will never get a document.
+- A Stripe refund can fail after `charge.refunded`, when tarca has already cancelled or modified the document. `charge.refund.updated` then gives `refund-failed`; correct the books by hand.
+- Without a Stripe `apiKey`, `payment_intent.succeeded` issues nothing (`other`): its order relative to `checkout.session.completed` is not guaranteed, and it carries no buyer tax data.
 - A partial refund without a `ledger` that has `setIfAbsent` only gives a proposal. Billingo's modification invoice has no `vendorId`, so the ledger (or the comment marker search) is the only thing that prevents a second one; never delete a `tarca:refund:` key by hand while a refund is pending.
 - `DocumentHookError` and `JournalWriteError` arrive after the document exists. Record `error.document` / `error.result`; never issue again.
 - Cloudflare KV is eventually consistent and has no atomic write: it is fine for webhook dedupe, never for the `createOnce` lock, the journal or the refund ledger. `resilient: true` stores swallow errors and are unsuitable for the same three. Check a store with `diagnoseStore`.

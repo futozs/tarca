@@ -299,14 +299,13 @@ describe('issueForPayment részleges visszatérítésnél', () => {
     expect(billingo.count('CreateModificationDocument')).toBe(0)
   })
 
-  test('tételes visszatérítés nélkül, skip módban, bizonylat nélkül vagy sztornózott számlánál kihagyja', async () => {
+  test('tételes visszatérítés nélkül, skip módban vagy sztornózott számlánál kihagyja', async () => {
     const { tarca, originalId } = await invoiced()
 
     const noRefunds = await issueForPayment(tarca, partial(undefined))
     const skipMode = await issueForPayment(tarca, partial([refund('TR-1', 1)]), {
       partialRefund: 'skip',
     })
-    const unknown = await issueForPayment(tarca, { ...partial([refund('TR-1', 1)]), id: 'MAS' })
     await tarca.documents.cancel(originalId)
     const cancelled = await issueForPayment(tarca, partial([refund('TR-1', 1_000)]), {
       ledger: memoryLedger(),
@@ -317,14 +316,94 @@ describe('issueForPayment részleges visszatérítésnél', () => {
       reason: expect.stringContaining('tételesen'),
     })
     expect(skipMode).toMatchObject({ kind: 'skipped' })
-    expect(unknown).toMatchObject({
-      kind: 'skipped',
-      reason: expect.stringContaining('nem található'),
-    })
     expect(cancelled).toMatchObject({
       kind: 'skipped',
       reason: expect.stringContaining('sztornózták'),
     })
+  })
+
+  test('a bizonylat előtt érkező részleges visszatérítés in_progress hibát ad, hogy a szolgáltató újraküldje', async () => {
+    const { billingo, tarca } = await invoiced()
+    const ledger = memoryLedger()
+
+    await expect(
+      issueForPayment(tarca, { ...partial([refund('TR-1', 1_000)]), id: 'MAS' }, { ledger }),
+    ).rejects.toMatchObject({
+      category: 'in_progress',
+      message: expect.stringContaining('BARION-MAS'),
+    })
+    expect(billingo.count('CreateModificationDocument')).toBe(0)
+    expect(ledger.values.size).toBe(0)
+  })
+
+  test('negatív (előleg) sorú bizonylatnál validációs hibát ad, módosító számla nélkül', async () => {
+    const { billingo, tarca } = await invoiced()
+    const final: PaymentTarca = {
+      ...tarca,
+      documents: {
+        ...tarca.documents,
+        findByVendorId: async (vendorId, options) => {
+          const document = await tarca.documents.findByVendorId(vendorId, options)
+          return (
+            document && {
+              ...document,
+              items: [
+                { name: 'Szolgáltatás', quantity: 1, vat: '27%', grossAmount: 13_810 },
+                { name: 'Előleg', quantity: 1, vat: '27%', grossAmount: -3_810 },
+              ],
+            }
+          )
+        },
+      },
+    }
+
+    await expect(
+      issueForPayment(final, partial([refund('TR-1', 1_000)]), { ledger: memoryLedger() }),
+    ).rejects.toMatchObject({
+      category: 'validation',
+      message: expect.stringContaining('nem olvashatók ki'),
+    })
+    expect(billingo.count('CreateModificationDocument')).toBe(0)
+  })
+
+  test('tétel nélküli bizonylatnál validációs hibát ad, módosító számla nélkül', async () => {
+    const { billingo, tarca } = await invoiced()
+    const empty: PaymentTarca = {
+      ...tarca,
+      documents: {
+        ...tarca.documents,
+        findByVendorId: async (vendorId, options) => {
+          const document = await tarca.documents.findByVendorId(vendorId, options)
+          return document && { ...document, items: [] }
+        },
+      },
+    }
+
+    await expect(
+      issueForPayment(empty, partial([refund('TR-1', 1_000)]), { ledger: memoryLedger() }),
+    ).rejects.toMatchObject({
+      category: 'validation',
+      message: expect.stringContaining('nem olvashatók ki'),
+    })
+    expect(billingo.count('CreateModificationDocument')).toBe(0)
+  })
+
+  test('az üres listát adó refundItems ugyanazt a módosítót adja, mint a resolver nélküli', async () => {
+    const plain = await invoiced()
+    const resolved = await invoiced()
+
+    await issueForPayment(plain.tarca, partial([refund('TR-1', 3_500)]), {
+      ledger: memoryLedger(),
+    })
+    await issueForPayment(resolved.tarca, partial([refund('TR-1', 3_500)]), {
+      ledger: memoryLedger(),
+      refundItems: () => [],
+    })
+
+    const sent = (billingo: ReturnType<typeof createFakeBillingoFetch>) =>
+      billingo.requests.find((request) => request.operation === 'CreateModificationDocument')?.body
+    expect(sent(plain.billingo)).toMatchObject({ items: [{ unit_price: -3_500 }] })
+    expect(sent(resolved.billingo)).toEqual(sent(plain.billingo))
   })
 
   test('a pénznem eltérésére és a túl nagy visszatérítésre validációs hibát dob', async () => {

@@ -34,6 +34,7 @@ export interface JournalRange {
 export interface JournalStorage {
   getEntry(id: number): Promise<JournalEntry | undefined>
   putEntry(entry: JournalEntry): Promise<boolean>
+  indexEntry?(entry: JournalEntry): Promise<void>
   listEntries(range: JournalRange): Promise<JournalEntry[]>
   putReservation(reservation: JournalReservation): Promise<boolean>
   deleteReservation(vendorId: string): Promise<void>

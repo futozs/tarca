@@ -27,6 +27,7 @@ export {
   type IssuedDocument,
   type IssuedInvoice,
   type IssuedReceipt,
+  type IssuedRefundFailure,
   type IssueForPaymentOptions,
   issueForPayment,
   type PaymentConversion,

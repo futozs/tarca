@@ -502,10 +502,29 @@ describe('relatedModifications', () => {
       },
       original,
     )
-    expect(found.map((document) => document.id)).toEqual([10])
+    expect(found.documents.map((document) => document.id)).toEqual([10])
+    expect(found.complete).toBe(true)
     expect(queries).toEqual([
       { page: 1, perPage: 100, partnerId: 3, startDate: '2026-10-01' },
       { page: 2, perPage: 100, partnerId: 3, startDate: '2026-10-01' },
     ])
+  })
+
+  test('az 5. oldalnál megáll, és jelzi, hogy a lista hiányos maradt', async () => {
+    const pages: number[] = []
+    const found = await relatedModifications(
+      {
+        documents: {
+          list: async (query = {}) => {
+            const page = query.page ?? 1
+            pages.push(page)
+            return { data: [], total: 800, perPage: 100, currentPage: page, lastPage: 8 }
+          },
+        },
+      },
+      { id: 7, invoiceDate: '2026-10-01' },
+    )
+    expect(found).toEqual({ documents: [], complete: false })
+    expect(pages).toEqual([1, 2, 3, 4, 5])
   })
 })

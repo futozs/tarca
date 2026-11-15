@@ -145,11 +145,16 @@ function assertInput(input: ModificationOnceInput): void {
   }
 }
 
+export interface RelatedModifications {
+  readonly documents: readonly Document[]
+  readonly complete: boolean
+}
+
 export async function relatedModifications(
   tarca: { readonly documents: Pick<DocumentsApi, 'list'> },
   original: Document,
   options: RequestOptions = {},
-): Promise<Document[]> {
+): Promise<RelatedModifications> {
   const found: Document[] = []
   for (let page = 1; page <= RECOVERY_MAX_PAGES; page++) {
     const result = await tarca.documents.list(
@@ -169,9 +174,9 @@ export async function relatedModifications(
         found.push(document)
       }
     }
-    if (page >= result.lastPage) break
+    if (page >= result.lastPage) return { documents: found, complete: true }
   }
-  return found
+  return { documents: found, complete: false }
 }
 
 async function findModification(
@@ -182,8 +187,8 @@ async function findModification(
 ): Promise<Document | undefined> {
   const original = await tarca.documents.get(documentId, options)
   const tag = `(${marker})`
-  const modifications = await relatedModifications(tarca, original, options)
-  return modifications.find((document) => (document.comment ?? '').includes(tag))
+  const { documents } = await relatedModifications(tarca, original, options)
+  return documents.find((document) => (document.comment ?? '').includes(tag))
 }
 
 async function recover(

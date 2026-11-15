@@ -1,4 +1,4 @@
-import { configurationError } from '../core/errors'
+import { BillingoError, configurationError } from '../core/errors'
 import type { KeyValueStore } from '../core/store'
 import { daysOf, inRange, normalizeRange } from './dates'
 import type { JournalEntry, JournalRange, JournalReservation, JournalStorage } from './types'
@@ -94,9 +94,24 @@ export function kvJournal(store: KeyValueStore, options: KvJournalOptions = {}):
   const entryKey = (id: number): string => `${prefix}entry:${id}`
   const reservationKey = (vendorId: string): string => `${prefix}reservation:${vendorId}`
 
+  async function writeSlot(key: string, target: string, ttl: number): Promise<boolean> {
+    if (store.setIfAbsent) return store.setIfAbsent(key, target, ttl)
+    await store.set(key, target, ttl)
+    return (await store.get(key)) === target
+  }
+
   async function appendToDay(index: 'day' | 'rday', day: string, target: string, ttl: number) {
     const slot = await increment?.(`${prefix}${index}:${day}:count`, ttl)
-    await store.set(`${prefix}${index}:${day}:${slot}`, target, ttl)
+    const key = `${prefix}${index}:${day}:${slot}`
+    if (!(await writeSlot(key, target, ttl))) {
+      throw new BillingoError(
+        `A napló napi indexét (${key}) nem sikerült beírni, ezért a bejegyzés nem került a naplóba.`,
+        {
+          category: 'store_unavailable',
+          hint: 'Ellenőrizd a tárolót; a resilientStore elnyeli a set hibáját, ezért a naplóhoz ne használd.',
+        },
+      )
+    }
   }
 
   async function slotsOf(index: 'day' | 'rday', range: JournalRange, marker: string) {
@@ -132,6 +147,9 @@ export function kvJournal(store: KeyValueStore, options: KvJournalOptions = {}):
       if (store.setIfAbsent) return store.setIfAbsent(key, value, retention)
       await store.set(key, value, retention)
       return true
+    },
+    async indexEntry(entry) {
+      await appendToDay('day', entry.date, `${ENTRY_SLOT}${entry.id}`, retention)
     },
     async listEntries(range) {
       const normalized = normalizeRange(range)

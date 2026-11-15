@@ -7,6 +7,7 @@ import { isUncertainOutcome } from '../core/once-guard'
 import type { KeyValueStore } from '../core/store'
 import type { DraftFinalizeInput } from '../documents/input'
 import { memoryStore } from '../stores/memory'
+import { resilientStore } from '../stores/resilient'
 import { upstashRedisStore } from '../stores/upstash'
 import { createFakeBillingoFetch, type FakeBillingo } from '../testing'
 import {
@@ -941,14 +942,106 @@ describe('kvJournal', () => {
       ),
     ).toEqual([10 * 86_400, 10 * 86_400, 10 * 86_400])
 
+    const ttls = () => [...set.mock.calls, ...setIfAbsent.mock.calls].map((call) => call[2])
     set.mockClear()
+    setIfAbsent.mockClear()
     await journal.reserve('R-1')
-    expect(set.mock.calls.map((call) => call[2])).toEqual([2 * 86_400])
+    expect(ttls()).toEqual([2 * 86_400, 2 * 86_400])
 
     set.mockClear()
+    setIfAbsent.mockClear()
     const fractional = kvJournal(store, { retentionDays: 1.5 })
     await fractional.putEntry(entryOf(9, 'E-9'))
-    expect(set.mock.calls.map((call) => call[2])).toEqual([2 * 86_400])
+    expect(ttls()).toEqual([2 * 86_400, 2 * 86_400])
+  })
+
+  test('resilientStore fölött a napi index írása nem vész el: a set hibája helyett a setIfAbsent ír', async () => {
+    const inner = memoryStore()
+    const flaky: KeyValueStore = {
+      ...inner,
+      set: (key, value, ttl) => {
+        if (/:day:\d{4}-\d{2}-\d{2}:\d+$/.test(key)) throw new Error('a Redis nem érhető el')
+        return inner.set(key, value, ttl)
+      },
+    }
+    const journal = createJournal(kvJournal(resilientStore(flaky, { onError: () => undefined })), {
+      now: () => NOW,
+    })
+    const { tarca } = fakeTarca()
+
+    const created = await journal.track('V7', () =>
+      tarca.documents.create({ ...INVOICE, vendorId: 'V7' }),
+    )
+
+    expect(await journal.entries(RANGE)).toMatchObject([{ id: created.id, vendorId: 'V7' }])
+    expect(await journal.reconcile(tarca, RANGE)).toMatchObject({ added: [], matched: 1 })
+  })
+
+  test('setIfAbsent nélküli resilientStore fölött a napi index elnyelt hibája JournalWriteError, a settle pótolja', async () => {
+    const inner = memoryStore()
+    let failIndex = true
+    const flaky: KeyValueStore = {
+      get: inner.get,
+      delete: inner.delete,
+      increment: (key, ttl) => inner.increment?.(key, ttl) ?? 0,
+      set: (key, value, ttl) => {
+        if (failIndex && /:day:\d{4}-\d{2}-\d{2}:\d+$/.test(key)) {
+          throw new Error('a Redis nem érhető el')
+        }
+        return inner.set(key, value, ttl)
+      },
+    }
+    const journal = createJournal(kvJournal(resilientStore(flaky, { onError: () => undefined })), {
+      now: () => NOW,
+    })
+    const { tarca } = fakeTarca()
+
+    const failure = await journal
+      .track('V8', () => tarca.documents.create({ ...INVOICE, vendorId: 'V8' }))
+      .catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(JournalWriteError)
+    expect((failure as JournalWriteError).cause).toMatchObject({ category: 'store_unavailable' })
+    expect(await journal.entries(RANGE)).toEqual([])
+    failIndex = false
+    expect(await journal.settle(tarca)).toMatchObject({ recorded: [{ vendorId: 'V8' }] })
+    expect(await journal.entries(RANGE)).toMatchObject([{ vendorId: 'V8' }])
+  })
+
+  test('a reconcile a tárolt, de indexből hiányzó bejegyzést újraindexeli, és nem jelzi újra', async () => {
+    const store = memoryStore()
+    const journal = createJournal(kvJournal(store), { now: () => NOW })
+    const { tarca } = fakeTarca()
+    const invoice = await tarca.documents.create(INVOICE)
+    await store.set(
+      `tarca:journal:entry:${invoice.id}`,
+      JSON.stringify({ ...entryOf(invoice.id ?? 0, invoice.invoiceNumber ?? ''), source: 'hook' }),
+      60,
+    )
+
+    const first = await journal.reconcile(tarca, RANGE)
+    const second = await journal.reconcile(tarca, RANGE)
+
+    expect(first.added).toMatchObject([{ id: invoice.id }])
+    expect(await journal.entries(RANGE)).toMatchObject([{ id: invoice.id, source: 'hook' }])
+    expect(second).toMatchObject({ added: [] })
+  })
+})
+
+describe('reconcile saját tárolóval', () => {
+  test('ha a tároló tartalmazza, de nem listázza és nem tudja újraindexelni a bejegyzést, hibát dob', async () => {
+    const { tarca } = fakeTarca()
+    const invoice = await tarca.documents.create(INVOICE)
+    const stored = entryOf(invoice.id ?? 0, invoice.invoiceNumber ?? '')
+    const storage: JournalStorage = {
+      ...memoryJournal(),
+      getEntry: async () => stored,
+      putEntry: async () => false,
+    }
+
+    await expect(
+      createJournal(storage, { now: () => NOW }).reconcile(tarca, RANGE),
+    ).rejects.toThrow('újraindexelni')
   })
 
   test('Upstash fölött is olvasható: az automatikusan visszaalakított JSON-t és számot kezeli', async () => {

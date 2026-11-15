@@ -65,6 +65,16 @@ function isGone(error: unknown): boolean {
   )
 }
 
+async function reindex(storage: JournalStorage, billingo: JournalEntry): Promise<void> {
+  const stored = await storage.getEntry(billingo.id)
+  if (!stored || !storage.indexEntry) {
+    throw new Error(
+      `A napló tárolója már tartalmazza a(z) ${billingo.number} bizonylat (${billingo.id}) bejegyzését, de nem listázza, és nem tudja újraindexelni. Javítsd a JournalStorage listEntries vagy indexEntry műveletét.`,
+    )
+  }
+  await storage.indexEntry(stored)
+}
+
 export async function reconcileJournal(
   storage: JournalStorage,
   api: JournalReconcileApi,
@@ -102,7 +112,9 @@ export async function reconcileJournal(
     const billingo = documentEntry(document, { source: 'reconcile', now })
     const entry = journaled.get(billingo.id)
     if (!entry) {
-      if (options.dryRun !== true) await storage.putEntry(billingo)
+      if (options.dryRun !== true && !(await storage.putEntry(billingo))) {
+        await reindex(storage, billingo)
+      }
       added.push(billingo)
       continue
     }

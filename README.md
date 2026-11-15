@@ -760,7 +760,8 @@ export const POST = stripeWebhook({
 ```
 
 - A bizonylat `vendorId`-ja a fizetés azonosítója (`STRIPE-pi_…`), ezért az újraküldött esemény, és az is, amelyet a Stripe ugyanarról a fizetésről másik eseményként küld, a meglévő bizonylatot adja vissza. A `dedupe: store` opcióval a már feldolgozott eseményt a Billingo hívása nélkül nyugtázza.
-- Az `apiKey` mellett a tárca lekéri a Checkout tételeit és a szállítási díjat; nélküle egy tétel lesz a fizetett összegre.
+- A Stripe-ban a `checkout.session.completed`, a `checkout.session.async_payment_succeeded`, a `charge.refunded` és a `charge.refund.updated` eseményre iratkozz fel.
+- Az `apiKey` mellett a tárca lekéri a Checkout tételeit és a szállítási díjat, és a `payment_intent.succeeded` eseményhez is megkeresi a Checkout vevőjét. Nélküle egy tétel lesz a fizetett összegre, a `payment_intent.succeeded` pedig `other` lesz, bizonylat nélkül: az eseményből nem derül ki, hogy cég fizetett-e, és a nyugta vagy számla döntését az elsőként beérkező esemény rögzítené. Checkout nélküli fizetéshez (Payment Element) ezért `apiKey` kell.
 - Hibás aláírásra 400 a válasz, és az `onPayment` nem fut. Ha az `onPayment` dob, 500, és a Stripe később újraküldi. A titok tömb is lehet, kulcscseréhez. A fejléc nem aláírt hibakereső bejegyzéseit (`secret`, `destination`, `payload`) a tárca figyelmen kívül hagyja.
 
 </details>
@@ -797,10 +798,12 @@ const ledger = upstashRedisStore(Redis.fromEnv())
 await issueForPayment(tarca, payment, { vat: 27, ledger })
 ```
 
-- Teljes visszatérítéskor a tárca egyszer sztornózza a bizonylatot. Azt, hogy a sztornó megtörtént-e, a bizonylat `cancelled` jelzője dönti el, bizonytalan hiba után is; második sztornót nem küld.
+- Teljes visszatérítéskor a tárca egyszer sztornózza a bizonylatot. Azt, hogy a sztornó megtörtént-e, a bizonylat `cancelled` jelzője dönti el, bizonytalan hiba után is. Az egy folyamatba egyszerre érkező kézbesítések egymás után futnak, több példány között a `ledger` zárja ki a második sztornó kérést.
+- Ha a visszatérítés előbb fut le, mint hogy a fizetés bizonylata elkészült (például mert a fizetés webhookja hibázott, és újraküldésre vár), a tárca `in_progress` hibát dob: a webhook 500-at ad, és a szolgáltató a fizetés után újraküldi a visszatérítést. Ha egy fizetéshez soha nem készül bizonylat (például a tárca bevezetése előtti fizetés), ezt a hibát az `onPayment`-ben kell nyugtáznod.
+- Ha a Stripe visszatérítés később meghiúsul (`charge.refund.updated`, `failed` vagy `canceled` állapottal), `refund-failed` eredmény jön a bizonylattal. A már kiállított sztornót vagy módosító számlát a tárca nem fordítja vissza; ezt kézzel kell rendezni.
 - Részleges visszatérítéskor számlánál visszatérítésenként egy módosító számla készül, áfakulcsonként egy negatív sorral, a visszatérített összeget tételenként pontosan szétosztva. A Billingo módosító számlájának nincs `vendorId`-ja, és a bizonylatlista 15–30 másodpercet késik, ezért ehhez `setIfAbsent`-et ismerő tároló kell (`ledger`). Nélküle a tárca javaslatot ad (`refund-proposal`), bizonylatot nem állít ki.
 - Több áfakulcsnál alapból javaslat jön, a `refundItems` vagy a `partialRefund: 'proportional'` dönt. Nyugtánál mindig javaslat jön, mert nyugtához a Billingo nem ad módosító bizonylatot.
-- Módosított számlát a Billingo nem sztornóz (400), ezért a teljes visszatérítés ilyenkor a maradékra ad módosító számlát.
+- Módosított számlát a Billingo nem sztornóz (400), ezért a teljes visszatérítés ilyenkor a maradékra ad módosító számlát. Ha a korábbi módosító még nem látszik a késő bizonylatlistában, `in_progress` hiba jön, és az újraküldés számol vele; ha a partnernek a számla kelte óta több mint 500 bizonylata van, validációs hiba, a módosítót kézzel kell kiállítani.
 
 </details>
 
@@ -851,7 +854,7 @@ const bejegyzesek = await naplo.entries({ from: '2026-10-01', to: '2026-10-31' }
 - A tárca kivárja a hookot. Alapból (`'warn'`) a hook hibája az `onWarning`-hoz megy, vagy ha az nincs, a konzolra. `'throw'` esetén a hívó `DocumentHookError`-t kap: a bizonylat ilyenkor is elkészült, az `error.document` és az `error.event` alapján pótold a naplót, de ne állítsd ki újra.
 - A bejegyzés: Billingo-azonosító, `vendorId`, sorszám, típus, esemény, kiállítási dátum, kapcsolódó bizonylatok, nettó és bruttó végösszeg, pénznem, fizetési állapot, a rögzítés budapesti ideje és forrása. Vevői adat (név, cím, e-mail) nincs benne.
 - A piszkozat nem kerül a naplóba, a díjbekérő igen. Ugyanaz a bizonylat kétszer sem kerül bele.
-- A `kvJournal` olyan tárolót kér, amely atomikusan tud számlálót növelni (Redis, Upstash, Durable Object). A bejegyzés alapból 400 napig marad meg. Saját adatbázishoz a `JournalStorage` felületet kell megírni.
+- A `kvJournal` olyan tárolót kér, amely atomikusan tud számlálót növelni (Redis, Upstash, Durable Object). A napi indexet atomikus írással (`setIfAbsent`) vagy visszaolvasással ellenőrizve írja, így egy elnyelt tárolóhiba sem hagy láthatatlan bejegyzést. A bejegyzés alapból 400 napig marad meg. Saját adatbázishoz a `JournalStorage` felületet kell megírni.
 
 </details>
 
@@ -1268,7 +1271,7 @@ A `document get` a bizonylatot JSON-ban írja ki azonosító vagy `--vendor` ala
 }
 ```
 
-Claude, Cursor és más MCP kliensek számára, 21 eszközzel. Alapból csak olvas: profil, bizonylatok, partnerek, termékek, költségek, adószám, árfolyam, és öt előnézet. Az `--allow-write` kapcsolóval (vagy `TARCA_MCP_ALLOW_WRITE=1`) számlát és nyugtát állíthat ki, sztornózhat, befizetést rögzíthet és e-mailt küldhet, de minden íráshoz kell az előnézeti eszköz megerősítő kódja, pontosan ugyanarra a bemenetre, 15 percig és csak az előnézet napján. A kiállítás `createOnce`-szal megy, így egy ismételt hívás nem állít ki második számlát, a sztornó pedig előtte és bizonytalan hiba után is újraolvassa a bizonylatot.
+Claude, Cursor és más MCP kliensek számára, 21 eszközzel. Alapból csak olvas: profil, bizonylatok, partnerek, termékek, költségek, adószám, árfolyam, és öt előnézet. Az `--allow-write` kapcsolóval (vagy `TARCA_MCP_ALLOW_WRITE=1`) számlát és nyugtát állíthat ki, sztornózhat, befizetést rögzíthet és e-mailt küldhet, de minden íráshoz kell az előnézeti eszköz megerősítő kódja, pontosan ugyanarra a bemenetre, 15 percig és csak az előnézet budapesti napján. A kiállítás `createOnce`-szal megy, így egy ismételt hívás nem állít ki második számlát. A sztornó előtte és bizonytalan hiba után is újraolvassa a bizonylatot, és egy megerősítő kóddal csak egyszer küld sztornó kérést.
 
 Próbához fejlesztői teszt profilt használj: éles profilon a kiállított számlát a Billingo jelenti a NAV-nak, és csak sztornózni lehet.
 

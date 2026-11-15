@@ -830,7 +830,7 @@ describe('MCP eszközök: sztornó', () => {
       cancellation: { type: 'cancellation', invoiceNumber: '2026-2' },
     })
     expect(again.data).toMatchObject({ cancelled: false })
-    expect(again.summary).toContain('már sztornózva volt')
+    expect(again.summary).toContain('kétszer nem küld sztornót')
     expect(previewAgain).toMatchObject({
       isError: true,
       error: { category: 'refused' },
@@ -842,6 +842,85 @@ describe('MCP eszközök: sztornó', () => {
     ).toEqual({
       cancellation_reason: 'Hibás tétel',
     })
+  })
+
+  test('ha a bizonylat már sztornózott, új kóddal sem sztornóz újra', async () => {
+    const harness = mcpHarness({ allowWrite: true })
+    const id = documentId(await issue(harness))
+    const preview = await harness.call('preview_cancellation', { id })
+    await harness.tarca.documents.cancel(id)
+
+    const result = await harness.call('cancel_document', {
+      id,
+      confirmation: preview.data.confirmation,
+    })
+
+    expect(result.data).toMatchObject({ cancelled: false })
+    expect(result.summary).toContain('már sztornózva volt')
+    expect(harness.billingo.count('CancelDocument')).toBe(1)
+  })
+
+  test('két egyidejű hívás ugyanazzal a kóddal egyetlen sztornó kérést küld', async () => {
+    const harness = mcpHarness({ allowWrite: true })
+    const id = documentId(await issue(harness))
+    const preview = await harness.call('preview_cancellation', { id })
+    const call = callThrough(async (input, init) => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return harness.billingo.fetch(input, init)
+    })
+    const args = { id, confirmation: preview.data.confirmation }
+
+    const results = await Promise.all([
+      call('cancel_document', args),
+      call('cancel_document', args),
+    ])
+
+    expect(harness.billingo.count('CancelDocument')).toBe(1)
+    expect(results.map((result) => result.data.cancelled).sort()).toEqual([false, true])
+    expect(results.find((result) => result.data.cancelled === false)?.summary).toContain(
+      'kétszer nem küld sztornót',
+    )
+  })
+
+  test('végleges hiba után ugyanaz a kód újra használható', async () => {
+    const harness = mcpHarness({ allowWrite: true })
+    const id = documentId(await issue(harness))
+    const preview = await harness.call('preview_cancellation', { id })
+    const args = { id, confirmation: preview.data.confirmation }
+    harness.billingo.fail({ status: 403, message: 'Forbidden' }, { operation: 'CancelDocument' })
+
+    const rejected = await harness.call('cancel_document', args)
+    const retried = await harness.call('cancel_document', args)
+
+    expect(rejected).toMatchObject({ isError: true, error: { category: 'forbidden' } })
+    expect(retried.data).toMatchObject({ cancelled: true })
+    expect(harness.billingo.count('CancelDocument')).toBe(2)
+  })
+
+  test('éjfél után a sztornó és a kiküldés előnézetének kódja sem érvényes', async () => {
+    let current = new Date('2026-11-16T22:55:00.000Z')
+    const harness = mcpHarness({ allowWrite: true, now: () => current })
+    const id = documentId(await issue(harness))
+    const emails = ['penzugy@pelda.hu']
+    const cancelPreview = await harness.call('preview_cancellation', { id })
+    const sendPreview = await harness.call('preview_send', { id, emails })
+
+    current = new Date('2026-11-16T23:05:00.000Z')
+    const cancelled = await harness.call('cancel_document', {
+      id,
+      confirmation: cancelPreview.data.confirmation,
+    })
+    const sent = await harness.call('send_document', {
+      id,
+      emails,
+      confirmation: sendPreview.data.confirmation,
+    })
+
+    expect(cancelled).toMatchObject({ isError: true, error: { category: 'confirmation' } })
+    expect(cancelled.summary).toContain('éjfél')
+    expect(sent).toMatchObject({ isError: true, error: { category: 'confirmation' } })
+    expect(harness.billingo.count('CancelDocument')).toBe(0)
+    expect(harness.billingo.count('SendDocument')).toBe(0)
   })
 
   test('a kód csak ugyanarra a bizonylatra és okra érvényes', async () => {

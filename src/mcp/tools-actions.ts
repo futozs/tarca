@@ -169,7 +169,28 @@ const UNCERTAIN_HINT =
 async function cancelDocument(args: JsonObject, context: McpToolContext): Promise<McpToolOutput> {
   const request = cancelRequestOf(args, ['confirmation'])
   const { payload, confirmation } = splitConfirmation(args)
-  await context.confirmations.verify(CANCEL_DOCUMENT, payload, confirmation, PREVIEW_CANCELLATION)
+  const token = await context.confirmations.verify(
+    CANCEL_DOCUMENT,
+    payload,
+    confirmation,
+    PREVIEW_CANCELLATION,
+  )
+  if (!context.confirmations.spend(token)) {
+    return {
+      summary:
+        'Ezt a megerősítő kódot már felhasználtam egy sztornó kéréshez, ugyanaz a kód kétszer nem küld sztornót. Nézd meg a bizonylat állapotát a get_document eszközzel, és ha nincs sztornózva, kérj új előnézetet.',
+      data: { cancelled: false, id: request.id, original: null, cancellation: null },
+    }
+  }
+  try {
+    return await cancelOnce(request, context)
+  } catch (error) {
+    if (!isUncertainOutcome(error)) context.confirmations.release(token)
+    throw error
+  }
+}
+
+async function cancelOnce(request: CancelRequest, context: McpToolContext): Promise<McpToolOutput> {
   const tarca = context.client()
   const original = await documentById(tarca, request.id)
   if (original.cancelled === true) {

@@ -213,15 +213,19 @@ export const POST = stripeWebhook({
   dedupe: store,
   onPayment: async (payment) => {
     const result = await issueForPayment(tarca, payment, { vat: 27, ledger: store })
-    if (result.kind === 'refund-proposal') await notifyAccountant(result)
+    if (result.kind === 'refund-proposal' || result.kind === 'refund-failed') {
+      await notifyAccountant(result)
+    }
   },
 })
 ```
 
+- Stripe: subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `charge.refunded` and `charge.refund.updated`. Without `apiKey`, `payment_intent.succeeded` is delivered as `other` and issues nothing, so a Checkout payment is decided by its session (business buyer, tax ids); a Payment Element integration needs `apiKey`.
+- A refund that arrives before the payment's document exists throws `in_progress`, so the webhook answers 500 and the provider redelivers it after the payment. `refund-failed` (a Stripe refund that failed after tarca cancelled or modified the document) needs a human: tarca does not reverse it.
 - 400 means a bad signature or payload and `onPayment` never ran. 500 means something after verification threw; the provider redelivers and `createOnce` returns the existing document, so a redelivery never issues twice.
 - VAT is never guessed: give `vat`, `vatFor(item)` or per-item VAT, or you get a `validation` error before any request. The items' gross sum must equal the paid amount to the minor unit (`allowAmountMismatch: true` to allow a difference).
 - An invoice is chosen for a tax-numbered or business buyer, from 900 000 Ft, or with `invoiceRequested`; otherwise a receipt. `document: 'invoice' | 'receipt'` overrides it. An invoice is marked paid with `payments.replace`.
-- Full refund: one `documents.cancel`, decided by the document's `cancelled` flag after an uncertain error. Partial refund: one modification invoice per refund, which needs `ledger` (a store with `setIfAbsent`); without it, on a receipt or with several VAT rates and no `refundItems` you get `refund-proposal` for a human to decide.
+- Full refund: one `documents.cancel`, decided by the document's `cancelled` flag after an uncertain error; pass `ledger` so two instances never POST it at the same time. Partial refund: one modification invoice per refund, which needs `ledger` (a store with `setIfAbsent`); without it, on a receipt or with several VAT rates and no `refundItems` you get `refund-proposal` for a human to decide.
 - SimplePay: `simplePayWebhook({ merchants: { MERCHANT: secret } })` from `tarca/payments/simplepay` (the response is the signed IPN echo). Barion: `barionWebhook({ posKey })`. Revolut: `revolutWebhook({ secret, apiKey })`. PayPal: `payPalWebhook({ webhookId, clientId, clientSecret })`. All give the same `PaymentEvent`.
 
 ## Express, NestJS, Fastify
