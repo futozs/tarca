@@ -301,7 +301,23 @@ git('commit', '-m', `release: v${version}`)
 git('tag', '-a', `v${version}`, '-m', `v${version}`)
 log(`Kész: https://www.npmjs.com/package/${pkg.name}/v/${version}`)
 
-if (run('git', ['push', '--follow-tags'])) {
+function pushRelease() {
+  if (run('git', ['push', '--follow-tags'])) return true
+  log('A main közben továbblépett: beolvasztom a release commitot, és újra pusholok.')
+  return (
+    run('git', ['fetch', 'origin', 'main']) &&
+    run('git', [
+      'merge',
+      '--no-ff',
+      '-m',
+      `release: merge main after v${version}`,
+      'origin/main',
+    ]) &&
+    run('git', ['push', '--follow-tags'])
+  )
+}
+
+if (pushRelease()) {
   log('A release commit és a tag felment a GitHubra.')
 } else {
   fail(
