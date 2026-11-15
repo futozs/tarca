@@ -1,5 +1,11 @@
 # Változásnapló
 
+## 0.1.1 (2026-11-16)
+
+### Javítások
+
+- **release:** build again after the version bump (2d5b5e1)
+
 ## 0.1.0 (2026-11-16)
 
 ### Újdonságok
