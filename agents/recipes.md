@@ -5,7 +5,7 @@ Every recipe uses the shared client below. Server-side only.
 ## One shared client
 
 ```ts
-import { createTarca } from 'tarca'
+import { createTarca } from 'tarcajs'
 
 export const tarca = createTarca({
   defaults: { dueInDays: 8, paymentMethod: 'wire_transfer', electronic: true },
@@ -67,7 +67,7 @@ export async function invoiceOrder(order: Order) {
 A `validation` error is never worth retrying: the input is wrong, and nothing was sent when tarca caught it locally.
 
 ```ts
-import { isBillingoError } from 'tarca'
+import { isBillingoError } from 'tarcajs'
 
 try {
   await invoiceOrder(order)
@@ -149,10 +149,10 @@ await writeFile(`invoices/${pdf.filename ?? `${invoiceId}.pdf`}`, pdf.bytes)
 - `pdf.bytes` is an ArrayBuffer-backed `Uint8Array<ArrayBuffer>` that starts with `%PDF`; it works with `Response`, S3/R2 SDKs and `fs` alike. In Workers return it directly: `new Response(pdf.bytes, { headers: { 'content-type': 'application/pdf' } })`.
 - `documents.publicUrl(id)` gives Billingo's public `document-access` link to the document.
 
-To keep the PDF in object storage, use `tarca/storage` instead of writing the bytes yourself. It names the key from the document (`szamlak/2026/09/TARCA-2026-000012.pdf`), waits for the 202 the same way and refuses anything that is not a PDF:
+To keep the PDF in object storage, use `tarcajs/storage` instead of writing the bytes yourself. It names the key from the document (`szamlak/2026/09/TARCA-2026-000012.pdf`), waits for the 202 the same way and refuses anything that is not a PDF:
 
 ```ts
-import { s3FetchStorage, storeDocumentPdf } from 'tarca/storage'
+import { s3FetchStorage, storeDocumentPdf } from 'tarcajs/storage'
 
 const storage = s3FetchStorage({
   bucket: 'invoices',
@@ -166,7 +166,7 @@ const { document } = await tarca.documents.createOnce(input)
 const file = await storeDocumentPdf(tarca, storage, document)
 ```
 
-S3 and R2 need no AWS SDK (SigV4 over `fetch`). Other adapters: `r2BindingStorage` (Workers binding), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage`, `memoryStorage`, and `fsStorage` from the Node-only `tarca/storage/fs`. Drafts have no number, so they cannot be stored (`StorageError`). In a webhook, answer first and store the PDF afterwards.
+S3 and R2 need no AWS SDK (SigV4 over `fetch`). Other adapters: `r2BindingStorage` (Workers binding), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage`, `memoryStorage`, and `fsStorage` from the Node-only `tarcajs/storage/fs`. Drafts have no number, so they cannot be stored (`StorageError`). In a webhook, answer first and store the PDF afterwards.
 
 ## Monthly export for the accountant
 
@@ -201,9 +201,9 @@ Stripe, SimplePay, Barion, Revolut and PayPal, without their SDKs. The handler v
 
 ```ts
 import { Redis } from '@upstash/redis'
-import { issueForPayment } from 'tarca/payments'
-import { stripeWebhook } from 'tarca/payments/stripe'
-import { upstashRedisStore } from 'tarca/stores'
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+import { upstashRedisStore } from 'tarcajs/stores'
 
 const store = upstashRedisStore(Redis.fromEnv())
 
@@ -226,16 +226,16 @@ export const POST = stripeWebhook({
 - VAT is never guessed: give `vat`, `vatFor(item)` or per-item VAT, or you get a `validation` error before any request. The items' gross sum must equal the paid amount to the minor unit (`allowAmountMismatch: true` to allow a difference).
 - An invoice is chosen for a tax-numbered or business buyer, from 900 000 Ft, or with `invoiceRequested`; otherwise a receipt. `document: 'invoice' | 'receipt'` overrides it. An invoice is marked paid with `payments.replace`.
 - Full refund: one `documents.cancel`, decided by the document's `cancelled` flag after an uncertain error; pass `ledger` so two instances never both POST it (the lock holder reads the document again before the POST). Partial refund: one modification invoice per refund, which needs `ledger` (a store with `setIfAbsent`); without it, on a receipt or with several VAT rates and no `refundItems` you get `refund-proposal` for a human to decide.
-- SimplePay: `simplePayWebhook({ merchants: { MERCHANT: secret } })` from `tarca/payments/simplepay` (the response is the signed IPN echo). Barion: `barionWebhook({ posKey })`. Revolut: `revolutWebhook({ secret, apiKey })`. PayPal: `payPalWebhook({ webhookId, clientId, clientSecret })`. All give the same `PaymentEvent`.
+- SimplePay: `simplePayWebhook({ merchants: { MERCHANT: secret } })` from `tarcajs/payments/simplepay` (the response is the signed IPN echo). Barion: `barionWebhook({ posKey })`. Revolut: `revolutWebhook({ secret, apiKey })`. PayPal: `payPalWebhook({ webhookId, clientId, clientSecret })`. All give the same `PaymentEvent`.
 
 ## Express, NestJS, Fastify
 
-Webhook and MCP handlers are web-standard `(Request) => Response`. Mount them through `tarca/node`, before `express.json()`, so the raw body and its signature stay intact:
+Webhook and MCP handlers are web-standard `(Request) => Response`. Mount them through `tarcajs/node`, before `express.json()`, so the raw body and its signature stay intact:
 
 ```ts
 import express from 'express'
-import { toNodeHandler } from 'tarca/node'
-import { stripeWebhook } from 'tarca/payments/stripe'
+import { toNodeHandler } from 'tarcajs/node'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
 
 const app = express()
 app.post('/webhooks/stripe', toNodeHandler(stripeWebhook({ secret, onPayment })))
@@ -250,8 +250,8 @@ A body already parsed by `express.json()` throws `NodeBodyError` with the fix. N
 
 ```ts
 import { Redis } from '@upstash/redis'
-import { createTarca } from 'tarca'
-import { diagnoseStore, upstashRedisStore } from 'tarca/stores'
+import { createTarca } from 'tarcajs'
+import { diagnoseStore, upstashRedisStore } from 'tarcajs/stores'
 
 const store = upstashRedisStore(Redis.fromEnv(), { timeoutMs: 2_000 })
 export const tarca = createTarca({ createOnceLock: store })
@@ -269,7 +269,7 @@ if (!diagnosis.suitableFor.createOnceLock) throw new Error(diagnosis.problems.jo
 Billingo reports to NAV itself; the journal is your own append-only record of every issued, cancelled and modified document, reconciled against Billingo's list.
 
 ```ts
-import { createJournal, kvJournal } from 'tarca/journal'
+import { createJournal, kvJournal } from 'tarcajs/journal'
 
 const journal = createJournal(kvJournal(store))
 export const tarca = createTarca({
@@ -290,7 +290,7 @@ const report = await journal.reconcile(tarca, { from: '2026-10-01', to: '2026-10
 ## Monthly subscription invoicing
 
 ```ts
-import { billingPeriodAt, runBatch } from 'tarca/batch'
+import { billingPeriodAt, runBatch } from 'tarcajs/batch'
 
 const period = billingPeriodAt({ interval: 'month', anchor: '2026-01-31' }, new Date())
 const result = await runBatch(tarca, {
@@ -314,9 +314,9 @@ if (result.stopped) console.warn('Leállt:', result.stopped.reason)
 ```json
 {
   "mcpServers": {
-    "tarca": {
+    "tarcajs": {
       "command": "npx",
-      "args": ["-y", "tarca", "mcp"],
+      "args": ["-y", "tarcajs", "mcp"],
       "env": { "BILLINGO_API_KEY": "..." }
     }
   }
@@ -326,12 +326,12 @@ if (result.stopped) console.warn('Leállt:', result.stopped.reason)
 - Read-only by default: profile, documents, partners, products, spendings, tax number, exchange rate and five previews. `--allow-write` (or `TARCA_MCP_ALLOW_WRITE=1`) enables issuing, cancelling, recording payments and sending e-mail, each only with the confirmation code of a preview of exactly the same input, valid for 15 minutes and on the preview's Budapest day.
 - Use a developer test profile while trying it: on a live profile an issued invoice goes to NAV and can only be cancelled.
 - On the edge use `createTarcaMcpHandler(createTarcaMcpServer({ apiKey, confirmationSecret }), { authorize })`: `authorize` and a `confirmationSecret` of at least 16 bytes are required, and create the handler once per isolate, not per request.
-- `npx tarca doctor` checks the key, the clock, the profile, the NAV connection, the subscription, the document blocks and the bank accounts with 3 GET requests.
+- `npx tarcajs doctor` checks the key, the clock, the profile, the NAV connection, the subscription, the document blocks and the bank accounts with 3 GET requests.
 
 ## Testing your own code with tarca/testing
 
 ```ts
-import { createMockTarca } from 'tarca/testing'
+import { createMockTarca } from 'tarcajs/testing'
 import { expect, test } from 'vitest'
 
 test('a paid order is invoiced once, even if the webhook arrives twice', async () => {
@@ -374,15 +374,15 @@ const tarca = createTarca({
 
 Hooks never receive the API key. A hook that throws, or an async hook that rejects, does not break the request; the error goes to `onWarning`, and an error of `onWarning` itself is swallowed.
 
-For structured logs, OpenTelemetry spans and Prometheus metrics use `tarca/observe`. It redacts by default: no API key, no error message text, and a `vendorId` only as an HMAC reference.
+For structured logs, OpenTelemetry spans and Prometheus metrics use `tarcajs/observe`. It redacts by default: no API key, no error message text, and a `vendorId` only as an HMAC reference.
 
 ```ts
 import { trace } from '@opentelemetry/api'
-import { combineHooks, createMetricsRegistry, observe } from 'tarca/observe'
+import { combineHooks, createMetricsRegistry, observe } from 'tarcajs/observe'
 
 const metrics = createMetricsRegistry()
 export const tarca = createTarca({
-  hooks: combineHooks(observe({ logger: console, tracer: trace.getTracer('tarca'), metrics }), {
+  hooks: combineHooks(observe({ logger: console, tracer: trace.getTracer('tarcajs'), metrics }), {
     onDocument: (event) => journal.record(event),
   }),
 })

@@ -6,9 +6,9 @@ import { formatDoctor, formatDoctorReport, runDoctor } from './doctor'
 import { CliError, type CliIo, printJson, readDefaults } from './io'
 import { mcpCommand } from './mcp'
 
-export const CLI_USAGE: string = `tarca ${TARCA_VERSION}: Billingo API v3 parancssor
+export const CLI_USAGE: string = `tarcajs ${TARCA_VERSION}: Billingo API v3 parancssor
 
-Használat: tarca <parancs> [kapcsolók]
+Használat: tarcajs <parancs> [kapcsolók]
 
 Parancsok:
   doctor [--tax-code <adószám>] [--defaults <fájl.json>] [--check-update] [--json | --report]
@@ -68,7 +68,7 @@ async function doctorCommand(io: CliIo, args: ParsedArgs): Promise<number> {
   if (hasFlag(args, 'json')) printJson(io, { checks })
   else if (hasFlag(args, 'report')) {
     io.stdout(formatDoctorReport(checks, { nodeVersion: io.nodeVersion }))
-  } else io.stdout(`tarca doctor ${TARCA_VERSION}\n${formatDoctor(checks)}`)
+  } else io.stdout(`tarcajs doctor ${TARCA_VERSION}\n${formatDoctor(checks)}`)
   return checks.some((check) => check.status === 'fail') ? 1 : 0
 }
 
@@ -130,7 +130,7 @@ export async function runCli(io: CliIo): Promise<number> {
     return await dispatch(io, command, argv)
   } catch (error) {
     if (error instanceof CliUsageError) {
-      io.stderr(`${error.message}\nSegítség: tarca help\n`)
+      io.stderr(`${error.message}\nSegítség: tarcajs help\n`)
       return 2
     }
     if (error instanceof CliError || isBillingoError(error)) {

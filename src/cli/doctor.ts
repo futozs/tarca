@@ -25,7 +25,7 @@ export interface DoctorOptions {
   readonly checkUpdate?: boolean | undefined
 }
 
-export const NPM_LATEST_URL = 'https://registry.npmjs.org/tarca/latest'
+export const NPM_LATEST_URL = 'https://registry.npmjs.org/tarcajs/latest'
 export const USED_BY_URL = 'https://github.com/futozs/tarca/issues/new?template=used-by.yml'
 
 interface ResponseSample {
@@ -377,7 +377,7 @@ export interface DoctorReportMeta {
 
 export function formatDoctorReport(checks: readonly DoctorCheck[], meta: DoctorReportMeta): string {
   return [
-    '## tarca doctor jelentés',
+    '## tarcajs doctor jelentés',
     '',
     `- tarca: ${TARCA_VERSION}`,
     `- Node.js: ${meta.nodeVersion}`,

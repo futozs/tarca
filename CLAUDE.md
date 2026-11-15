@@ -1,6 +1,6 @@
 # tárca
 
-Nyílt forráskódú Billingo API v3 kliens (TypeScript, npm csomag: `tarca`), a [kassza](../kassza) testvére. Az architektúra, a konvenciók és a release folyamat az `AGENTS.md`-ben van: munka előtt olvasd el. Ha van `kezdo-docs/` mappa (gitignored), előbb a `kezdo-docs/00-OLVASS-EL.md`-t olvasd el: ott van a kutatás, a terv, a roadmap és a következő lépések.
+Nyílt forráskódú Billingo API v3 kliens (TypeScript, npm csomag: `tarcajs`), a [kassza](../kassza) testvére. Az architektúra, a konvenciók és a release folyamat az `AGENTS.md`-ben van: munka előtt olvasd el. Ha van `kezdo-docs/` mappa (gitignored), előbb a `kezdo-docs/00-OLVASS-EL.md`-t olvasd el: ott van a kutatás, a terv, a roadmap és a következő lépések.
 
 ## Források
 - Fejlesztői portál: https://developers.billingo.hu (API leírás: `/post/api-v3`, changelog: `/changelogs`)

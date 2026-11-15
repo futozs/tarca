@@ -42,7 +42,7 @@ github.com → profilkép → **Settings → Notifications → System → Action
 
 ## 4. Csak ha gond van
 
-- **Az npm publish elbukik (OIDC hiba):** npmjs.com → `tarca` → **Settings → Trusted Publisher → GitHub Actions**. Repository: `futozs/tarca`, Workflow: `release.yml`.
+- **Az npm publish elbukik (OIDC hiba):** npmjs.com → `tarcajs` → **Settings → Trusted Publisher → GitHub Actions**. Repository: `futozs/tarca`, Workflow: `release.yml`.
 - **A `badges` ágra nem tud pusholni:** Settings → Rules. Ha egy szabály minden ágon tiltja a force pusht, vedd ki alóla a `badges` ágat.
 - **A CI a típus-szinkronon bukik el:** a Billingo módosította a spec-et. `npm run spec:fetch && npm run spec:types`, nézd át a diffet, igazítsd a klienst, majd `npm run drift -- --update`.
 

@@ -139,7 +139,7 @@ describe('tarca CLI: általános', () => {
     expect(missingValue).toMatchObject({ code: 2, stderr: expect.stringContaining('érték kell') })
     expect(extra).toMatchObject({ code: 2, stderr: expect.stringContaining('Fölösleges') })
     expect(booleanValue).toMatchObject({ code: 2, stderr: expect.stringContaining('nincs értéke') })
-    expect(both).toMatchObject({ code: 2, stderr: expect.stringContaining('tarca help') })
+    expect(both).toMatchObject({ code: 2, stderr: expect.stringContaining('tarcajs help') })
     expect(flagAsValue).toMatchObject({
       code: 2,
       stderr: expect.stringContaining('--tax-code kapcsolóhoz érték kell'),
@@ -178,7 +178,7 @@ describe('tarca CLI: doctor', () => {
     })
 
     expect(result.code).toBe(0)
-    expect(result.stdout).toContain(`tarca doctor ${TARCA_VERSION}`)
+    expect(result.stdout).toContain(`tarcajs doctor ${TARCA_VERSION}`)
     expect(result.stdout).toContain('✓ Node.js 22.11.0')
     expect(result.stdout).toContain('✓ Időzóna-adatok: Europe/Budapest elérhető.')
     expect(result.stdout).toContain(`✓ API kulcs: ${TEST_API_KEY.length} karakter.`)
@@ -385,7 +385,7 @@ describe('tarca CLI: doctor', () => {
         { id: 'profile', status: 'ok', message: expect.stringContaining('teszt profil') },
       ]),
     })
-    expect(report.stdout).toContain('## tarca doctor jelentés')
+    expect(report.stdout).toContain('## tarcajs doctor jelentés')
     expect(report.stdout).toContain(`- tarca: ${TARCA_VERSION}`)
     expect(report.stdout).toContain('| auth | ok |')
     expect(report.stdout).not.toContain(TEST_API_KEY)

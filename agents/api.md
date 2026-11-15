@@ -5,7 +5,7 @@ Every Billingo API v3 operation is implemented: all 57 in `BILLINGO_OPERATIONS` 
 ## createTarca(options?)
 
 ```ts
-import { createTarca } from 'tarca'
+import { createTarca } from 'tarcajs'
 
 const tarca = createTarca({
   apiKey: process.env.BILLINGO_API_KEY,
@@ -167,7 +167,7 @@ const { document, created } = await tarca.documents.createOnce({
 - Exported input types: `DocumentInput`, `DocumentOnceInput`, `DraftFinalizeInput`, `DocumentItemInput` (`NetPricedItemInput`, `GrossPricedItemInput`, `ProductItemInput`), `VatInput`, `DocumentListQuery`, `CancelInput`, `SendInput`, `ModificationInput`, `ProformaConversionInput`, `PaymentInput`, `PdfOptions`, `PosPdfOptions`, `CreateOnceOptions`, `ReceiptInput`, `ReceiptOnceInput`, `ReceiptFinalizeInput`, `ReceiptItemInput`, `PartnerInput`, `PartnerReplacement`, `PartnerListQuery`, `ProductInput`, `ProductListQuery`, `DocumentBlockInput`, `DocumentBlockReplacement`, `DocumentBlockListQuery`, `BankAccountInput`, `SpendingInput`, `SpendingListQuery`, `ExportInput`, `ExportRunOptions`, `ConversionRateQuery`, `TarcaDefaults`, `KeyValueStore`, `PageQuery`, `RequestOptions`.
 - `DocumentHookError` (`event`, `document`, `number`, `cause`) and `isDocumentHookError(error)`: thrown by a write in `onDocumentError: 'throw'` mode when the `onDocument` hook failed after Billingo created the document. Types: `DocumentEvent`, `DocumentAction`, `DocumentHook`, `DocumentErrorMode`, `DocumentErrorHandler`.
 - `BILLINGO_OPERATIONS`: every Billingo operation (method, path, which spec version documents it).
-- `import type { Billingo } from 'tarca'`: every schema of the official spec, camelCase, corrected where the live API differs (fields that come back `null`, `createdByNav` on spendings, fields Billingo requires although the spec marks them optional, and `DocumentBlockUpdate` for the undocumented document block PUT).
+- `import type { Billingo } from 'tarcajs'`: every schema of the official spec, camelCase, corrected where the live API differs (fields that come back `null`, `createdByNav` on spendings, fields Billingo requires although the spec marks them optional, and `DocumentBlockUpdate` for the undocumented document block PUT).
 
 ## Billingo operations → methods
 
@@ -233,12 +233,12 @@ const { document, created } = await tarca.documents.createOnce({
 
 ## tarca/testing
 
-Test helpers for code that uses tarca. Runtime-neutral and dependency-free, like the root entry; the root `tarca` entry never imports it.
+Test helpers for code that uses tarca. Runtime-neutral and dependency-free, like the root entry; the root `tarcajs` entry never imports it.
 
 ### createMockTarca(options?)
 
 ```ts
-import { createMockTarca } from 'tarca/testing'
+import { createMockTarca } from 'tarcajs/testing'
 
 const tarca = createMockTarca({ taxCode: '12345678-2-42' })
 await tarca.bankAccounts.create({ name: 'Fő számla', accountNumber: '11773016-11111018', currency: 'HUF' })
@@ -254,8 +254,8 @@ tarca.failNext('bankAccounts.create')
 ### createFakeBillingoFetch(options?)
 
 ```ts
-import { createTarca } from 'tarca'
-import { createFakeBillingoFetch } from 'tarca/testing'
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
 
 const billingo = createFakeBillingoFetch()
 const tarca = createTarca({ apiKey: 'test', fetch: billingo.fetch, retryDelayMs: 0 })
@@ -279,10 +279,10 @@ const tarca = createTarca({ apiKey: 'test', fetch: billingo.fetch, retryDelayMs:
 
 ## tarca/batch
 
-Issues many documents exactly once, paced under Billingo's rate limit. Runtime-neutral; the root `tarca` entry never imports it.
+Issues many documents exactly once, paced under Billingo's rate limit. Runtime-neutral; the root `tarcajs` entry never imports it.
 
 ```ts
-import { billingPeriodAt, runBatch } from 'tarca/batch'
+import { billingPeriodAt, runBatch } from 'tarcajs/batch'
 
 const period = billingPeriodAt({ interval: 'month', anchor: '2026-01-31' }, new Date())
 const result = await runBatch(tarca, {
@@ -293,7 +293,7 @@ const result = await runBatch(tarca, {
 })
 ```
 
-- `runBatch(tarca, options): Promise<BatchResult>`. `tarca` only needs `documents.createOnce`, `documents.findByVendorId` and `receipts.createOnce` (`BatchApi`), so `createMockTarca()` works too.
+- `runBatch(tarca, options): Promise<BatchResult>`. `tarcajs` only needs `documents.createOnce`, `documents.findByVendorId` and `receipts.createOnce` (`BatchApi`), so `createMockTarca()` works too.
 - Items: `{ key, document: () => BatchDocument | Promise<BatchDocument> }`, where `BatchDocument` is `{ kind: 'invoice', input: DocumentInput }` or `{ kind: 'receipt', input: ReceiptInput }`. The trimmed `key` becomes the `vendorId`; an input whose own `vendorId` differs fails that item (`validation`). Empty or duplicate keys reject the whole run before any request (`validation`, `fieldErrors: [{ field: 'items.N.key' }]`).
 - Every item goes through `documents.createOnce` / `receipts.createOnce`, so a rerun never duplicates: already issued items come back `existing`.
 - Options: `concurrency` (1–4, default 1), `ratePerMinute` (item starts per minute, default 30, at most 60; starts are spaced `60000 / ratePerMinute` ms apart on the clock, also with concurrency), `dryRun`, `defaults` (`TarcaDefaults`, used only by `dryRun`; pass the same as `createTarca`), `journal` (`{ track(vendorId, run) }`; every issue runs through it), `once` (the `createOnce` lock options: `lock`, `lockTtlSeconds`, `lockWaitMs`, `lockFailure`), `signal`, `onProgress(progress)`, `recoveryDelayMs`, `now` (the pacing clock). An invalid option rejects with `configuration` before any request.
@@ -312,11 +312,11 @@ Structured logs, OpenTelemetry-compatible spans and Prometheus metrics from tarc
 
 ```ts
 import { trace } from '@opentelemetry/api'
-import { combineHooks, createMetricsRegistry, observe } from 'tarca/observe'
+import { combineHooks, createMetricsRegistry, observe } from 'tarcajs/observe'
 
 const metrics = createMetricsRegistry()
 const tarca = createTarca({
-  hooks: combineHooks(observe({ logger, tracer: trace.getTracer('tarca'), metrics }), ownHooks),
+  hooks: combineHooks(observe({ logger, tracer: trace.getTracer('tarcajs'), metrics }), ownHooks),
 })
 metrics.renderPrometheus()
 ```
@@ -335,8 +335,8 @@ metrics.renderPrometheus()
 Adapts web-standard `(Request) => Response` handlers (payment webhooks, the MCP HTTP handler) to Node's `http`, Express, NestJS and Fastify. Only type imports from `node:http`, so the module itself has no Node dependency.
 
 ```ts
-import { toNodeHandler } from 'tarca/node'
-import { stripeWebhook } from 'tarca/payments/stripe'
+import { toNodeHandler } from 'tarcajs/node'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
 
 app.post('/webhooks/stripe', toNodeHandler(stripeWebhook({ secret, onPayment })))
 app.use(express.json())
@@ -349,21 +349,21 @@ app.use(express.json())
 
 ## tarca/storage
 
-Saves document PDFs to object storage. Runtime-neutral (S3 is signed with SigV4 over `fetch`); `fsStorage` lives in the Node-only `tarca/storage/fs`. The root `tarca` entry never imports either.
+Saves document PDFs to object storage. Runtime-neutral (S3 is signed with SigV4 over `fetch`); `fsStorage` lives in the Node-only `tarcajs/storage/fs`. The root `tarcajs` entry never imports either.
 
 ```ts
-import { s3FetchStorage, storeDocumentPdf } from 'tarca/storage'
+import { s3FetchStorage, storeDocumentPdf } from 'tarcajs/storage'
 
 const storage = s3FetchStorage({ bucket, region: 'auto', endpoint, accessKeyId, secretAccessKey })
 const file = await storeDocumentPdf(tarca, storage, document)
 ```
 
-- `storeDocumentPdf(tarca, storage, documentOrId, { key?, maxWaitMs?, signal? }): Promise<StoredFile>`: computes the key (`documentPdfKey`), downloads with `documents.pdf(id, { maxWaitMs, signal })` (which waits for the 202 "PDF not ready", 30 s by default, and then throws `not_ready`) and stores it with `storePdf`. With a number and no `key` it first calls `documents.get(id)`. `tarca` only needs `documents.get` and `documents.pdf` (`DocumentPdfSource`).
+- `storeDocumentPdf(tarca, storage, documentOrId, { key?, maxWaitMs?, signal? }): Promise<StoredFile>`: computes the key (`documentPdfKey`), downloads with `documents.pdf(id, { maxWaitMs, signal })` (which waits for the 202 "PDF not ready", 30 s by default, and then throws `not_ready`) and stores it with `storePdf`. With a number and no `key` it first calls `documents.get(id)`. `tarcajs` only needs `documents.get` and `documents.pdf` (`DocumentPdfSource`).
 - `documentPdfKey(document, { prefix? })`: `<prefix>/<folder>/YYYY/MM/<number>.pdf`, year and month from `invoiceDate`, the number sanitized (`sanitizeKeySegment`: accents removed, anything but `A-Za-z0-9._-` becomes `-`). Folders by `DocumentType`: `invoice` `szamlak`, `proforma` `szamlak/dijbekero`, `advance` `szamlak/elolegszamla`, `modification` `szamlak/modosito`, `cancellation` `szamlak/sztorno`, `receipt` `nyugtak`, `receipt_cancellation` `nyugtak/sztorno`, `offer` `arajanlatok`, `order_form` `megrendelok`, `waybill` `szallitolevelek`, `dossier` `dossziek`, `cert_of_completion` and `d_cert_of_completion` `teljesitesigazolasok`. Drafts (`draft`, `draft_offer`, `draft_order_form`, `draft_waybill`, or no `invoiceNumber`), an unknown type or a missing `invoiceDate` throw `StorageError` (`operation: 'key'`); an impossible date throws `RangeError`.
 - `storePdf(storage, key, bytes)`: refuses content without the `%PDF` signature (`StorageError`, nothing stored). `isPdf(bytes)`.
 - `StorageAdapter`: `put(key, bytes, { contentType }) → StoredFile { key, url?, size, contentType }`, optional `get(key) → Uint8Array | undefined`, `delete(key)`, `getUrl(key, { expiresInSeconds? })`. `CompleteStorageAdapter` has all four.
 - Keys go through `assertStorageKey`: rejected (`StorageError`, `operation: 'key'`) when empty, longer than 1024, starting with `/`, containing `\`, a control character, or an empty, `.` or `..` segment, also when the dot is percent-encoded (`%2e%2e`, `.%2E`: the URL parser of SDKs that put the key into the URL unencoded would treat it as a path step). Every adapter takes `prefix`.
-- Adapters: `s3FetchStorage({ bucket, region, accessKeyId, secretAccessKey, sessionToken?, endpoint?, forcePathStyle?, publicBaseUrl?, prefix?, fetch? })` (AWS S3 virtual-hosted, path-style for dotted buckets or a custom `endpoint` such as R2, MinIO, Backblaze; presigned `getUrl` up to `S3_MAX_PRESIGN_SECONDS`, 7 days; missing options are a `configuration` `BillingoError`), `s3Storage({ client, bucket, commands, getSignedUrl?, publicBaseUrl?, prefix? })` (your AWS SDK v3 client), `r2BindingStorage(bucket, { publicBaseUrl?, prefix? })` (Workers binding; no signed URLs), `vercelBlobStorage({ put, del?, head?, access, token?, allowOverwrite = true, cacheControlMaxAge?, prefix? })` (no random suffix; `access` is passed to every call; a private store returns no `url` and `getUrl` throws, serve it with `@vercel/blob` `get()` or `presignUrl()`), `supabaseStorage({ client, bucket, public?, upsert = true, cacheControl?, prefix? })` (signed URLs up to `SUPABASE_MAX_SIGNED_URL_SECONDS`), `uploadthingStorage({ utapi, acl?, contentDisposition?, prefix? })` (the key is the `customId`, at most `UPLOADTHING_MAX_CUSTOM_ID_LENGTH` 128; `getUrl` uses `generateSignedURL`, at most 7 days), `memoryStorage({ publicBaseUrl?, prefix? })` (`files`, `clear()`), and `fsStorage({ directory, publicBaseUrl?, prefix? })` from `tarca/storage/fs` (atomic write through a temp file, `pathFor(key)`; refuses to write, read or delete outside `directory`, also through symlinks).
+- Adapters: `s3FetchStorage({ bucket, region, accessKeyId, secretAccessKey, sessionToken?, endpoint?, forcePathStyle?, publicBaseUrl?, prefix?, fetch? })` (AWS S3 virtual-hosted, path-style for dotted buckets or a custom `endpoint` such as R2, MinIO, Backblaze; presigned `getUrl` up to `S3_MAX_PRESIGN_SECONDS`, 7 days; missing options are a `configuration` `BillingoError`), `s3Storage({ client, bucket, commands, getSignedUrl?, publicBaseUrl?, prefix? })` (your AWS SDK v3 client), `r2BindingStorage(bucket, { publicBaseUrl?, prefix? })` (Workers binding; no signed URLs), `vercelBlobStorage({ put, del?, head?, access, token?, allowOverwrite = true, cacheControlMaxAge?, prefix? })` (no random suffix; `access` is passed to every call; a private store returns no `url` and `getUrl` throws, serve it with `@vercel/blob` `get()` or `presignUrl()`), `supabaseStorage({ client, bucket, public?, upsert = true, cacheControl?, prefix? })` (signed URLs up to `SUPABASE_MAX_SIGNED_URL_SECONDS`), `uploadthingStorage({ utapi, acl?, contentDisposition?, prefix? })` (the key is the `customId`, at most `UPLOADTHING_MAX_CUSTOM_ID_LENGTH` 128; `getUrl` uses `generateSignedURL`, at most 7 days), `memoryStorage({ publicBaseUrl?, prefix? })` (`files`, `clear()`), and `fsStorage({ directory, publicBaseUrl?, prefix? })` from `tarcajs/storage/fs` (atomic write through a temp file, `pathFor(key)`; refuses to write, read or delete outside `directory`, also through symlinks).
 - Errors: `StorageError { operation: 'put' | 'get' | 'delete' | 'getUrl' | 'key', key, status?, cause }`, `isStorageError`, `guardStorageCall(service, operation, key, call)` for your own adapter. Messages never contain credentials.
 - `signAwsRequest()` and `presignAwsUrl()` are exported for other SigV4 uses (verified against AWS's published test vectors).
 
@@ -373,7 +373,7 @@ const file = await storeDocumentPdf(tarca, storage, document)
 
 ```ts
 import { Redis } from '@upstash/redis'
-import { diagnoseStore, upstashRedisStore } from 'tarca/stores'
+import { diagnoseStore, upstashRedisStore } from 'tarcajs/stores'
 
 const store = upstashRedisStore(Redis.fromEnv(), { prefix: 'app1:', timeoutMs: 2_000 })
 const tarca = createTarca({ createOnceLock: store })
@@ -393,7 +393,7 @@ await diagnoseStore(store)
 An append-only record of every issued, cancelled and modified document, reconciled against Billingo's document list. Billingo reports to NAV itself, so this is not a NAV summary. Runtime-neutral; never imports the client.
 
 ```ts
-import { createJournal, kvJournal } from 'tarca/journal'
+import { createJournal, kvJournal } from 'tarcajs/journal'
 
 const journal = createJournal(kvJournal(store))
 const tarca = createTarca({ hooks: { onDocument: (event) => journal.record(event), onDocumentError: 'throw' } })
@@ -409,15 +409,15 @@ await journal.reconcile(tarca, { from: '2026-10-01', to: '2026-10-31' })
 - `reserve(vendorId)`, `release(vendorId)`, `pending(range?)` (default: the last 30 Budapest days).
 - `settle(tarca, { range?, releaseNotFound? })`: looks each pending `vendorId` up with `documents.findByVendorId`, records it with `source: 'settle'` and clears it. Not found stays pending unless `releaseNotFound`. Returns `{ recorded, notFound, failed: [{ reservation, error }] }`; a lookup error fails only that item.
 - `entries({ from, to, type? })`: sorted by date, then number. Ranges are Budapest `YYYY-MM-DD` dates, at most `MAX_JOURNAL_RANGE_DAYS` (366); anything else is a `RangeError`.
-- `reconcile(tarca, { from, to, dryRun?, graceSeconds = 120, signal? })`: reads `documents.all({ startDate, endDate, perPage: 100 })` (drafts skipped) and compares by id. `added`: only in Billingo, recorded with `source: 'reconcile'` unless `dryRun`; an entry the storage holds but does not list is re-indexed through `indexEntry` (a storage without it throws). `missing`: only in the journal and recorded more than `graceSeconds` ago (the list lags 15–30 s); since issued documents cannot be deleted, this means a wrong key or profile. A proforma missing from the list is looked up with `documents.get` first, because archived proformas leave the list. `mismatched`: `number`, `type`, `grossTotal` or `currency` differ (`{ id, fields, journal, billingo }`). `changed`: paid or cancelled since recording (`{ id, number, cancelled, recordedPaymentStatus, paymentStatus }`); entries are never rewritten. `matched`: the count without a mismatch. `tarca` only needs `documents.all` and `documents.get`.
+- `reconcile(tarca, { from, to, dryRun?, graceSeconds = 120, signal? })`: reads `documents.all({ startDate, endDate, perPage: 100 })` (drafts skipped) and compares by id. `added`: only in Billingo, recorded with `source: 'reconcile'` unless `dryRun`; an entry the storage holds but does not list is re-indexed through `indexEntry` (a storage without it throws). `missing`: only in the journal and recorded more than `graceSeconds` ago (the list lags 15–30 s); since issued documents cannot be deleted, this means a wrong key or profile. A proforma missing from the list is looked up with `documents.get` first, because archived proformas leave the list. `mismatched`: `number`, `type`, `grossTotal` or `currency` differ (`{ id, fields, journal, billingo }`). `changed`: paid or cancelled since recording (`{ id, number, cancelled, recordedPaymentStatus, paymentStatus }`); entries are never rewritten. `matched`: the count without a mismatch. `tarcajs` only needs `documents.all` and `documents.get`.
 
 ## tarca/payments
 
-Issues a receipt or an invoice from a Stripe, SimplePay, Barion, Revolut or PayPal payment, exactly once, without the providers' SDKs. Runtime-neutral (Web Crypto, `fetch`); `issueForPayment` is a standalone function, not a client method, so the root stays small. Subpaths: `tarca/payments` (shared), `tarca/payments/stripe`, `/simplepay`, `/barion`, `/revolut`, `/paypal`.
+Issues a receipt or an invoice from a Stripe, SimplePay, Barion, Revolut or PayPal payment, exactly once, without the providers' SDKs. Runtime-neutral (Web Crypto, `fetch`); `issueForPayment` is a standalone function, not a client method, so the root stays small. Subpaths: `tarcajs/payments` (shared), `tarcajs/payments/stripe`, `/simplepay`, `/barion`, `/revolut`, `/paypal`.
 
 ```ts
-import { issueForPayment } from 'tarca/payments'
-import { stripeWebhook } from 'tarca/payments/stripe'
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
 
 export const POST = stripeWebhook({
   secret: process.env.STRIPE_WEBHOOK_SECRET!,
@@ -431,7 +431,7 @@ export const POST = stripeWebhook({
 - **Verification**: Stripe `Stripe-Signature` `t=…,v1=…` (every `v1`, unsigned `secret`/`destination`/`payload` debug entries and unknown entries are ignored; thin v2 events become `kind: 'other'`). Stripe events: `checkout.session.completed` (paid) and `checkout.session.async_payment_succeeded` → `paid`, `payment_intent.succeeded` → `paid` (without `apiKey` the webhook delivers it as `other`, because a PaymentIntent carries no buyer data and whichever event arrives first would fix receipt versus invoice; with `apiKey` it is enriched from its Checkout session), `charge.refunded` → `refunded` / `partially-refunded`, `charge.refund.updated`, `refund.updated`, `refund.failed` with refund status `failed` or `canceled` → `refund-failed` (`refunds: [{ id: <re_…>, amount }]`). SimplePay base64 HMAC-SHA384 of the raw body (`Signature`), one key per merchant. Barion has no signature: the callback's `paymentId` is checked by `GET /v4/Payment/{id}/PaymentState` with `x-pos-key`. Revolut `Revolut-Signature: v1=<hex>` over `v1.{timestamp}.{body}`, millisecond timestamp, 5 minutes both ways. PayPal `POST /v1/notifications/verify-webhook-signature` with the raw event embedded byte for byte. All comparisons use `timingSafeEqual`.
 - **`PaymentEvent`**: `{ provider, kind: 'paid' | 'refunded' | 'partially-refunded' | 'refund-failed' | 'failed' | 'other', id, eventId?, eventType?, orderRef?, amount?, refundedAmount?, refunds?, paidAt?, method, customer?, items?, includesPayment?, raw }`. `id` is what identifies the payment and its refunds alike: Stripe the `payment_intent`, SimplePay the transaction, Barion the `PaymentId`, Revolut the original order, PayPal the capture. `includesPayment: true` marks a refund event that also carries the whole payment (`amount`, `items`, `customer` of the sale): Barion sets it, because its callback is a `PaymentState` snapshot and no separate paid event follows a refund. `method` is a Billingo `PaymentMethod`: `stripe`, `simple_pay` (`wire_transfer` for WIRE), `barion` (`wire_transfer` for BankTransfer), `revolut`, `paypal`.
 - **Amounts** are `PaymentAmount = { value, minor, currency }`: `minor` is an integer in the currency's ISO 4217 minor unit, `value = minor / 10^exponent`. Every comparison is on `minor`, without tolerance. `fromMinorUnits(minor, currency, 'iso4217' | 'stripe')` (Stripe HUF is two-decimal: 127000 = 1270 Ft; Stripe ISK/UGX are converted to ISO), `parseDecimalAmount(string | number, currency)` (rejects more decimals than the currency has), `currencyExponent`, `isBillingoCurrency`. Line items carry `totalGross: PaymentAmount`; refunds `{ id, amount, refundedBefore?, createdAt? }`. Stripe refund ids are `<charge>:<cumulative amount_refunded>`, so two Stripe events about the same refund map to one id.
-- **`issueForPayment(tarca, payment, options): Promise<IssuedDocument>`**. `tarca` is structural: `documents` (`createOnce`, `findByVendorId`, `get`, `list`, `cancel`, `createModification`, `payments.replace`), `receipts.createOnce`, `currencies.rate`. The vendorId is `paymentVendorId(payment)` = `<PROVIDER>-<id>`, or `<PROVIDER>-h<16 hex of sha256(id)>` when the id has characters outside `[A-Za-z0-9_.:-]` or the result exceeds 64; `options.vendorId` overrides. Options: `vat`, `vatFor(item)`, `items` (gross unit prices), `fallbackItemName`, `document: 'auto' | 'receipt' | 'invoice'`, `partner` (id or `PartnerInput`), `buyerIsBusiness`, `invoiceRequested`, `cashRegisterRequired`, `currency`, `conversionRate`, `method`, `allowAmountMismatch`, `partialRefund: 'auto' | 'proportional' | 'skip'`, `refundItems(context)`, `ledger`, `receipt` and `invoice` (extra `receipts.createOnce` / `documents.createOnce` fields), plus the `createOnce` options (`signal`, `recoveryDelayMs`, `lock`, …).
+- **`issueForPayment(tarca, payment, options): Promise<IssuedDocument>`**. `tarcajs` is structural: `documents` (`createOnce`, `findByVendorId`, `get`, `list`, `cancel`, `createModification`, `payments.replace`), `receipts.createOnce`, `currencies.rate`. The vendorId is `paymentVendorId(payment)` = `<PROVIDER>-<id>`, or `<PROVIDER>-h<16 hex of sha256(id)>` when the id has characters outside `[A-Za-z0-9_.:-]` or the result exceeds 64; `options.vendorId` overrides. Options: `vat`, `vatFor(item)`, `items` (gross unit prices), `fallbackItemName`, `document: 'auto' | 'receipt' | 'invoice'`, `partner` (id or `PartnerInput`), `buyerIsBusiness`, `invoiceRequested`, `cashRegisterRequired`, `currency`, `conversionRate`, `method`, `allowAmountMismatch`, `partialRefund: 'auto' | 'proportional' | 'skip'`, `refundItems(context)`, `ledger`, `receipt` and `invoice` (extra `receipts.createOnce` / `documents.createOnce` fields), plus the `createOnce` options (`signal`, `recoveryDelayMs`, `lock`, …).
 - **Paid**: local validation first (currency is a Billingo `Currency`, `value` and `minor` agree, every item has a VAT rate, `vatFor` → item `vat` → `vat`, never guessed; the items' gross sum under Billingo's line rounding equals `amount.minor` unless `allowAmountMismatch`; an item total that does not divide by its quantity becomes one line `Name (3 db)`). Then `findByVendorId`: an existing document returns `created: false` (a cancelled one is `skipped`). Otherwise a foreign currency gets `conversionRate` or `currencies.rate({ from, to: 'HUF', date: fulfilment date })` (reported in `conversion`), `chooseDocument` decides (900 000 Ft, tax-numbered or business buyer, `invoiceRequested` → invoice; `cashRegisterRequired` → `validation`), and `receipts.createOnce` or `documents.createOnce` issues it. An invoice whose `paymentStatus` is not `paid` gets `payments.replace(id, [{ date: paidAt (Budapest), price: document.grossTotal, paymentMethod, conversionRate }])`; `paymentRecorded` says so. `DocumentInsert.paid` is not used. Results: `{ kind: 'receipt' | 'invoice', vendorId, created, document, decision, conversion, paymentRecorded? }`.
 - **Buyer**: `partnerFromCustomer(customer)` needs name, postcode, city, street and a two-letter country (or none: Billingo's default HU). Hungarian tax number → `taxcode: '12345678-1-23'`, `taxType: 'HAS_TAX_NUMBER'`; EU or foreign number → `FOREIGN`; none → `NO_TAX_NUMBER`; a business without a number gets no `taxType`. A Hungarian buyer with only an EU (`HU…`) or malformed number is a `validation` error. Receipts are issued without a partner.
 - **Refunded**: no document → `in_progress` error (the paid event has not been processed yet; the webhook answers 500 and the provider redelivers the refund; for a payment that will never get a document, acknowledge this error in `onPayment`), except with `includesPayment: true`, where the payment's document is issued first from the same event, exactly as for `paid`, and then refunded; already `cancelled` → `{ kind: 'cancellation', created: false }`; otherwise `documents.cancel(id)` exactly once: calls for the same vendorId on one client run one after another, and with a `ledger` (needs `setIfAbsent`, else `configuration`) a `tarca:refund:` key reserved for 10 minutes keeps a second process from POSTing (the holder reads the document again after taking the key and before the POST, so a process with a stale read never cancels twice; a process that finds the key taken reads the document: cancelled → `created: false`, else `in_progress`; a ledger error is `store_unavailable` before any request). After an uncertain error it waits `recoveryDelayMs`, reads the document again and the `cancelled` flag decides (`created: true`); if that is undecidable the original error is rethrown, never a second POST. A modified invoice (`correctionType: 'modified'`, or Billingo's 400 `Cannot cancel the document…`) is not cancelled: the remaining amount (items minus the related modifications in `documents.list`) gets a modification with refund id `teljes`. When the original says `modified` but the lagging list shows no modification yet → `in_progress` (redelivery); when the search would need more than 5 pages → `validation`, never a modification for the full amount.
@@ -442,17 +442,17 @@ export const POST = stripeWebhook({
 
 ## tarca/mcp and the CLI
 
-### The `tarca` command (Node 22+)
+### The `tarcajs` command (Node 22+)
 
 ```bash
-npx tarca doctor [--tax-code <adószám>] [--defaults <file.json>] [--check-update] [--json | --report]
-npx tarca verify
-npx tarca document get <id> | --vendor <vendorId>
-npx tarca mcp [--allow-write] [--defaults <file.json>]
+npx tarcajs doctor [--tax-code <adószám>] [--defaults <file.json>] [--check-update] [--json | --report]
+npx tarcajs verify
+npx tarcajs document get <id> | --vendor <vendorId>
+npx tarcajs mcp [--allow-write] [--defaults <file.json>]
 ```
 
-- Reads `BILLINGO_API_KEY`. `tarca help`, and `--help` or `-h` anywhere before `--` (`tarca doctor --help`), print the usage with exit 0, without a key or a request. Exit codes: 0 success, 1 error (or a failed doctor check), 2 usage error. Messages are Hungarian; a Billingo error prints its `hint` (`Tipp:`) and `traceId`.
-- `doctor` reads only, with at most 3 Billingo GETs (`organization.get`, `documentBlocks.list`, `bankAccounts.list`) and `maxAttempts: 1`. Checks, each `ok`, `warn`, `fail` or `skip`: `node` (22+), `timezone` (Europe/Budapest ICU data), `api-key` (missing: fail and the rest is skipped; surrounding whitespace: warn; only the length is printed, never the key), `auth` (401: fail with the hint to create a V3 key under Beállítások → API kulcsok), `clock` (the `Date` header against the local clock: up to 2 s ok, up to 30 s warn, above fail, because fulfillment and due dates are Budapest calendar days computed locally), `profile`, `nav`, `subscription` (see `summarizeProfile` below), `environment` (`NODE_ENV=test` or `development` on a NAV-connected profile: warn), `document-blocks` (no `invoice` block: fail; no `receipt` block: warn; with `--defaults`, `blockId` and `receiptBlockId` must exist with the right type), `bank-accounts` (none: warn; prints the count and currencies, never account numbers; with `--defaults`, `bankAccountId` must exist) and, with `--check-update`, `update` (`registry.npmjs.org/tarca/latest`, skipped on a network error). `--tax-code` is compared with the company's tax code (8 digits match the prefix) and never printed. `--report` is a secret-free Markdown table for an issue.
+- Reads `BILLINGO_API_KEY`. `tarcajs help`, and `--help` or `-h` anywhere before `--` (`tarcajs doctor --help`), print the usage with exit 0, without a key or a request. Exit codes: 0 success, 1 error (or a failed doctor check), 2 usage error. Messages are Hungarian; a Billingo error prints its `hint` (`Tipp:`) and `traceId`.
+- `doctor` reads only, with at most 3 Billingo GETs (`organization.get`, `documentBlocks.list`, `bankAccounts.list`) and `maxAttempts: 1`. Checks, each `ok`, `warn`, `fail` or `skip`: `node` (22+), `timezone` (Europe/Budapest ICU data), `api-key` (missing: fail and the rest is skipped; surrounding whitespace: warn; only the length is printed, never the key), `auth` (401: fail with the hint to create a V3 key under Beállítások → API kulcsok), `clock` (the `Date` header against the local clock: up to 2 s ok, up to 30 s warn, above fail, because fulfillment and due dates are Budapest calendar days computed locally), `profile`, `nav`, `subscription` (see `summarizeProfile` below), `environment` (`NODE_ENV=test` or `development` on a NAV-connected profile: warn), `document-blocks` (no `invoice` block: fail; no `receipt` block: warn; with `--defaults`, `blockId` and `receiptBlockId` must exist with the right type), `bank-accounts` (none: warn; prints the count and currencies, never account numbers; with `--defaults`, `bankAccountId` must exist) and, with `--check-update`, `update` (`registry.npmjs.org/tarcajs/latest`, skipped on a network error). `--tax-code` is compared with the company's tax code (8 digits match the prefix) and never printed. `--report` is a secret-free Markdown table for an issue.
 - Not checked, because reading cannot prove it: whether the key is read-only or read+write, and whether a live profile has the "API + Tömeges" add-on (only a write answering 402 proves it is missing). doctor says so instead of guessing.
 - `document get` prints the document as JSON. An unknown or foreign id (Billingo answers 403, not 404) and an unknown vendorId exit with 1 and a Hungarian message.
 - `--defaults` takes a `TarcaDefaults` JSON file (`-` reads stdin, except for `mcp`, where stdin carries the protocol and `-` is a usage error); unknown keys, wrong types and invalid values are rejected before anything runs.
@@ -460,7 +460,7 @@ npx tarca mcp [--allow-write] [--defaults <file.json>]
 ### createTarcaMcpServer(options?)
 
 ```ts
-import { createTarcaMcpServer } from 'tarca/mcp'
+import { createTarcaMcpServer } from 'tarcajs/mcp'
 
 const server = createTarcaMcpServer({ apiKey: process.env.BILLINGO_API_KEY, allowWrite: false })
 const connection = server.connect()
@@ -514,7 +514,7 @@ Deliberately not offered: `download_document` and `pos_print` (binary PDF in the
 ### createTarcaMcpHandler(server, options)
 
 ```ts
-import { createTarcaMcpHandler, createTarcaMcpServer, type TarcaMcpHandler } from 'tarca/mcp'
+import { createTarcaMcpHandler, createTarcaMcpServer, type TarcaMcpHandler } from 'tarcajs/mcp'
 
 let handler: TarcaMcpHandler | undefined
 

@@ -39,7 +39,7 @@ for (const [subpath, target] of Object.entries(pkg.exports)) {
   const entry = join(root, target.import.default)
   const files = closure(entry)
   const { raw, gzip } = measure(files)
-  const name = subpath === '.' ? 'tarca' : `tarca/${subpath.slice(2)}`
+  const name = subpath === '.' ? 'tarcajs' : `tarcajs/${subpath.slice(2)}`
   const limit = limits.gzipKb[name]
   const forbidden = (limits.forbidden[name] ?? []).filter((path) =>
     [...files].some((file) => relative(root, file).startsWith(path)),

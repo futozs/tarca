@@ -5,11 +5,11 @@ tarca is a zero-dependency TypeScript client for the [Billingo](https://www.bill
 tarca is an independent open-source project. It is not made by Billingo and is not affiliated with or endorsed by Billingo.
 
 ```bash
-npm install tarca
+npm install tarcajs
 ```
 
 ```ts
-import { createTarca } from 'tarca'
+import { createTarca } from 'tarcajs'
 
 const tarca = createTarca() // reads BILLINGO_API_KEY
 
@@ -37,19 +37,19 @@ tarca is 0.x. All 57 Billingo API v3 operations are implemented: the 54 document
 - Receipts: `tarca.receipts.create()`, `createOnce()`, `finalizeDraft()`
 - Partners (including `findOrCreate()`), products, inventory, document blocks, bank accounts, spendings, exports
 - Organization data, tax number check, server time, legacy ID conversion, exchange rates
-- `tarca/testing`: an in-memory fake Billingo (`createFakeBillingoFetch()`) and `createMockTarca()` for your own tests
-- Full TypeScript types generated from the official OpenAPI spec, corrected where the live API differs: `import type { Billingo } from 'tarca'`
+- `tarcajs/testing`: an in-memory fake Billingo (`createFakeBillingoFetch()`) and `createMockTarca()` for your own tests
+- Full TypeScript types generated from the official OpenAPI spec, corrected where the live API differs: `import type { Billingo } from 'tarcajs'`
 
-Add-ons, each a separate subpath that the root `tarca` entry never loads:
+Add-ons, each a separate subpath that the root `tarcajs` entry never loads:
 
-- `tarca/payments` (`/stripe`, `/simplepay`, `/barion`, `/revolut`, `/paypal`): verifies the provider's webhook without its SDK and issues a receipt or an invoice exactly once, with the payment id as `vendorId`. Refunds become a cancellation or, for a partial refund, a modification invoice.
-- `tarca/storage` and `tarca/storage/fs` (Node): stores document PDFs in S3, Cloudflare R2, Vercel Blob, Supabase, UploadThing or on disk. S3 is signed with SigV4 over `fetch`, no AWS SDK.
-- `tarca/stores`: Upstash, Redis, Durable Object and Cloudflare KV adapters for the cross-process `createOnce` lock, the journal, webhook dedupe and the refund ledger.
-- `tarca/journal`: an append-only record of every issued, cancelled and modified document, reconciled against Billingo.
-- `tarca/batch`: bulk and recurring invoicing, exactly once and paced under the rate limit, with a dry run.
-- `tarca/observe`: redacted structured logs, OpenTelemetry-compatible spans and Prometheus metrics.
-- `tarca/node`: mounts the web-standard handlers under Node `http`, Express, NestJS and Fastify with the raw body intact.
-- `tarca/mcp` and the `tarca` command: `npx tarca doctor` checks the key, profile, NAV connection, subscription and document blocks read-only; `npx tarca mcp` is an MCP server for AI assistants that issues documents only with `--allow-write` and a confirmation code from a preview.
+- `tarcajs/payments` (`/stripe`, `/simplepay`, `/barion`, `/revolut`, `/paypal`): verifies the provider's webhook without its SDK and issues a receipt or an invoice exactly once, with the payment id as `vendorId`. Refunds become a cancellation or, for a partial refund, a modification invoice.
+- `tarcajs/storage` and `tarcajs/storage/fs` (Node): stores document PDFs in S3, Cloudflare R2, Vercel Blob, Supabase, UploadThing or on disk. S3 is signed with SigV4 over `fetch`, no AWS SDK.
+- `tarcajs/stores`: Upstash, Redis, Durable Object and Cloudflare KV adapters for the cross-process `createOnce` lock, the journal, webhook dedupe and the refund ledger.
+- `tarcajs/journal`: an append-only record of every issued, cancelled and modified document, reconciled against Billingo.
+- `tarcajs/batch`: bulk and recurring invoicing, exactly once and paced under the rate limit, with a dry run.
+- `tarcajs/observe`: redacted structured logs, OpenTelemetry-compatible spans and Prometheus metrics.
+- `tarcajs/node`: mounts the web-standard handlers under Node `http`, Express, NestJS and Fastify with the raw body intact.
+- `tarcajs/mcp` and the `tarcajs` command: `npx tarcajs doctor` checks the key, profile, NAV connection, subscription and document blocks read-only; `npx tarcajs mcp` is an MCP server for AI assistants that issues documents only with `--allow-write` and a confirmation code from a preview.
 
 Planned: a documentation website.
 

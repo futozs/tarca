@@ -1,6 +1,6 @@
 # tarca for AI coding agents
 
-`tarca` is a zero-dependency TypeScript client for the Billingo API v3, a Hungarian invoicing service. It is the sibling of `kassza` (the Számlázz.hu client) and follows the same patterns. It is an independent open-source project, not a Billingo product.
+`tarcajs` is a zero-dependency TypeScript client for the Billingo API v3, a Hungarian invoicing service. It is the sibling of `kassza` (the Számlázz.hu client) and follows the same patterns. It is an independent open-source project, not a Billingo product.
 
 Status: 0.x. Every Billingo API v3 operation is implemented (57: the 54 documented in the 3.0.14 and 3.0.15 specs plus 3 undocumented document block routes verified live), and every one runs in a live end-to-end test on a Billingo developer test profile:
 
@@ -8,13 +8,13 @@ Status: 0.x. Every Billingo API v3 operation is implemented (57: the 54 document
 - `tarca.receipts`: receipts, with or without a partner, `createOnce`, drafts.
 - `tarca.partners` (with `findOrCreate`), `tarca.products`, `tarca.inventory`, `tarca.documentBlocks`, `tarca.bankAccounts`, `tarca.spendings`, `tarca.exports`.
 - `tarca.organization`, `tarca.utils` (server time, tax number check, legacy ID), `tarca.currencies`.
-- `tarca.verifyCredentials()`, `nullIfNotFound()`, `BillingoError`, request hooks, and TypeScript types for every Billingo schema (`import type { Billingo } from 'tarca'`).
-- `tarca/testing`: `createMockTarca()` and `createFakeBillingoFetch()`, an in-memory Billingo for the user's own tests.
-- `tarca/payments` (+ `/stripe`, `/simplepay`, `/barion`, `/revolut`, `/paypal`): payment webhooks → receipt or invoice exactly once, refunds by cancellation or modification invoice.
-- `tarca/storage` (+ the Node-only `tarca/storage/fs`): document PDFs to S3, R2, Vercel Blob, Supabase, UploadThing or disk.
-- `tarca/stores`: shared `KeyValueStore` adapters (Upstash, Redis, Durable Object, Cloudflare KV) for the `createOnce` lock, the journal, webhook dedupe and the refund ledger.
-- `tarca/journal`: append-only document journal with `reconcile` against Billingo. `tarca/batch`: paced, exactly-once bulk and recurring invoicing. `tarca/observe`: redacted logs, spans and Prometheus metrics. `tarca/node`: web handlers under Express, NestJS, Fastify.
-- `tarca/mcp` and the `tarca` command (`npx tarca doctor`, `npx tarca mcp`): an MCP server whose writes need `allowWrite` plus a preview's confirmation code, and a read-only environment check.
+- `tarca.verifyCredentials()`, `nullIfNotFound()`, `BillingoError`, request hooks, and TypeScript types for every Billingo schema (`import type { Billingo } from 'tarcajs'`).
+- `tarcajs/testing`: `createMockTarca()` and `createFakeBillingoFetch()`, an in-memory Billingo for the user's own tests.
+- `tarcajs/payments` (+ `/stripe`, `/simplepay`, `/barion`, `/revolut`, `/paypal`): payment webhooks → receipt or invoice exactly once, refunds by cancellation or modification invoice.
+- `tarcajs/storage` (+ the Node-only `tarcajs/storage/fs`): document PDFs to S3, R2, Vercel Blob, Supabase, UploadThing or disk.
+- `tarcajs/stores`: shared `KeyValueStore` adapters (Upstash, Redis, Durable Object, Cloudflare KV) for the `createOnce` lock, the journal, webhook dedupe and the refund ledger.
+- `tarcajs/journal`: append-only document journal with `reconcile` against Billingo. `tarcajs/batch`: paced, exactly-once bulk and recurring invoicing. `tarcajs/observe`: redacted logs, spans and Prometheus metrics. `tarcajs/node`: web handlers under Express, NestJS, Fastify.
+- `tarcajs/mcp` and the `tarcajs` command (`npx tarcajs doctor`, `npx tarcajs mcp`): an MCP server whose writes need `allowWrite` plus a preview's confirmation code, and a read-only environment check.
 
 The API may still change between 0.x releases; [api.md](./api.md) is the reference for the installed version.
 
@@ -36,4 +36,4 @@ Migrating from `@codingsans/billingo-client`? Follow [skills/migrate-from-coding
 2. Never retry a document create yourself. tarca retries only GET requests. Issue through `documents.createOnce` / `receipts.createOnce` with a `vendorId` derived from the order or payment ID: they look the document up first and recover after uncertain failures.
 3. Branch on `BillingoError.category`, not on message text. Log `traceId`; Billingo support asks for it.
 4. PUT endpoints replace the whole resource: pass the full object to `update`.
-5. Develop and test against a Billingo developer test profile, never a live profile. In unit tests use `createMockTarca()` from `tarca/testing` instead of calling the API.
+5. Develop and test against a Billingo developer test profile, never a live profile. In unit tests use `createMockTarca()` from `tarcajs/testing` instead of calling the API.

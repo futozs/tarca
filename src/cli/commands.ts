@@ -24,7 +24,7 @@ function documentReferenceOf(args: ParsedArgs): DocumentReference {
   const vendorId = flagValue(args, 'vendor')
   if ((id === undefined) === (vendorId === undefined)) {
     throw new CliUsageError(
-      'Pontosan egyet adj meg: tarca document get <azonosító> | --vendor <vendorId>',
+      'Pontosan egyet adj meg: tarcajs document get <azonosító> | --vendor <vendorId>',
     )
   }
   if (vendorId !== undefined) {

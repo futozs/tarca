@@ -1,24 +1,24 @@
 {
   "gzipKb": {
-    "tarca": 27,
-    "tarca/testing": 53,
-    "tarca/node": 3,
-    "tarca/batch": 21,
-    "tarca/observe": 8,
-    "tarca/storage": 14,
-    "tarca/storage/fs": 7,
-    "tarca/stores": 8,
-    "tarca/journal": 10,
-    "tarca/mcp": 55,
-    "tarca/payments": 31,
-    "tarca/payments/stripe": 13,
-    "tarca/payments/simplepay": 14,
-    "tarca/payments/barion": 11,
-    "tarca/payments/revolut": 13,
-    "tarca/payments/paypal": 13
+    "tarcajs": 27,
+    "tarcajs/testing": 53,
+    "tarcajs/node": 3,
+    "tarcajs/batch": 21,
+    "tarcajs/observe": 8,
+    "tarcajs/storage": 14,
+    "tarcajs/storage/fs": 7,
+    "tarcajs/stores": 8,
+    "tarcajs/journal": 10,
+    "tarcajs/mcp": 55,
+    "tarcajs/payments": 31,
+    "tarcajs/payments/stripe": 13,
+    "tarcajs/payments/simplepay": 14,
+    "tarcajs/payments/barion": 11,
+    "tarcajs/payments/revolut": 13,
+    "tarcajs/payments/paypal": 13
   },
   "forbidden": {
-    "tarca": [
+    "tarcajs": [
       "dist/testing/",
       "dist/node/",
       "dist/batch/",
@@ -30,16 +30,16 @@
       "dist/cli.",
       "dist/payments/"
     ],
-    "tarca/node": ["dist/client"],
-    "tarca/observe": ["dist/client"],
-    "tarca/stores": ["dist/client"],
-    "tarca/storage": ["dist/client"],
-    "tarca/journal": ["dist/client"],
-    "tarca/payments": ["dist/client", "dist/testing/"],
-    "tarca/payments/stripe": ["dist/client", "dist/testing/"],
-    "tarca/payments/simplepay": ["dist/client", "dist/testing/"],
-    "tarca/payments/barion": ["dist/client", "dist/testing/"],
-    "tarca/payments/revolut": ["dist/client", "dist/testing/"],
-    "tarca/payments/paypal": ["dist/client", "dist/testing/"]
+    "tarcajs/node": ["dist/client"],
+    "tarcajs/observe": ["dist/client"],
+    "tarcajs/stores": ["dist/client"],
+    "tarcajs/storage": ["dist/client"],
+    "tarcajs/journal": ["dist/client"],
+    "tarcajs/payments": ["dist/client", "dist/testing/"],
+    "tarcajs/payments/stripe": ["dist/client", "dist/testing/"],
+    "tarcajs/payments/simplepay": ["dist/client", "dist/testing/"],
+    "tarcajs/payments/barion": ["dist/client", "dist/testing/"],
+    "tarcajs/payments/revolut": ["dist/client", "dist/testing/"],
+    "tarcajs/payments/paypal": ["dist/client", "dist/testing/"]
   }
 }

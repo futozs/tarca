@@ -284,7 +284,7 @@ function announcement(scope, type, theme, centerY, operations) {
 
 function installPill(scope, type, theme, centerY) {
   const size = 22
-  const command = 'npm i tarca'
+  const command = 'npm i tarcajs'
   const promptWidth = type.measure('$', { font: 'monoMedium', size })
   const commandWidth = type.measure(command, { font: 'monoMedium', size })
   const width = 32 + promptWidth + 14 + commandWidth + 32
@@ -425,7 +425,7 @@ export function heroDocument({ type, theme, site }) {
     width: WIDTH,
     height: HEIGHT,
     title: WORD,
-    description: `${WORD}: ${TAGLINE}. Telepítés: npm i tarca. Billingo API v3, 0 függőség, Node, Bun, Deno és Edge.`,
+    description: `${WORD}: ${TAGLINE}. Telepítés: npm i tarcajs. Billingo API v3, 0 függőség, Node, Bun, Deno és Edge.`,
     style: STYLE,
     defs: defs(theme) + scope.defs(),
     body: body + border,

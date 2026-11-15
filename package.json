@@ -1,5 +1,5 @@
 {
-  "name": "tarca",
+  "name": "tarcajs",
   "version": "0.0.0",
   "author": {
     "name": "futozs",
@@ -13,7 +13,7 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "bin": {
-    "tarca": "dist/cli.js"
+    "tarcajs": "dist/cli.js"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
@@ -220,7 +220,7 @@
     "szamla",
     "számla",
     "szamlazas",
-    "tarca",
+    "tarcajs",
     "typescript"
   ],
   "license": "MIT",

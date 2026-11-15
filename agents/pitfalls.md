@@ -49,7 +49,7 @@
 
 ## Webhooks, stores and AI tools
 
-- Payment webhooks verify the raw body. Mount them before `express.json()` (`toNodeHandler` from `tarca/node`), and never re-serialize the body before passing it on.
+- Payment webhooks verify the raw body. Mount them before `express.json()` (`toNodeHandler` from `tarcajs/node`), and never re-serialize the body before passing it on.
 - Let a webhook answer 500 when issuing fails: the provider redelivers and `createOnce` returns the existing document. Do not catch and swallow errors in `onPayment`, except for a `refund-proposal`, a `refund-failed` or a `validation` error that needs a human.
 - A refund whose payment has no document yet throws `in_progress` on purpose: the paid event may still be waiting for redelivery, and acknowledging the refund would let that redelivery issue a document for returned money. Acknowledge it only for payments that will never get a document. Barion is the exception: its callback is a snapshot of the whole payment (`includesPayment: true`) and no separate paid event comes after a refund, so a refund with no document first issues the payment's document from the same state, then cancels or modifies it.
 - A Stripe refund can fail after `charge.refunded`, when tarca has already cancelled or modified the document. `charge.refund.updated` then gives `refund-failed`; correct the books by hand.
@@ -58,7 +58,7 @@
 - `DocumentHookError` and `JournalWriteError` arrive after the document exists. Record `error.document` / `error.result`; never issue again.
 - Cloudflare KV is eventually consistent and has no atomic write: it is fine for webhook dedupe, never for the `createOnce` lock, the journal or the refund ledger. `resilient: true` stores swallow errors and are unsuitable for the same three. Check a store with `diagnoseStore`.
 - The MCP server's write tools need `allowWrite` and a confirmation code from a preview of the same input. On the edge, `authorize` and a `confirmationSecret` of at least 16 bytes are required, and the server must be created once per isolate, not per request.
-- `toNodeHandler` without `onError` logs only an error summary; your own logs should not print BillingoError messages either, because a `validation` message can quote an e-mail address or a vendorId. `tarca/observe` redacts by default.
+- `toNodeHandler` without `onError` logs only an error summary; your own logs should not print BillingoError messages either, because a `validation` message can quote an e-mail address or a vendorId. `tarcajs/observe` redacts by default.
 
 ## Error categories
 

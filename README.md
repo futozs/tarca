@@ -1,7 +1,7 @@
 <!-- Ezt a fájlt a readme/build.mjs generálja a readme/template.md alapján. Ne szerkeszd kézzel: írd át a sablont, és futtasd az npm run readme parancsot. -->
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/hero-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/hero-light.svg" alt="tárca: Billingo, TypeScriptben. Telepítés: npm i tarca" width="100%"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/hero-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/hero-light.svg" alt="tárca: Billingo, TypeScriptben. Telepítés: npm i tarcajs" width="100%"></picture>
 </p>
 
 <p align="center">
@@ -11,10 +11,10 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/tarca"><img src="https://img.shields.io/npm/v/tarca?label=npm&style=flat-square&labelColor=28313d&color=314eff" alt="npm verzió"></a>
-  <a href="https://www.npmjs.com/package/tarca"><img src="https://img.shields.io/npm/dm/tarca?label=let%C3%B6lt%C3%A9s&style=flat-square&labelColor=28313d&color=314eff" alt="havi letöltés"></a>
+  <a href="https://www.npmjs.com/package/tarcajs"><img src="https://img.shields.io/npm/v/tarcajs?label=npm&style=flat-square&labelColor=28313d&color=314eff" alt="npm verzió"></a>
+  <a href="https://www.npmjs.com/package/tarcajs"><img src="https://img.shields.io/npm/dm/tarcajs?label=let%C3%B6lt%C3%A9s&style=flat-square&labelColor=28313d&color=314eff" alt="havi letöltés"></a>
   <a href="https://github.com/futozs/tarca/blob/main/package.json"><img src="https://img.shields.io/badge/f%C3%BCgg%C5%91s%C3%A9g-0-314eff?style=flat-square&labelColor=28313d" alt="0 futásidejű függőség"></a>
-  <a href="https://github.com/futozs/tarca/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/tarca?label=licenc&style=flat-square&labelColor=28313d&color=314eff" alt="MIT licenc"></a>
+  <a href="https://github.com/futozs/tarca/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/tarcajs?label=licenc&style=flat-square&labelColor=28313d&color=314eff" alt="MIT licenc"></a>
   <br>
   <a href="https://github.com/futozs/tarca/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/futozs/tarca/ci.yml?branch=main&label=CI&style=flat-square&labelColor=28313d" alt="CI állapota"></a>
   <a href="https://github.com/futozs/tarca/actions/workflows/full-check.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/futozs/tarca/full-check.yml?branch=main&label=heti%20teljes%20teszt&style=flat-square&labelColor=28313d" alt="Heti teljes ellenőrzés: CI, változásfigyelő, élő e2e"></a>
@@ -28,11 +28,11 @@
 </p>
 
 ```bash
-npm i tarca
+npm i tarcajs
 ```
 
 ```ts
-import { createTarca } from 'tarca'
+import { createTarca } from 'tarcajs'
 
 const tarca = createTarca()
 
@@ -63,13 +63,13 @@ Webshopban vagy webhookból a `createOnce()` hívást használd, a rendelés azo
 - **Mind az 57 művelet.** Számla, díjbekérő, előleg- és végszámla, nyugta, sztornó, módosító számla, befizetés, PDF, partnerek, termékek, készlet, számlatömbök, költségek és export. Ebből 3 művelet (a számlatömb lekérése, módosítása és törlése) egyik specben sem szerepel, ezeket élőben mértük ki.
 - **Nincs dupla számla.** Írást a tárca soha nem küld újra magától. A `createOnce()` kiállítás előtt megkeresi a bizonylatot a `vendorId` alapján, bizonytalan hiba után pedig visszakeresi.
 - **Fizetésből bizonylat.** Stripe, SimplePay, Barion, Revolut és PayPal webhookból pontosan egyszer nyugta vagy számla, visszatérítéskor sztornó vagy módosító számla.
-- **Parancssor és MCP szerver.** Az `npx tarca doctor` 3 olvasó kéréssel ellenőrzi a kulcsot, a profilt, a NAV-kapcsolatot és a számlatömböket. Az MCP szerver az AI asszisztensnek csak előnézet és megerősítő kód után enged számlát kiállítani.
+- **Parancssor és MCP szerver.** Az `npx tarcajs doctor` 3 olvasó kéréssel ellenőrzi a kulcsot, a profilt, a NAV-kapcsolatot és a számlatömböket. Az MCP szerver az AI asszisztensnek csak előnézet és megerősítő kód után enged számlát kiállítani.
 - **0 futásidejű függőség.** Natív `fetch`, se axios, se node-fetch. A legtöbbet letöltött `@codingsans/billingo-client` úgy tölti be az axiost és a form-datát, hogy nem deklarálja őket, ezért tiszta telepítés után importáláskor hibát dob.
 - **Bárhol fut.** Node 22+, Bun, Deno és Cloudflare Workers alatt, ESM és CommonJS buildként. A CI a lefordított csomagot mind a négy környezetben lefuttatja.
 - **Típusok a hivatalos specből, a valósághoz igazítva.** A 3.0.14-es és a 3.0.15-ös OpenAPI specből generálva, camelCase mezőnevekkel. Ahol a Billingo mást küld, mint amit a spec ír (`null` értékek, eltérő státuszkódok és tartalomtípusok, más mezőnév), ott a típus az élő mérést követi.
 - **Betartja a sebességkorlátot.** A lekérdezést 429-es válasz, szerverhiba vagy hálózati hiba után újrapróbálja, és annyit vár, amennyit a `Retry-After` fejléc kér.
 - **Egy hibatípus.** Minden hiba `BillingoError`, magyar üzenettel, kategóriával, mezőhibákkal, a Billingo nyomkövetési azonosítójával és javítási tippel.
-- **Hamis Billingo a tesztekhez.** A `tarca/testing` memóriában futó Billingót ad, a valódi sorszámozással, kerekítéssel és hibaüzenetekkel, így a saját kódod tesztje sem hívja az éles API-t.
+- **Hamis Billingo a tesztekhez.** A `tarcajs/testing` memóriában futó Billingót ad, a valódi sorszámozással, kerekítéssel és hibaüzenetekkel, így a saját kódod tesztje sem hívja az éles API-t.
 
 <details>
 <summary><b>Részletes összehasonlítás</b> · 6 csomag, 13 szempont</summary>
@@ -117,7 +117,7 @@ BILLINGO_API_KEY=a-te-api-kulcsod
 ```
 
 ```ts
-import { createTarca } from 'tarca'
+import { createTarca } from 'tarcajs'
 
 export const tarca = createTarca()
 ```
@@ -680,7 +680,7 @@ Minden hiba `BillingoError`, magyar üzenettel, és ahol lehet, javítási tippe
 <summary><b>Mezőhibák és részletek</b> · <code>isBillingoError()</code>, <code>error.fieldErrors</code></summary>
 
 ```ts
-import { isBillingoError } from 'tarca'
+import { isBillingoError } from 'tarcajs'
 
 try {
   await tarca.documents.create(szamla)
@@ -728,7 +728,7 @@ Az `error.retryable` megmondja, hogy átmeneti-e a hiba (`rate_limit`, `server`,
 <summary><b>Ha nincs ilyen erőforrás</b> · <code>nullIfNotFound()</code></summary>
 
 ```ts
-import { nullIfNotFound } from 'tarca'
+import { nullIfNotFound } from 'tarcajs'
 
 const partner = await nullIfNotFound(tarca.partners.get(1234))
 
@@ -749,8 +749,8 @@ Stripe, SimplePay, Barion, Revolut vagy PayPal fizetésből nyugta vagy számla,
 <summary><b>Stripe webhook</b> · <code>stripeWebhook()</code>, <code>issueForPayment()</code></summary>
 
 ```ts
-import { issueForPayment } from 'tarca/payments'
-import { stripeWebhook } from 'tarca/payments/stripe'
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
 
 export const POST = stripeWebhook({
   secret: process.env.STRIPE_WEBHOOK_SECRET!,
@@ -791,7 +791,7 @@ eredmeny.kind
 
 ```ts
 import { Redis } from '@upstash/redis'
-import { upstashRedisStore } from 'tarca/stores'
+import { upstashRedisStore } from 'tarcajs/stores'
 
 const ledger = upstashRedisStore(Redis.fromEnv())
 
@@ -811,7 +811,7 @@ await issueForPayment(tarca, payment, { vat: 27, ledger })
 <summary><b>SimplePay, Barion, Revolut, PayPal</b> · <code>simplePayWebhook()</code>, <code>barionWebhook()</code>, <code>revolutWebhook()</code>, <code>payPalWebhook()</code></summary>
 
 ```ts
-import { simplePayWebhook } from 'tarca/payments/simplepay'
+import { simplePayWebhook } from 'tarcajs/payments/simplepay'
 
 export const POST = simplePayWebhook({
   merchants: {
@@ -832,15 +832,15 @@ export const POST = simplePayWebhook({
 
 ## Bizonylatnapló
 
-A Billingo maga jelenti a bizonylatokat a NAV-nak, ezért a `tarca/journal` nem NAV-összesítő, hanem saját nyilvántartás: minden kiállított, sztornózott és módosított bizonylat egy bejegyzés, amelyet a tárca soha nem ír felül. Az egyeztetés megmutatja, ha a napló és a Billingo eltér.
+A Billingo maga jelenti a bizonylatokat a NAV-nak, ezért a `tarcajs/journal` nem NAV-összesítő, hanem saját nyilvántartás: minden kiállított, sztornózott és módosított bizonylat egy bejegyzés, amelyet a tárca soha nem ír felül. Az egyeztetés megmutatja, ha a napló és a Billingo eltér.
 
 <details>
 <summary><b>Napló a hookból</b> · <code>createJournal()</code>, <code>kvJournal()</code>, <code>onDocument</code></summary>
 
 ```ts
 import { Redis } from '@upstash/redis'
-import { createJournal, kvJournal } from 'tarca/journal'
-import { upstashRedisStore } from 'tarca/stores'
+import { createJournal, kvJournal } from 'tarcajs/journal'
+import { upstashRedisStore } from 'tarcajs/stores'
 
 const naplo = createJournal(kvJournal(upstashRedisStore(Redis.fromEnv())))
 const tarca = createTarca({
@@ -902,7 +902,7 @@ A kiállított bizonylat PDF-je egy hívással a saját tárhelyedre kerül. S3,
 <summary><b>S3 és Cloudflare R2</b> · <code>s3FetchStorage()</code>, <code>storeDocumentPdf()</code></summary>
 
 ```ts
-import { s3FetchStorage, storeDocumentPdf } from 'tarca/storage'
+import { s3FetchStorage, storeDocumentPdf } from 'tarcajs/storage'
 
 const tarhely = s3FetchStorage({
   bucket: 'szamlak',
@@ -930,7 +930,7 @@ fajl.key
 <summary><b>Fájlrendszer (Node)</b> · <code>fsStorage()</code></summary>
 
 ```ts
-import { fsStorage } from 'tarca/storage/fs'
+import { fsStorage } from 'tarcajs/storage/fs'
 
 const tarhely = fsStorage({ directory: './szamlak' })
 ```
@@ -943,14 +943,14 @@ További adapterek: `s3Storage` (saját AWS SDK kliens), `r2BindingStorage` (Wor
 
 ## Serverless és edge
 
-Több szerver vagy serverless példány között a `createOnce` zárja, a napló és a webhookok kettőzés elleni védelme közös tárolót kér. A `tarca/stores` adapterei a kassza tárolóival azonos felületet adnak.
+Több szerver vagy serverless példány között a `createOnce` zárja, a napló és a webhookok kettőzés elleni védelme közös tárolót kér. A `tarcajs/stores` adapterei a kassza tárolóival azonos felületet adnak.
 
 <details>
 <summary><b>Upstash és Vercel</b> · <code>upstashRedisStore()</code></summary>
 
 ```ts
 import { Redis } from '@upstash/redis'
-import { upstashRedisStore } from 'tarca/stores'
+import { upstashRedisStore } from 'tarcajs/stores'
 
 const tarca = createTarca({ createOnceLock: upstashRedisStore(Redis.fromEnv()) })
 ```
@@ -965,9 +965,9 @@ const tarca = createTarca({ createOnceLock: upstashRedisStore(Redis.fromEnv()) }
 <summary><b>Cloudflare Workers</b> · <code>durableObjectStore()</code>, <code>cloudflareKvStore()</code></summary>
 
 ```ts
-import { durableObjectStore } from 'tarca/stores'
+import { durableObjectStore } from 'tarcajs/stores'
 
-const tarolo = durableObjectStore(env.TARCA_STORE.get(env.TARCA_STORE.idFromName('tarca')))
+const tarolo = durableObjectStore(env.TARCA_STORE.get(env.TARCA_STORE.idFromName('tarcajs')))
 const tarca = createTarca({ apiKey: env.BILLINGO_API_KEY, createOnceLock: tarolo })
 ```
 
@@ -979,13 +979,13 @@ Van még `ioredisStore`, `nodeRedisStore`, `customStore` és `memoryStore` is. A
 
 ## Tesztelés
 
-A `tarca/testing` egy memóriában futó Billingót ad. Mind az 57 műveletet ismeri, a valódi kliens fut fölötte, így a saját kódod tesztje ugyanazt a validációt, sorszámozást és kerekítést látja, mint élesben, csak kérés nem megy ki.
+A `tarcajs/testing` egy memóriában futó Billingót ad. Mind az 57 műveletet ismeri, a valódi kliens fut fölötte, így a saját kódod tesztje ugyanazt a validációt, sorszámozást és kerekítést látja, mint élesben, csak kérés nem megy ki.
 
 <details>
 <summary><b>Vitest példa</b> · <code>createMockTarca()</code></summary>
 
 ```ts
-import { createMockTarca } from 'tarca/testing'
+import { createMockTarca } from 'tarcajs/testing'
 import { expect, test } from 'vitest'
 
 test('fizetés után egyszer számláz', async () => {
@@ -1018,8 +1018,8 @@ test('elveszett válasz után sem lesz két számla', async () => {
 <summary><b>Hamis Billingo</b> · <code>createFakeBillingoFetch()</code></summary>
 
 ```ts
-import { createTarca } from 'tarca'
-import { createFakeBillingoFetch } from 'tarca/testing'
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
 
 const billingo = createFakeBillingoFetch({ hufRates: { EUR: 390 } })
 const tarca = createTarca({ apiKey: 'teszt-kulcs', fetch: billingo.fetch, retryDelayMs: 0 })
@@ -1066,20 +1066,20 @@ await tarca.organization.get({ signal: AbortSignal.timeout(5_000) })
 
 ## Megfigyelhetőség
 
-A tárca nem küld haza semmit. A saját rendszeredben a `tarca/observe` ad strukturált naplót, OpenTelemetry-kompatibilis spanokat és Prometheus metrikákat, függőség nélkül. Az API kulcs, a vevő adatai és a hibaüzenetek szövege nem kerülnek bele.
+A tárca nem küld haza semmit. A saját rendszeredben a `tarcajs/observe` ad strukturált naplót, OpenTelemetry-kompatibilis spanokat és Prometheus metrikákat, függőség nélkül. Az API kulcs, a vevő adatai és a hibaüzenetek szövege nem kerülnek bele.
 
 <details>
 <summary><b>Napló, tracing, metrikák</b> · <code>observe()</code>, <code>createMetricsRegistry()</code></summary>
 
 ```ts
 import { trace } from '@opentelemetry/api'
-import { createTarca } from 'tarca'
-import { combineHooks, createMetricsRegistry, observe } from 'tarca/observe'
+import { createTarca } from 'tarcajs'
+import { combineHooks, createMetricsRegistry, observe } from 'tarcajs/observe'
 
 const metrics = createMetricsRegistry()
 const tarca = createTarca({
   hooks: combineHooks(
-    observe({ logger: console, tracer: trace.getTracer('tarca'), metrics }),
+    observe({ logger: console, tracer: trace.getTracer('tarcajs'), metrics }),
     sajatHookok,
   ),
 })
@@ -1097,13 +1097,13 @@ app.get('/metrics', (_keres, valasz) => valasz.type('text/plain').send(metrics.r
 
 ## Tömeges és ismétlődő számlázás
 
-Havidíj, tagdíj, bérleti díj: a `tarca/batch` minden tételt `createOnce`-szal állít ki, a kulcsot használva `vendorId`-ként, tartja a Billingo percenkénti keretét, és a végén pénznemenként összesít. Egy megszakadt futás újraindítva nem állít ki duplát.
+Havidíj, tagdíj, bérleti díj: a `tarcajs/batch` minden tételt `createOnce`-szal állít ki, a kulcsot használva `vendorId`-ként, tartja a Billingo percenkénti keretét, és a végén pénznemenként összesít. Egy megszakadt futás újraindítva nem állít ki duplát.
 
 <details>
 <summary><b>Havi számlázás</b> · <code>runBatch()</code>, <code>billingPeriodAt()</code></summary>
 
 ```ts
-import { billingPeriodAt, runBatch } from 'tarca/batch'
+import { billingPeriodAt, runBatch } from 'tarcajs/batch'
 
 const idoszak = billingPeriodAt({ interval: 'month', anchor: '2026-01-31' }, new Date())
 
@@ -1157,7 +1157,7 @@ proba.grossTotals
 <summary><b>Számlázási időszakok</b> · <code>billingPeriod()</code>, <code>billingPeriodsBetween()</code>, <code>todayPeriod()</code></summary>
 
 ```ts
-import { billingPeriod, billingPeriodsBetween, todayPeriod } from 'tarca/batch'
+import { billingPeriod, billingPeriodsBetween, todayPeriod } from 'tarcajs/batch'
 
 const havi = { interval: 'month', anchor: '2026-01-31', paymentDueInDays: 8 } as const
 
@@ -1174,15 +1174,15 @@ todayPeriod(havi)
 
 ## Node.js és Express
 
-A tárca webhook- és MCP-kezelői Web-szabványos `(Request) => Response` függvények. Express, NestJS, Fastify és a sima `node:http` alá a `tarca/node` köti be őket. A nyers törzs bájtra pontosan megmarad, így az aláírás is ellenőrizhető.
+A tárca webhook- és MCP-kezelői Web-szabványos `(Request) => Response` függvények. Express, NestJS, Fastify és a sima `node:http` alá a `tarcajs/node` köti be őket. A nyers törzs bájtra pontosan megmarad, így az aláírás is ellenőrizhető.
 
 <details>
 <summary><b>Express</b> · <code>toNodeHandler()</code></summary>
 
 ```ts
 import express from 'express'
-import { toNodeHandler } from 'tarca/node'
-import { stripeWebhook } from 'tarca/payments/stripe'
+import { toNodeHandler } from 'tarcajs/node'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
 
 const app = express()
 app.post('/webhooks/stripe', toNodeHandler(stripeWebhook({ secret, onPayment })))
@@ -1201,10 +1201,10 @@ app.use(express.json())
 A Billingo minden sémája TypeScript típusként is elérhető, a hivatalos OpenAPI specifikációból (3.0.14 és 3.0.15) generálva.
 
 <details>
-<summary><b>Billingo típusok</b> · <code>import type { Billingo } from 'tarca'</code></summary>
+<summary><b>Billingo típusok</b> · <code>import type { Billingo } from 'tarcajs'</code></summary>
 
 ```ts
-import type { Billingo } from 'tarca'
+import type { Billingo } from 'tarcajs'
 
 function fizetendo(bizonylat: Billingo.Document): number {
   return bizonylat.grossTotal ?? 0
@@ -1225,7 +1225,7 @@ Node 22+, Bun, Deno és Cloudflare Workers, ESM és CommonJS buildként, natív 
 <summary><b>Cloudflare Workers</b> · <code>apiKey</code> a környezetből</summary>
 
 ```ts
-import { createTarca } from 'tarca'
+import { createTarca } from 'tarcajs'
 
 export default {
   async fetch(_request: Request, env: { BILLINGO_API_KEY: string }) {
@@ -1242,12 +1242,12 @@ Workers alatt nincs `process.env`, ezért a kulcsot az `apiKey` opcióval add á
 ## Parancssor és MCP szerver
 
 <details>
-<summary><b>Parancssor</b> · <code>npx tarca doctor</code>, <code>verify</code>, <code>document get</code></summary>
+<summary><b>Parancssor</b> · <code>npx tarcajs doctor</code>, <code>verify</code>, <code>document get</code></summary>
 
 ```bash
-npx tarca doctor --tax-code 12345678-2-42 --defaults tarca.json
-npx tarca verify
-npx tarca document get --vendor ORDER-1001
+npx tarcajs doctor --tax-code 12345678-2-42 --defaults tarca.json
+npx tarcajs verify
+npx tarcajs document get --vendor ORDER-1001
 ```
 
 A `doctor` három olvasó kéréssel ellenőrzi a Node.js-t, az időzónát, az API kulcsot (csak a hosszát írja ki), a gép óráját, azt, hogy teszt vagy éles profilon vagy, a NAV-kapcsolatot, az előfizetést, a számlatömböket és a bankszámlákat. A `--tax-code` adószámot összeveti, de nem írja ki, a `--defaults` a `TarcaDefaults` azonosítóit keresi meg a fiókban, a `--report` titokmentes Markdown jelentést ad hibajegyhez. Azt, hogy a kulcs csak olvasásra szól-e, vagy hogy az éles profilon megvan-e az „API + Tömeges” kiegészítő, olvasással nem lehet bizonyítani: a doctor ezt kimondja, nem találgat.
@@ -1257,14 +1257,14 @@ A `document get` a bizonylatot JSON-ban írja ki azonosító vagy `--vendor` ala
 </details>
 
 <details>
-<summary><b>MCP szerver</b> · <code>npx tarca mcp</code></summary>
+<summary><b>MCP szerver</b> · <code>npx tarcajs mcp</code></summary>
 
 ```json
 {
   "mcpServers": {
-    "tarca": {
+    "tarcajs": {
       "command": "npx",
-      "args": ["-y", "tarca", "mcp"],
+      "args": ["-y", "tarcajs", "mcp"],
       "env": { "BILLINGO_API_KEY": "..." }
     }
   }
@@ -1281,7 +1281,7 @@ Próbához fejlesztői teszt profilt használj: éles profilon a kiállított sz
 <summary><b>MCP edge-en</b> · <code>createTarcaMcpHandler()</code> Cloudflare Workershez, Vercel Edge-hez</summary>
 
 ```ts
-import { createTarcaMcpHandler, createTarcaMcpServer, type TarcaMcpHandler } from 'tarca/mcp'
+import { createTarcaMcpHandler, createTarcaMcpServer, type TarcaMcpHandler } from 'tarcajs/mcp'
 
 interface Env {
   BILLINGO_API_KEY: string
@@ -1314,9 +1314,9 @@ Csak POST JSON-RPC kérést fogad, legfeljebb 1 MiB-os törzzsel, az `Origin` fe
 
 A csomagban van egy `agents/` mappa. Ebből a Claude Code, a Cursor, a Copilot és a többi asszisztens megtudja, hogyan kell jól használni a tárcát, és mik a buktatók. Szólj rá az AI-ra:
 
-> Használd a tarca csomagot, és előbb olvasd el a `node_modules/tarca/agents/README.md`-t.
+> Használd a tarca csomagot, és előbb olvasd el a `node_modules/tarcajs/agents/README.md`-t.
 
-Claude Code-hoz kész skill is van: másold a `node_modules/tarca/agents/skills/tarca` mappát a projekted `.claude/skills/` mappájába.
+Claude Code-hoz kész skill is van: másold a `node_modules/tarcajs/agents/skills/tarca` mappát a projekted `.claude/skills/` mappájába.
 
 ## Tervben
 
@@ -1337,7 +1337,7 @@ A tárca nem küld semmilyen használati adatot, ezért csak az derül ki, ki ha
 ---
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/tarca">npm</a> · <a href="https://github.com/futozs/tarca/blob/main/CHANGELOG.md">Változásnapló</a> · <a href="https://github.com/futozs/tarca/issues">Hibajegyek</a> · <a href="https://developers.billingo.hu/post/api-v3">Billingo API v3 dokumentáció</a>
+  <a href="https://www.npmjs.com/package/tarcajs">npm</a> · <a href="https://github.com/futozs/tarca/blob/main/CHANGELOG.md">Változásnapló</a> · <a href="https://github.com/futozs/tarca/issues">Hibajegyek</a> · <a href="https://developers.billingo.hu/post/api-v3">Billingo API v3 dokumentáció</a>
 </p>
 
 <sub>A tárca független, nyílt forráskódú projekt: nem a Billingo fejleszti, és nem áll kapcsolatban vele. A Billingo API v3 hivatalos leírása a <a href="https://developers.billingo.hu/post/api-v3">developers.billingo.hu</a> oldalon érhető el. MIT licenc.</sub>

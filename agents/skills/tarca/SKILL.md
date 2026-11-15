@@ -5,7 +5,7 @@ description: Work with the Billingo API v3 (Hungarian invoicing) through the tar
 
 # tarca: Billingo integration
 
-Before writing code, read the package docs from `node_modules/tarca/agents/`:
+Before writing code, read the package docs from `node_modules/tarcajs/agents/`:
 
 - `pitfalls.md`: hard rules, always read it.
 - `api.md`: exact method signatures for all 57 Billingo operations. Use only methods listed there; tarca is 0.x and names may still change between minor versions.
@@ -19,9 +19,9 @@ Before writing code, read the package docs from `node_modules/tarca/agents/`:
 4. Branch on `BillingoError.category`, not on message text, and log `traceId`.
 5. `update` replaces the whole resource: pass the complete object.
 6. Use `toBillingoDate()` for dates, never `toISOString().slice(0, 10)`.
-7. Develop against a Billingo developer test profile. Unit tests use `createMockTarca()` from `tarca/testing`; they never call the real API.
-8. Payment provider webhooks use the `tarca/payments` handlers with `issueForPayment`; partial refunds need a `ledger` store with `setIfAbsent`. Under Express or NestJS wrap them with `toNodeHandler` from `tarca/node`, before `express.json()`.
-9. With several instances (serverless, edge), pass a shared `createOnceLock` from `tarca/stores` (Redis, Upstash or a Durable Object; not Cloudflare KV).
+7. Develop against a Billingo developer test profile. Unit tests use `createMockTarca()` from `tarcajs/testing`; they never call the real API.
+8. Payment provider webhooks use the `tarcajs/payments` handlers with `issueForPayment`; partial refunds need a `ledger` store with `setIfAbsent`. Under Express or NestJS wrap them with `toNodeHandler` from `tarcajs/node`, before `express.json()`.
+9. With several instances (serverless, edge), pass a shared `createOnceLock` from `tarcajs/stores` (Redis, Upstash or a Durable Object; not Cloudflare KV).
 10. `DocumentHookError` and `JournalWriteError` mean the document exists: record it, never issue it again.
 
 ## Checklist before finishing
@@ -31,5 +31,5 @@ Before writing code, read the package docs from `node_modules/tarca/agents/`:
 - [ ] Errors are handled by category, and `validation` errors surface `fieldErrors`.
 - [ ] List code uses `all()` or loops pages with `perPage` at most 100.
 - [ ] Non-retryable webhook results (`validation`, a `refund-proposal`, a `refund-failed`) go to a human instead of being rethrown forever; an `in_progress` refund (its payment has no document yet) is rethrown so the provider redelivers it.
-- [ ] PDFs are stored with `tarca/storage` or fetched again with `documents.pdf`, not kept as base64 in the database.
+- [ ] PDFs are stored with `tarcajs/storage` or fetched again with `documents.pdf`, not kept as base64 in the database.
 - [ ] There is a unit test with `createMockTarca()`, including a `failNext(..., { afterSuccess: true })` case for the issuing path.

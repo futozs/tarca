@@ -1,10 +1,10 @@
 # AGENTS.md
 
-This file guides AI agents that work **on this repository**. If you only *use* the `tarca` package, read [agents/README.md](./agents/README.md) instead.
+This file guides AI agents that work **on this repository**. If you only *use* the `tarcajs` package, read [agents/README.md](./agents/README.md) instead.
 
 ## What this is
 
-`tarca` is a zero-dependency TypeScript client for the **Billingo API v3** (Hungarian invoicing). It is the sibling of [`kassza`](https://github.com/futozs/kassza) (the official Számlázz.hu plugin) and copies its engineering: the same CI, live e2e, drift watcher, release flow, generated README and AI-ready docs. Someone who knows kassza should feel at home in tarca. tarca is an independent open-source project, not a Billingo product; never describe it as official.
+`tarcajs` is a zero-dependency TypeScript client for the **Billingo API v3** (Hungarian invoicing). It is the sibling of [`kassza`](https://github.com/futozs/kassza) (the official Számlázz.hu plugin) and copies its engineering: the same CI, live e2e, drift watcher, release flow, generated README and AI-ready docs. Someone who knows kassza should feel at home in tarca. tarca is an independent open-source project, not a Billingo product; never describe it as official.
 
 Official sources: the developer portal https://developers.billingo.hu, the API guide https://developers.billingo.hu/post/api-v3, the changelog https://developers.billingo.hu/changelogs and the OpenAPI spec on SwaggerHub (`Billingo/Billingo`, default version 3.0.14, newest 3.0.15). Billingo's own MCP server (`@billingo/billingo-mcp`, https://github.com/octonull/billingo-mcp, MIT) documents real API behaviour in its live tests; read it before implementing a resource, but do not copy its code.
 
@@ -46,20 +46,20 @@ npm run ci
 | `src/core/document-events.ts` | The `onDocument` hook: one event per newly issued, cancelled or modified document, `onDocumentError` (`'warn'` or `'throw'`, which gives `DocumentHookError` after the document exists) |
 | `src/core/money.ts`, `src/core/crypto.ts` | Billingo's rounding model (shared by the fake, the MCP previews, batch dry runs and payments) and Web Crypto helpers (HMAC, SHA-256, `timingSafeEqual`; a copy of kassza's) |
 | `src/core/once-guard.ts`, `src/core/store.ts` | `createOnce` singleflight and the optional cross-process lock (`KeyValueStore`, the same interface as kassza's stores) |
-| `src/generated/billingo.ts` | Generated spec types (camelCase, readonly). Exported as `import type { Billingo } from 'tarca'` |
+| `src/generated/billingo.ts` | Generated spec types (camelCase, readonly). Exported as `import type { Billingo } from 'tarcajs'` |
 | `src/<resource>/` | One folder per resource (`bank-accounts`, `currencies`, `document-blocks`, `exports`, `inventory`, `organization`, `partners`, `products`, `receipts`, `spendings`, `utils`), each a `create<X>Api(context)` factory |
 | `src/documents/` | `DocumentsApi`, assembled from parts: `query.ts` (get, list, vendorId lookup), `issue.ts` (create, createRaw, createOnce, drafts), `files.ts` (PDF, POS, public URL), `actions.ts` (send, reminders, NAV status, cancel, copy, archive, proforma, modification), `payments.ts`; the ergonomic input in `input.ts`, `check.ts` (local validation with Hungarian `fieldErrors`), `defaults.ts`, `enums.ts`, `once.ts` |
 | `src/client.ts` | `createTarca()`, which wires every resource to one context |
-| `src/payments/` | `tarca/payments` and one subpath per provider (`stripe`, `simplepay`, `barion`, `revolut`, `paypal`): webhook verification, `PaymentEvent`, `issueForPayment` (receipt or invoice through `createOnce`), refunds by cancel or by `createModificationOnce` with a `setIfAbsent` ledger |
-| `src/storage/` | `tarca/storage` (`storeDocumentPdf`, S3 over SigV4, R2 binding, Vercel Blob, Supabase, UploadThing, memory) and the Node-only `tarca/storage/fs` (`fs.ts`) |
-| `src/stores/` | `tarca/stores`: `KeyValueStore` adapters (Upstash, ioredis, node-redis, Cloudflare KV, Durable Object, custom, memory), `resilientStore`, `diagnoseStore` |
-| `src/journal/` | `tarca/journal`: append-only document journal (`record`, `track`, `settle`, `reconcile`) over `kvJournal` or `memoryJournal` |
-| `src/batch/` | `tarca/batch`: `runBatch` (paced, exactly once, dry run) and recurring billing periods |
-| `src/observe/` | `tarca/observe`: redacted logs, OpenTelemetry-compatible spans, Prometheus metrics, `combineHooks` |
-| `src/node/` | `tarca/node`: `toNodeHandler`, `toWebRequest`, `writeWebResponse` for Node `http`, Express, NestJS, Fastify |
-| `src/mcp/` | `tarca/mcp`: the stateless MCP server (21 tools; writes only with `allowWrite`, a preview and a signed confirmation code) and the web `Request → Response` handler |
-| `src/cli/` | The `tarca` bin (`dist/cli.js`, Node only): `doctor`, `verify`, `document get`, `mcp` over stdio |
-| `src/testing/` | The `tarca/testing` entry: `createFakeBillingoFetch()` (in-memory Billingo for all 57 operations: `fake/state.ts`, `router.ts`, `http.ts` (responses and the shared request-field helpers), `faults.ts`, one route module per resource (the rounding comes from `src/core/money.ts`), wired in `fake/registry.ts`) and `createMockTarca()` |
+| `src/payments/` | `tarcajs/payments` and one subpath per provider (`stripe`, `simplepay`, `barion`, `revolut`, `paypal`): webhook verification, `PaymentEvent`, `issueForPayment` (receipt or invoice through `createOnce`), refunds by cancel or by `createModificationOnce` with a `setIfAbsent` ledger |
+| `src/storage/` | `tarcajs/storage` (`storeDocumentPdf`, S3 over SigV4, R2 binding, Vercel Blob, Supabase, UploadThing, memory) and the Node-only `tarcajs/storage/fs` (`fs.ts`) |
+| `src/stores/` | `tarcajs/stores`: `KeyValueStore` adapters (Upstash, ioredis, node-redis, Cloudflare KV, Durable Object, custom, memory), `resilientStore`, `diagnoseStore` |
+| `src/journal/` | `tarcajs/journal`: append-only document journal (`record`, `track`, `settle`, `reconcile`) over `kvJournal` or `memoryJournal` |
+| `src/batch/` | `tarcajs/batch`: `runBatch` (paced, exactly once, dry run) and recurring billing periods |
+| `src/observe/` | `tarcajs/observe`: redacted logs, OpenTelemetry-compatible spans, Prometheus metrics, `combineHooks` |
+| `src/node/` | `tarcajs/node`: `toNodeHandler`, `toWebRequest`, `writeWebResponse` for Node `http`, Express, NestJS, Fastify |
+| `src/mcp/` | `tarcajs/mcp`: the stateless MCP server (21 tools; writes only with `allowWrite`, a preview and a signed confirmation code) and the web `Request → Response` handler |
+| `src/cli/` | The `tarcajs` bin (`dist/cli.js`, Node only): `doctor`, `verify`, `document get`, `mcp` over stdio |
+| `src/testing/` | The `tarcajs/testing` entry: `createFakeBillingoFetch()` (in-memory Billingo for all 57 operations: `fake/state.ts`, `router.ts`, `http.ts` (responses and the shared request-field helpers), `faults.ts`, one route module per resource (the rounding comes from `src/core/money.ts`), wired in `fake/registry.ts`) and `createMockTarca()` |
 | `scripts/spec-overrides.mjs` | The live-deviation table: where the real API differs from the spec (null fields, renamed fields, live-required fields, status codes, content types, undocumented routes), each entry with its evidence. `mergeSpecs` applies it, so the generated types, the validator, the contract tests and the drift watcher see the same corrected spec |
 | `tests/helpers.ts` | `mockBillingo` (captures requests, scripted replies, validates every request against the corrected spec) and `createTestContext` |
 | `tests/openapi.ts` | Strict OpenAPI validator (`requestErrors`, `parameterErrors`, `responseErrors`, `contractErrors`) against the corrected spec |

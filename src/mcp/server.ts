@@ -86,11 +86,11 @@ const INSTRUCTIONS = [
   'A tárca a Billingo API v3-on keresztül kérdez le és állít ki számlákat, díjbekérőket és nyugtákat. Független, nyílt forráskódú projekt, nem a Billingo terméke.',
   'Kezdd a get_profile eszközzel: megmutatja, hogy fejlesztői teszt vagy éles profilon dolgozol, és milyen számlatömbök és bankszámlák vannak.',
   'Minden írás előtt hívd meg a megfelelő előnézeti eszközt (preview_document, preview_receipt, preview_cancellation, preview_payment, preview_send), mutasd meg az eredményt a felhasználónak, és csak a kifejezett jóváhagyása után hívd az író eszközt a kapott confirmation kóddal, pontosan ugyanazokkal az adatokkal.',
-  'Az író eszközök csak akkor érhetők el, ha a szervert TARCA_MCP_ALLOW_WRITE=1 beállítással vagy a tarca mcp --allow-write kapcsolóval indították. Próbához fejlesztői teszt profilt ajánlunk: éles profilon a kiállított számlát a Billingo jelenti a NAV-nak, és csak sztornózni lehet.',
+  'Az író eszközök csak akkor érhetők el, ha a szervert TARCA_MCP_ALLOW_WRITE=1 beállítással vagy a tarcajs mcp --allow-write kapcsolóval indították. Próbához fejlesztői teszt profilt ajánlunk: éles profilon a kiállított számlát a Billingo jelenti a NAV-nak, és csak sztornózni lehet.',
 ].join(' ')
 
 const WRITE_DISABLED_MESSAGE =
-  'Az író eszközök ki vannak kapcsolva, semmi nem történt. A kiállításhoz, sztornóhoz, befizetéshez és kiküldéshez indítsd a szervert a TARCA_MCP_ALLOW_WRITE=1 környezeti változóval (vagy a tarca mcp --allow-write kapcsolóval).'
+  'Az író eszközök ki vannak kapcsolva, semmi nem történt. A kiállításhoz, sztornóhoz, befizetéshez és kiküldéshez indítsd a szervert a TARCA_MCP_ALLOW_WRITE=1 környezeti változóval (vagy a tarcajs mcp --allow-write kapcsolóval).'
 
 function describeError(error: unknown): { readonly text: string; readonly info: McpToolError } {
   if (error instanceof ToolInputError) {

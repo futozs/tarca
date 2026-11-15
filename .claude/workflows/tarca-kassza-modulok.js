@@ -15,7 +15,7 @@ const ALL_GROUPS = [
   {
     key: 'cli-mcp',
     scope:
-      'The tarca CLI (bin "tarca": doctor, verify, document get, mcp; modelled on ../kassza/src/cli) and the tarca/mcp MCP server (../kassza/src/mcp: stateless, the 2026-07-28 MCP spec plus the legacy initialize handshake, read tools, write tools only with allowWrite and a preview confirmation code). Compare tool by tool with the official @billingo/billingo-mcp (https://github.com/octonull/billingo-mcp) and be better: previews, idempotent issuing through createOnce, Hungarian errors, edge runtimes. doctor checks the key, the profile (test or live), the NAV connection, document blocks, bank accounts and the subscription. Also the migrate-from-codingsans-billingo-client skill under agents/skills/.',
+      'The tarca CLI (bin "tarcajs": doctor, verify, document get, mcp; modelled on ../kassza/src/cli) and the tarca/mcp MCP server (../kassza/src/mcp: stateless, the 2026-07-28 MCP spec plus the legacy initialize handshake, read tools, write tools only with allowWrite and a preview confirmation code). Compare tool by tool with the official @billingo/billingo-mcp (https://github.com/octonull/billingo-mcp) and be better: previews, idempotent issuing through createOnce, Hungarian errors, edge runtimes. doctor checks the key, the profile (test or live), the NAV connection, document blocks, bank accounts and the subscription. Also the migrate-from-codingsans-billingo-client skill under agents/skills/.',
   },
   {
     key: 'payments',

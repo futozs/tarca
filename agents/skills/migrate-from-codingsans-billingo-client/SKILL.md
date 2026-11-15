@@ -5,7 +5,7 @@ description: Migrate a codebase from the @codingsans/billingo-client npm package
 
 # Migrate from @codingsans/billingo-client to tarca
 
-Read `node_modules/tarca/agents/pitfalls.md` and `node_modules/tarca/agents/api.md` first.
+Read `node_modules/tarcajs/agents/pitfalls.md` and `node_modules/tarcajs/agents/api.md` first.
 
 `@codingsans/billingo-client` 2.1.0 is generated from the Billingo spec 3.0.14: static service classes, a global `OpenAPI` config, snake_case models, `axios` and `form-data` required at runtime but not declared as dependencies. tarca is one client object per API key, camelCase in and out, zero dependencies.
 
@@ -43,7 +43,7 @@ Search for `from '@codingsans/billingo-client'`, `require('@codingsans/billingo-
 | `ProductService.listProduct(page, perPage, query)`, `createProduct`, `getProduct`, `updateProduct`, `deleteProduct` | `products.list`, `create`, `get`, `update`, `delete` (exactly one of `netUnitPrice` / `grossUnitPrice`) |
 | `SpendingService.spendingList(q, page, perPage, …)`, `spendingSave`, `spendingShow`, `spendingUpdate`, `spendingDelete` | `spendings.list({ q, … })`, `create`, `get`, `update`, `delete` |
 | `UtilService.checkTaxNumber(taxNumber)`, `getId(id)`, `getServerTime()` | `utils.checkTaxNumber(taxNumber)`, `utils.convertLegacyId(id)`, `utils.serverTime()` |
-| snake_case models (`partner_id`, `block_id`, `gross_total`) | camelCase (`partnerId`, `blockId`, `grossTotal`); types from `import type { Billingo } from 'tarca'` |
+| snake_case models (`partner_id`, `block_id`, `gross_total`) | camelCase (`partnerId`, `blockId`, `grossTotal`); types from `import type { Billingo } from 'tarcajs'` |
 | `ApiError` (`status`, `body`) | `BillingoError`: branch on `category`, log `traceId`, read `fieldErrors` for 422 |
 | `CancelablePromise#cancel()` | `options.signal` (an `AbortSignal`) as the last argument of every method |
 
@@ -56,5 +56,5 @@ Search for `from '@codingsans/billingo-client'`, `require('@codingsans/billingo-
 5. Convert snake_case field access to camelCase everywhere the result is read (`document.gross_total` → `document.grossTotal`, `public_url` → the returned string).
 6. Replace `catch (error) { if (error instanceof ApiError && error.status === …) }` and message parsing with `isBillingoError(error)` and `error.category` (`auth`, `validation`, `forbidden`, `subscription`, `rate_limit`, …). Keep `error.traceId` in logs; Billingo support asks for it.
 7. Replace PDF download code that polls or retries `downloadDocument` with `documents.pdf(id)`; it returns a `Uint8Array`, not a `Blob`. Use `new Response(pdf.bytes)` or `Buffer.from(pdf.bytes)` where the old code needed a body or a buffer.
-8. Update tests to `createMockTarca()` or `createFakeBillingoFetch()` from `tarca/testing` instead of mocking the static services or axios.
+8. Update tests to `createMockTarca()` or `createFakeBillingoFetch()` from `tarcajs/testing` instead of mocking the static services or axios.
 9. Remove `@codingsans/billingo-client` from `package.json` only after every call site is migrated. Remove `axios` and `form-data` only after the user confirms nothing else in the project uses them (they were often installed only to satisfy this package).
