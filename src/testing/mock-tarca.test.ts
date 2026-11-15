@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { createTarca } from '../client'
+import { addBudapestDays, todayInBudapest } from '../core/dates'
 import { BillingoError, isBillingoError } from '../core/errors'
 import { createMockTarca, type MockTarcaMethod } from './index'
 
@@ -121,10 +122,97 @@ describe('createMockTarca', () => {
     const tarca = createMockTarca()
     const real = methodNames(createTarca({ apiKey: 'x', fetch: tarca.billingo.fetch }))
 
-    expect(real.length).toBeGreaterThanOrEqual(12)
+    expect(real).toContain('documents.payments.add')
+    expect(real).toContain('exports.run')
     for (const method of real) {
       expect(() => tarca.failNext(method as MockTarcaMethod)).not.toThrow()
     }
+  })
+
+  test('minden erőforrás a hamis Billingón fut, a defaults a valódi kliensbe kerül', async () => {
+    const tarca = createMockTarca({
+      hufRates: { EUR: 400 },
+      stock: { 'SKU-1': 7 },
+      defaults: { dueInDays: 15, paymentMethod: 'cash' },
+    })
+    const today = todayInBudapest()
+
+    const organization = await tarca.organization.get()
+    const time = await tarca.utils.serverTime()
+    const rate = await tarca.currencies.rate({ from: 'EUR', to: 'HUF' })
+    const account = await tarca.bankAccounts.create(ACCOUNT)
+    const blocks = await tarca.documentBlocks.list({ type: 'invoice' })
+    const partner = await tarca.partners.create({
+      name: 'Vevő Kft.',
+      address: { postCode: '1011', city: 'Budapest', address: 'Fő utca 1.' },
+    })
+    const product = await tarca.products.create({
+      name: 'Tanácsadás',
+      currency: 'HUF',
+      vat: '27%',
+      unit: 'óra',
+      sku: 'SKU-1',
+      netUnitPrice: 10_000,
+    })
+    const stock = await tarca.inventory.quantity(product.id ?? 0)
+    const { document, created } = await tarca.documents.createOnce({
+      vendorId: 'ORDER-1',
+      partner: partner.id ?? 0,
+      items: [{ productId: product.id ?? 0, quantity: 2 }],
+    })
+    const payments = await tarca.documents.payments.add(document.id ?? 0, {
+      date: today,
+      price: 25_400,
+      paymentMethod: 'cash',
+    })
+    const pdf = await tarca.documents.pdf(document.id ?? 0)
+    const receipt = await tarca.receipts.create({
+      items: [{ name: 'Kávé', grossUnitPrice: 600, vat: 27 }],
+    })
+    const spending = await tarca.spendings.create({
+      category: 'other',
+      currency: 'HUF',
+      conversionRate: 1,
+      totalGross: 1270,
+      totalGrossHuf: 1270,
+      totalVatAmount: 270,
+      totalVatAmountHuf: 270,
+      fulfillmentDate: today,
+      invoiceNumber: 'SZLA-1',
+      invoiceDate: today,
+      dueDate: today,
+      paymentMethod: 'cash',
+    })
+    const job = await tarca.exports.create({
+      queryType: 'invoice_date',
+      startDate: today,
+      endDate: today,
+      exportType: 'simple_csv',
+    })
+
+    expect(organization.hasNavConnection).toBe(false)
+    expect(time.timezone).toBe('Europe/Budapest')
+    expect(rate.rate).toBe(400)
+    expect(account.id).toBe(1)
+    expect(blocks.data.map((block) => block.type)).toContain('invoice')
+    expect(stock).toEqual({ availableQuantity: 7 })
+    expect(created).toBe(true)
+    expect(document).toMatchObject({
+      dueDate: addBudapestDays(new Date(), 15),
+      paymentMethod: 'cash',
+      grossTotal: 25_400,
+    })
+    expect(payments).toMatchObject([{ price: 25_400, paymentMethod: 'cash' }])
+    expect(new TextDecoder().decode(pdf.bytes.slice(0, 5))).toBe('%PDF-')
+    expect(receipt).toMatchObject({ type: 'receipt', paymentMethod: 'cash', grossTotal: 600 })
+    expect(spending.invoiceNumber).toBe('SZLA-1')
+    expect(job.id).toEqual(expect.any(String))
+    const resources = new Set(tarca.calls.map((call) => call.method.split('.')[0]))
+    const expected = Object.keys(createTarca({ apiKey: 'x', fetch: tarca.billingo.fetch })).filter(
+      (key) => key !== 'verifyCredentials',
+    )
+    expect([...resources].sort()).toEqual(expected.sort())
+    expect(tarca.calls.map((call) => call.method)).toContain('documents.payments.add')
   })
 
   test('verifyCredentials: alapból igaz, credentialsValid: false esetén hamis, a többi hívás auth hibát kap', async () => {

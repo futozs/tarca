@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { createTestContext, mockBillingo, TEST_API_KEY } from '../../tests/helpers'
 import {
   createContext,
+  filenameFromContentDisposition,
   MAX_RETRY_AFTER_MS,
   parseRateLimit,
   parseRetryAfter,
@@ -74,6 +75,55 @@ describe('createContext', () => {
     expect(new TextDecoder().decode(result.bytes)).toBe('%PDF-1.7')
   })
 
+  test('a bináris válasz fájlneve a Content-Disposition fejlécből jön, fejléc nélkül undefined', async () => {
+    const mock = mockBillingo(
+      {
+        status: 200,
+        bytes: new TextEncoder().encode('%PDF-1.4'),
+        headers: {
+          'content-type': 'application/pdf',
+          'content-disposition': 'attachment; filename=2026-1.pdf',
+        },
+      },
+      { status: 200, bytes: new Uint8Array([1]) },
+    )
+    const context = createTestContext(mock)
+
+    const named = await context.binary({ operation: 'DownloadDocument', pathParams: { id: 1 } })
+    const unnamed = await context.binary({ operation: 'DownloadDocument', pathParams: { id: 2 } })
+
+    expect(named.filename).toBe('2026-1.pdf')
+    expect(unnamed).toEqual({
+      bytes: new Uint8Array([1]),
+      contentType: undefined,
+      filename: undefined,
+    })
+  })
+
+  test('filenameFromContentDisposition: sima, idézőjeles és escape-elt alak, a filename* nem', () => {
+    expect(filenameFromContentDisposition('inline; filename=2026_11_15_15_06_59_export.csv')).toBe(
+      '2026_11_15_15_06_59_export.csv',
+    )
+    expect(filenameFromContentDisposition('attachment; FileName = "TRCE 2026-000001.pdf"')).toBe(
+      'TRCE 2026-000001.pdf',
+    )
+    expect(filenameFromContentDisposition('attachment; filename="a \\"b\\".pdf"; size=3')).toBe(
+      'a "b".pdf',
+    )
+    expect(filenameFromContentDisposition('attachment; filename=x.csv ; creation-date=1')).toBe(
+      'x.csv',
+    )
+    expect(filenameFromContentDisposition('filename=elso.pdf')).toBe('elso.pdf')
+    expect(filenameFromContentDisposition("attachment; filename*=UTF-8''sz%C3%A1mla.pdf")).toBe(
+      undefined,
+    )
+    expect(filenameFromContentDisposition('attachment; myfilename=x.pdf')).toBeUndefined()
+    expect(filenameFromContentDisposition('attachment; filename=')).toBeUndefined()
+    expect(filenameFromContentDisposition('attachment; filename=""')).toBeUndefined()
+    expect(filenameFromContentDisposition('attachment')).toBeUndefined()
+    expect(filenameFromContentDisposition(null)).toBeUndefined()
+  })
+
   test('a 422-es hibából mezőszintű magyar hibát készít', async () => {
     const mock = mockBillingo({
       status: 422,
@@ -85,7 +135,13 @@ describe('createContext', () => {
     const context = createTestContext(mock)
 
     const error = await context
-      .json({ operation: 'CreatePartner', body: {} })
+      .json({
+        operation: 'CreatePartner',
+        body: {
+          name: '',
+          address: { countryCode: 'HU', postCode: '1011', city: 'Budapest', address: 'Fő utca 1.' },
+        },
+      })
       .catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(BillingoError)
@@ -204,9 +260,63 @@ describe('createContext', () => {
     const mock = mockBillingo({ status: 200, bytes: new TextEncoder().encode('<html>') })
     const context = createTestContext(mock)
 
-    await expect(context.json({ operation: 'GetServerTime' })).rejects.toMatchObject({
+    const error = await context.json({ operation: 'GetServerTime' }).catch((caught) => caught)
+
+    expect(error).toMatchObject({
       category: 'unexpected_response',
+      status: 200,
+      retryable: false,
+      message: 'A Billingo válasza nem értelmezhető JSON.',
+      cause: expect.any(SyntaxError),
     })
+  })
+
+  test('az üres sikeres törzs JSON helyett unexpected_response hiba, nem undefined', async () => {
+    const mock = mockBillingo(
+      { status: 200 },
+      { status: 200, bytes: new TextEncoder().encode(' \n') },
+    )
+    const context = createTestContext(mock)
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const error = await context.json({ operation: 'GetServerTime' }).catch((caught) => caught)
+      expect(error).toBeInstanceOf(BillingoError)
+      expect(error).toMatchObject({
+        category: 'unexpected_response',
+        status: 200,
+        operation: 'GetServerTime',
+        message: 'A Billingo válasza üres (HTTP 200), pedig JSON törzset vártunk.',
+      })
+    }
+    expect(mock.requests).toHaveLength(2)
+  })
+
+  test('írásnál az üres vagy hibás törzs hibája figyelmeztet, hogy a művelet megtörténhetett', async () => {
+    const mock = mockBillingo(
+      { status: 201 },
+      { status: 201, bytes: new TextEncoder().encode('{"id":') },
+    )
+    const context = createTestContext(mock)
+    const create = () =>
+      context
+        .json({
+          operation: 'CreateBankAccount',
+          body: { name: 'Fő', accountNumber: '11773016-11111018', currency: 'HUF' },
+        })
+        .catch((caught: unknown) => caught)
+
+    const empty = await create()
+    const broken = await create()
+
+    expect(empty).toMatchObject({ category: 'unexpected_response', status: 201, retryable: false })
+    expect(broken).toMatchObject({ category: 'unexpected_response', status: 201 })
+    for (const error of [empty, broken]) {
+      expect((error as BillingoError).message).toContain(
+        'A művelet a Billingo oldalán ettől még végrehajtódhatott: ne ismételd meg vakon',
+      )
+    }
+    expect((empty as BillingoError).message).toMatch(/^A Billingo válasza üres \(HTTP 201\)/)
+    expect(mock.requests).toHaveLength(2)
   })
 
   test('a hookok hibája nem töri meg a kérést, hanem onWarning lesz belőle', async () => {

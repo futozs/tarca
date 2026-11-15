@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mergeSpecs } from './spec-core.mjs'
+import { applySpecOverrides, mergeRawSpecs } from './spec-core.mjs'
+import { SPEC_OVERRIDES } from './spec-overrides.mjs'
 import { renderTypes } from './types-core.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -19,7 +20,14 @@ const { versions } = JSON.parse(readFileSync(indexPath, 'utf8'))
 const specs = versions.map((version) =>
   JSON.parse(readFileSync(join(cacheDir, `billingo-${version}.json`), 'utf8')),
 )
-const source = renderTypes(mergeSpecs(specs))
+const { spec, problems } = applySpecOverrides(mergeRawSpecs(specs), SPEC_OVERRIDES)
+if (problems.length > 0) {
+  console.error(
+    `A scripts/spec-overrides.mjs nem illik a friss Billingo spec-hez:\n${problems.map((problem) => `- ${problem}`).join('\n')}`,
+  )
+  process.exit(1)
+}
+const source = renderTypes(spec)
 const biome = join(root, 'node_modules', '.bin', 'biome')
 const formatted = execFileSync(biome, ['format', `--stdin-file-path=${target}`], {
   cwd: root,

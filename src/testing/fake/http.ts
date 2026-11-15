@@ -32,9 +32,16 @@ export interface FakeFieldError {
   readonly message: string
 }
 
+export interface FakeFile {
+  readonly bytes: Uint8Array<ArrayBuffer>
+  readonly contentType: string
+  readonly disposition: string
+}
+
 export interface FakeResponse {
   readonly status: number
   readonly body?: unknown
+  readonly file?: FakeFile
 }
 
 export interface FakeRequest {
@@ -97,7 +104,20 @@ export function statusFaultResponse(status: number, message: string | undefined)
   return clientError(status, message ?? defaults[status] ?? '')
 }
 
+export function fileResponse(file: FakeFile): FakeResponse {
+  return { status: 200, file }
+}
+
 export function toFetchResponse(response: FakeResponse, includeBody = true): Response {
+  if (response.file) {
+    return new Response(includeBody ? response.file.bytes : null, {
+      status: response.status,
+      headers: {
+        'content-type': response.file.contentType,
+        'content-disposition': response.file.disposition,
+      },
+    })
+  }
   if (response.body === undefined || !includeBody) {
     return new Response(null, { status: response.status })
   }
@@ -134,12 +154,18 @@ export const LARAVEL_MESSAGES: {
   dateFormat: (field) => `The ${attribute(field)} does not match the format Y-m-d.`,
 }
 
-function isBlank(value: unknown): boolean {
+export function isBlank(value: unknown): boolean {
   return value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function isCalendarDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
 }
 
 export function bodyFields(body: unknown): Record<string, unknown> {

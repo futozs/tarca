@@ -1,5 +1,7 @@
 import { createTarca, type Tarca } from '../client'
+import { isPlainObject } from '../core/case'
 import { BillingoError } from '../core/errors'
+import type { TarcaDefaults } from '../documents/defaults'
 import {
   createFakeBillingoFetch,
   type FakeBillingo,
@@ -27,6 +29,7 @@ export interface MockFailureOptions {
 
 export interface MockTarcaOptions extends Omit<FakeBillingoOptions, 'apiKeys'> {
   readonly credentialsValid?: boolean | undefined
+  readonly defaults?: TarcaDefaults | undefined
 }
 
 export interface MockTarca extends Tarca {
@@ -44,12 +47,6 @@ interface PendingFailure {
 type AnyMethod = (...args: unknown[]) => unknown
 
 const MOCK_API_KEY = 'tarca-mock-kulcs'
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== 'object' || value === null) return false
-  const prototype = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
-}
 
 function isMethod(value: unknown): value is AnyMethod {
   return typeof value === 'function'
@@ -98,11 +95,17 @@ async function* iterate(
 }
 
 export function createMockTarca(options: MockTarcaOptions = {}): MockTarca {
+  const { credentialsValid, defaults, ...fakeOptions } = options
   const billingo = createFakeBillingoFetch({
-    ...options,
-    ...(options.credentialsValid === false ? { apiKeys: [] } : {}),
+    ...fakeOptions,
+    ...(credentialsValid === false ? { apiKeys: [] } : {}),
   })
-  const client = createTarca({ apiKey: MOCK_API_KEY, fetch: billingo.fetch, retryDelayMs: 0 })
+  const client = createTarca({
+    apiKey: MOCK_API_KEY,
+    fetch: billingo.fetch,
+    retryDelayMs: 0,
+    defaults,
+  })
   const calls: MockCall[] = []
   const failures = new Map<string, PendingFailure>()
   const methods = new Set<string>()

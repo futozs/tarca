@@ -24,8 +24,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: A Billingo spec letöltése (az élő válaszok a javított spec ellen mennek)
+        run: npm run spec:fetch
       - name: Élő e2e a Billingo teszt profilján
         env:
+          TARCA_REQUIRE_SPEC: '1'
           BILLINGO_TEST_API_KEY: ${{ secrets.BILLINGO_TEST_API_KEY }}
           BILLINGO_E2E_EMAIL: ${{ secrets.BILLINGO_E2E_EMAIL }}
           BILLINGO_E2E_TAX_CODE: ${{ vars.BILLINGO_E2E_TAX_CODE }}

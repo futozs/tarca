@@ -10,6 +10,7 @@ export interface E2eState {
   blockId?: number
   receiptBlockId?: number
   partnerId?: number
+  findOrCreatePartnerId?: number | undefined
   productId?: number
   draftId?: number
   proformaId?: number
@@ -18,6 +19,7 @@ export interface E2eState {
   finalInvoiceId?: number
   modifiedInvoiceId?: number
   receiptId?: number
+  issuedDocumentIds?: number[]
   spendingId?: number
   exportId?: string
 }

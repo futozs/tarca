@@ -22,6 +22,7 @@ export declare function consistencyProblems(input: {
   readonly specOperations: readonly KnownOperation[]
   readonly knownOperations: readonly KnownOperation[]
   readonly missingRoutes: readonly string[]
+  readonly overrideProblems?: readonly string[]
 }): string[]
 export declare function renderReport(
   changes: readonly DriftChange[],

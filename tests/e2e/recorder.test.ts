@@ -139,7 +139,7 @@ function exchange(overrides: Partial<RecordedExchange>): RecordedExchange {
 }
 
 describe('a rögzített forgalom ellenőrzése', () => {
-  const validator = createSpecValidator(SPEC, {})
+  const validator = createSpecValidator(SPEC)
   const records = [
     exchange({}),
     exchange({ responseBody: { name: 'TITKOS', iban: null, extra: 'TITKOS' } }),
@@ -156,12 +156,13 @@ describe('a rögzített forgalom ellenőrzése', () => {
     exchange({ method: 'POST', operation: undefined }),
   ]
 
-  test('laza, kitakart módban: az eltérés hiba, az extra mező és a null figyelmeztetés, érték sehol', () => {
+  test('laza, kitakart módban: az eltérés és a nem nullable mező null értéke hiba, az extra mező figyelmeztetés, érték sehol', () => {
     const report = validateRecording(records, validator, { mode: 'lenient', redact: true })
 
     expect(report).toEqual({
       exchanges: 7,
       errors: [
+        'GetBankAccount 200 válasz: Account.iban: null nem engedett',
         'GetBankAccount 200 válasz: Account.name: string típus kell, kapott: number',
         'GetBankAccount útvonal.id: integer típus kell, kapott: string',
         'UpdateBankAccount kérés: Account.name: kötelező mező hiányzik',
@@ -169,7 +170,6 @@ describe('a rögzített forgalom ellenőrzése', () => {
         'POST: a kérés egyik Billingo műveletre sem illeszkedik',
       ],
       warnings: [
-        'GetBankAccount 200 válasz: Account.iban: null, pedig a spec szerint nem nullable',
         'GetBankAccount 200 válasz: Account.extra: a sémában nem szereplő mező',
         'GetBankAccount 404: a státusz nincs dokumentálva',
       ],
@@ -207,8 +207,8 @@ describe('a rögzített forgalom ellenőrzése', () => {
 })
 
 describe.skipIf(!SPEC_AVAILABLE)('a rögzített forgalom a friss Billingo spec ellen', () => {
-  test('az üres oldal null lapozó URL-je lazán figyelmeztetés, szigorúan hiba', () => {
-    const page = exchange({
+  const page = (body: Record<string, unknown>) =>
+    exchange({
       operation: 'ListBankAccount',
       pathParams: {},
       query: new URLSearchParams('page=1&per_page=100'),
@@ -220,21 +220,28 @@ describe.skipIf(!SPEC_AVAILABLE)('a rögzített forgalom a friss Billingo spec e
         last_page: 1,
         prev_page_url: null,
         next_page_url: null,
+        ...body,
       },
     })
 
+  test('az üres oldal null lapozó URL-je a spec-felülírás szerint érvényes, figyelmeztetés nélkül', () => {
+    for (const mode of ['lenient', 'strict'] as const) {
+      expect(
+        validateRecording([page({})], billingoSpecValidator(), { mode, redact: true }),
+      ).toEqual({ exchanges: 1, errors: [], warnings: [] })
+    }
+  })
+
+  test('a felülírásban nem szereplő null laza módban is hiba', () => {
     expect(
-      validateRecording([page], billingoSpecValidator(), { mode: 'lenient', redact: true }),
+      validateRecording([page({ total: null })], billingoSpecValidator(), {
+        mode: 'lenient',
+        redact: true,
+      }),
     ).toEqual({
       exchanges: 1,
-      errors: [],
-      warnings: [
-        'ListBankAccount 200 válasz: BankAccountList.prev_page_url: null, pedig a spec szerint nem nullable',
-        'ListBankAccount 200 válasz: BankAccountList.next_page_url: null, pedig a spec szerint nem nullable',
-      ],
+      errors: ['ListBankAccount 200 válasz: BankAccountList.total: null nem engedett'],
+      warnings: [],
     })
-    expect(
-      validateRecording([page], billingoSpecValidator(), { mode: 'strict', redact: false }).errors,
-    ).toHaveLength(2)
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { specOperations } from '../scripts/spec-core.mjs'
+import { mergeRawSpecs, specOperations } from '../scripts/spec-core.mjs'
+import { SPEC_OVERRIDES } from '../scripts/spec-overrides.mjs'
 import { camelToSnake, snakeToCamel } from '../src/core/case'
 import { BILLINGO_OPERATIONS, type OperationId } from '../src/core/operations'
 import {
@@ -8,7 +9,6 @@ import {
   loadMergedSpec,
   type OpenApiSchema,
   SPEC_AVAILABLE,
-  UNDOCUMENTED_SCHEMAS,
   unsupportedSchemaUsage,
 } from './openapi'
 
@@ -36,11 +36,15 @@ describe.skipIf(!SPEC_AVAILABLE)('szerződés a friss Billingo spec-kel', () => 
     expect(missing).toEqual([])
   })
 
-  test('a tábla dokumentált műveletei mind szerepelnek a spec-ben, a nem dokumentáltak nem', () => {
-    const inSpec = new Set(operations.map((operation) => operation.id))
+  test('a tábla dokumentált műveletei a nyers spec-ben vannak, a nem dokumentáltak csak a felülírásokban', () => {
+    const raw = new Set(specOperations(mergeRawSpecs(loadCachedSpecs())).map((item) => item.id))
+    const corrected = new Set(operations.map((operation) => operation.id))
     const problems = Object.entries(BILLINGO_OPERATIONS).flatMap(([id, info]) => {
-      if (info.spec === 'undocumented') return inSpec.has(id) ? [`${id}: már dokumentált`] : []
-      return inSpec.has(id) ? [] : [`${id}: eltűnt a spec-ből`]
+      if (info.spec === 'undocumented') {
+        if (raw.has(id)) return [`${id}: már dokumentált`]
+        return corrected.has(id) ? [] : [`${id}: a spec-overrides.mjs sem írja le`]
+      }
+      return raw.has(id) ? [] : [`${id}: eltűnt a spec-ből`]
     })
     expect(problems).toEqual([])
   })
@@ -61,15 +65,11 @@ describe.skipIf(!SPEC_AVAILABLE)('szerződés a friss Billingo spec-kel', () => 
     }
   })
 
-  test('minden dokumentált művelet kérés- és válaszszerződése feloldható, a leíratlan nem dokumentált művelet hibát dob', () => {
+  test('minden művelet kérés- és válaszszerződése feloldható, a nem dokumentáltaké is', () => {
     const validator = billingoSpecValidator()
     const problems: string[] = []
     for (const [id, info] of Object.entries(BILLINGO_OPERATIONS)) {
       const operationId = id as OperationId
-      if (info.spec === 'undocumented' && !UNDOCUMENTED_SCHEMAS[operationId]) {
-        expect(() => validator.operation(operationId)).toThrow('UNDOCUMENTED_SCHEMAS')
-        continue
-      }
       const operation = validator.operation(operationId)
       const templateNames = [...info.path.matchAll(/\{(\w+)\}/g)].map((match) => match[1])
       const pathNames = (operation.parameters ?? [])
@@ -100,10 +100,15 @@ describe.skipIf(!SPEC_AVAILABLE)('szerződés a friss Billingo spec-kel', () => 
     expect(problems).toEqual([])
   })
 
-  test('az UNDOCUMENTED_SCHEMAS csak nem dokumentált műveletet írhat le', () => {
-    const documented = Object.keys(UNDOCUMENTED_SCHEMAS).filter(
-      (id) => BILLINGO_OPERATIONS[id as OperationId].spec !== 'undocumented',
+  test('a felülírások új műveletei pontosan a tábla nem dokumentált műveletei, azonos útvonallal', () => {
+    const added = SPEC_OVERRIDES.flatMap((override) =>
+      override.kind === 'operation'
+        ? [`${override.operation.operationId} ${override.method.toUpperCase()} ${override.path}`]
+        : [],
     )
-    expect(documented).toEqual([])
+    const undocumented = Object.entries(BILLINGO_OPERATIONS)
+      .filter(([, info]) => info.spec === 'undocumented')
+      .map(([id, info]) => `${id} ${info.method} ${info.path}`)
+    expect(added.sort()).toEqual(undocumented.sort())
   })
 })

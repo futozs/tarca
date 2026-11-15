@@ -2,14 +2,55 @@ import { addBudapestDays, toBudapestDate } from '../../core/dates'
 import type {
   BankAccount,
   Currency,
-  DocumentBlock,
+  Document,
+  DocumentBlockSchema,
+  DocumentExportQueryType,
+  DocumentExportType,
+  DocumentItem,
   Feature,
+  Partner,
+  PaymentHistory,
+  Product,
+  Spending,
   TaxpayerAddress,
 } from '../../generated/billingo'
 
 export type FakeBankAccount = Required<BankAccount>
 
-export type FakeDocumentBlock = Required<DocumentBlock>
+export type FakeDocumentBlock = Required<DocumentBlockSchema>
+
+export type FakePartner = Required<Partner>
+
+export type FakeProduct = Required<Product>
+
+export type FakeSpending = Required<Spending>
+
+export type FakeDocumentItem = Required<DocumentItem>
+
+export type FakePayment = Required<PaymentHistory>
+
+export type FakeDocument = Omit<Required<Document>, 'items'> & {
+  readonly items: readonly FakeDocumentItem[]
+}
+
+export interface FakeDocumentRecord {
+  readonly document: FakeDocument
+  readonly vendorId: string | undefined
+  readonly issuedAt: Date
+  readonly modifiedAt: Date
+  readonly archived?: boolean
+  readonly payments?: readonly FakePayment[]
+}
+
+export interface FakeDocumentExport {
+  readonly id: string
+  readonly queryType: DocumentExportQueryType
+  readonly startDate: string
+  readonly endDate: string
+  readonly exportType: DocumentExportType
+  readonly documentBlockId: number | undefined
+  readonly polls: number
+}
 
 export interface FakeTaxpayer {
   readonly name: string
@@ -31,6 +72,8 @@ export interface FakeBillingoStateOptions {
   readonly hufRates?: Readonly<Partial<Record<Currency, number>>> | undefined
   readonly taxpayers?: Readonly<Record<string, FakeTaxpayer>> | undefined
   readonly legacyIds?: Readonly<Record<number, number>> | undefined
+  readonly stock?: Readonly<Record<string, number>> | undefined
+  readonly navRecordDelayMs?: number | undefined
 }
 
 export interface FakeBillingoConfig {
@@ -45,11 +88,18 @@ export interface FakeBillingoConfig {
   readonly hufRates: Readonly<Partial<Record<Currency, number>>>
   readonly taxpayers: Readonly<Record<string, FakeTaxpayer>>
   readonly legacyIds: ReadonlyMap<number, number>
+  readonly stock: Readonly<Record<string, number>> | undefined
+  readonly navRecordDelayMs: number
 }
 
 export interface FakeBillingoData {
   readonly documentBlocks: Map<number, FakeDocumentBlock>
   readonly bankAccounts: Map<number, FakeBankAccount>
+  readonly partners: Map<number, FakePartner>
+  readonly products: Map<number, FakeProduct>
+  readonly spendings: Map<number, FakeSpending>
+  readonly documentExports: Map<string, FakeDocumentExport>
+  readonly documents: Map<number, FakeDocumentRecord>
 }
 
 export type FakeBillingoDataView = {
@@ -65,6 +115,8 @@ export interface FakeBillingoState extends FakeBillingoData {
 
 export const DEFAULT_TAX_CODE = '00000000-0-00'
 
+export const DEFAULT_NAV_RECORD_DELAY_MS = 10_000
+
 const DEFAULT_HUF_RATES: Readonly<Partial<Record<Currency, number>>> = {
   EUR: 390,
   USD: 360,
@@ -72,9 +124,30 @@ const DEFAULT_HUF_RATES: Readonly<Partial<Record<Currency, number>>> = {
   CHF: 410,
 }
 
+export const DOCUMENT_BLOCK_DEFAULTS: Omit<FakeDocumentBlock, 'id' | 'name' | 'prefix' | 'type'> = {
+  customField1: '',
+  customField2: '',
+  templateId: 0,
+  picPath: null,
+  normalNotificationId: 0,
+  proformaNotificationId: 0,
+  generated: false,
+  invoiceNumberFormat: 'default',
+  senderEmail: null,
+  senderName: '',
+  bccEmail: null,
+  createInvoiceFromPaidProforma: false,
+  fulfillmentDateFromProformaPaymentDate: false,
+  attachXmlToInvoicePdf: false,
+  advancePaidInstant: false,
+  financialFulfillmentHighlight: 'basic',
+  entitlementsInDocumentComment: false,
+  bankAccountId: null,
+}
+
 const SEEDED_DOCUMENT_BLOCKS: readonly Omit<FakeDocumentBlock, 'id'>[] = [
-  { name: 'Számlák', prefix: '', customField1: '', customField2: '', type: 'invoice' },
-  { name: 'Nyugták', prefix: 'NYT', customField1: '', customField2: '', type: 'receipt' },
+  { name: 'Számlák', prefix: '', type: 'invoice', ...DOCUMENT_BLOCK_DEFAULTS },
+  { name: 'Nyugták', prefix: 'NYT', type: 'receipt', ...DOCUMENT_BLOCK_DEFAULTS },
 ]
 
 function taxpayerKey(taxNumber: string): string {
@@ -106,6 +179,28 @@ function checkedLegacyIds(legacyIds: Readonly<Record<number, number>>): Map<numb
     map.set(legacyId, id)
   }
   return map
+}
+
+function checkedStock(
+  stock: Readonly<Record<string, number>> | undefined,
+): Readonly<Record<string, number>> | undefined {
+  for (const [sku, quantity] of Object.entries(stock ?? {})) {
+    if (typeof quantity !== 'number' || !Number.isFinite(quantity)) {
+      throw new TypeError(
+        `A stock.${sku} értéke véges szám legyen (a termék elérhető készlete), kapott: ${String(quantity)}`,
+      )
+    }
+  }
+  return stock
+}
+
+function checkedNavRecordDelay(delay: number): number {
+  if (!Number.isFinite(delay) || delay < 0) {
+    throw new TypeError(
+      `A navRecordDelayMs nemnegatív szám legyen (ennyi idő után lesz NAV rekordja egy kiállított bizonylatnak), kapott: ${String(delay)}`,
+    )
+  }
+  return delay
 }
 
 export function nextId(state: FakeBillingoState, sequence: string): number {
@@ -153,10 +248,19 @@ export function createState(options: FakeBillingoStateOptions = {}): FakeBilling
         ]),
       ),
       legacyIds: checkedLegacyIds(options.legacyIds ?? {}),
+      stock: checkedStock(options.stock),
+      navRecordDelayMs: checkedNavRecordDelay(
+        options.navRecordDelayMs ?? DEFAULT_NAV_RECORD_DELAY_MS,
+      ),
     },
     sequences: new Map(),
     documentBlocks: new Map(),
     bankAccounts: new Map(),
+    partners: new Map(),
+    products: new Map(),
+    spendings: new Map(),
+    documentExports: new Map(),
+    documents: new Map(),
   }
   for (const block of SEEDED_DOCUMENT_BLOCKS) {
     const id = nextId(state, 'documentBlocks')

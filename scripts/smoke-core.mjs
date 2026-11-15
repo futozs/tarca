@@ -48,7 +48,7 @@ export async function runSmoke(modules) {
     assert(isBillingoError(error) && error.category === 'server', 'szerverhiba magyarul')
   }
   assert(seen.filter((line) => line === 'GET /v3/utils/time').length === 2, 'GET újrapróbálás')
-  assert(Object.keys(BILLINGO_OPERATIONS).length >= 54, 'teljes művelettábla')
+  assert(Object.keys(BILLINGO_OPERATIONS).length >= 57, 'teljes művelettábla')
   assert(
     toBillingoDate(new Date('2026-07-14T22:30:00Z')) === '2026-07-15',
     'budapesti dátum (Intl)',
@@ -91,6 +91,8 @@ async function smokeTesting(modules, assert) {
     'tarca/testing: 401 a Billingo hibaformájában',
   )
 
+  await smokeResources(client, billingo, assert)
+
   const mock = createMockTarca()
   mock.failNext('organization.get')
   try {
@@ -105,5 +107,103 @@ async function smokeTesting(modules, assert) {
   assert(
     (await mock.verifyCredentials()) === true && mock.calls.length === 2,
     'tarca/testing: createMockTarca hívásnapló',
+  )
+}
+
+async function smokeResources(client, billingo, assert) {
+  const today = new Date()
+  const { data: blocks } = await client.documentBlocks.list({ type: 'invoice' })
+  assert(blocks.length > 0 && blocks[0].type === 'invoice', 'tarca/testing: számlatömbök')
+  const { partner } = await client.partners.findOrCreate({
+    name: 'Smoke Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  })
+  const product = await client.products.create({
+    name: 'Smoke termék',
+    currency: 'HUF',
+    vat: '27%',
+    unit: 'db',
+    netUnitPrice: 1000,
+  })
+  assert(
+    product.grossUnitPrice === 1270,
+    'tarca/testing: termék, a bruttó árat a Billingo számolja',
+  )
+  try {
+    await client.inventory.quantity(product.id)
+    assert(false, 'tarca/testing: készletkezelés nélkül a készlet hibát ad')
+  } catch (error) {
+    assert(error.status === 400 && error.category === 'validation', 'tarca/testing: készlet 400')
+  }
+  const { document, created } = await client.documents.createOnce({
+    vendorId: 'SMOKE-1',
+    partner: partner.id,
+    items: [{ productId: product.id, quantity: 2 }],
+  })
+  const again = await client.documents.createOnce({
+    vendorId: 'SMOKE-1',
+    partner: partner.id,
+    items: [{ productId: product.id, quantity: 2 }],
+  })
+  assert(
+    created && !again.created && again.document.id === document.id && document.grossTotal === 2540,
+    'tarca/testing: createOnce egyszer állít ki, a Billingo kerekítésével',
+  )
+  const payments = await client.documents.payments.add(document.id, {
+    date: today,
+    price: 2540,
+    paymentMethod: 'wire_transfer',
+  })
+  const paid = await client.documents.get(document.id)
+  assert(payments.length === 1 && paid.paymentStatus === 'paid', 'tarca/testing: befizetés')
+  const pdf = await client.documents.pdf(document.id)
+  assert(
+    String.fromCharCode(...pdf.bytes.slice(0, 5)) === '%PDF-' && pdf.filename?.endsWith('.pdf'),
+    'tarca/testing: PDF letöltés bájtokként',
+  )
+  const cancellation = await client.documents.cancel(document.id, { reason: 'Smoke' })
+  assert(cancellation.type === 'cancellation', 'tarca/testing: sztornó')
+  const receipt = await client.receipts.create({
+    items: [{ name: 'Smoke kávé', grossUnitPrice: 600, vat: 27 }],
+  })
+  assert(
+    receipt.type === 'receipt' && receipt.paymentMethod === 'cash',
+    'tarca/testing: nyugta készpénzzel',
+  )
+  const spending = await client.spendings.create({
+    category: 'other',
+    currency: 'HUF',
+    conversionRate: 1,
+    totalGross: 1270,
+    totalGrossHuf: 1270,
+    totalVatAmount: 270,
+    totalVatAmountHuf: 270,
+    invoiceNumber: 'SMOKE-1',
+    invoiceDate: today,
+    fulfillmentDate: today,
+    dueDate: today,
+    paymentMethod: 'cash',
+  })
+  assert(spending.invoiceNumber === 'SMOKE-1', 'tarca/testing: költség')
+  const rate = await client.currencies.rate({ from: 'EUR', to: 'HUF' })
+  assert(rate.rate > 0, 'tarca/testing: árfolyam')
+  const job = await client.exports.create({
+    queryType: 'invoice_date',
+    startDate: today,
+    endDate: today,
+    exportType: 'simple_csv',
+  })
+  await client.exports.poll(job.id)
+  const status = await client.exports.poll(job.id)
+  const file = await client.exports.download(job.id)
+  assert(
+    status.state === 'success' &&
+      file.bytes[0] === 0xef &&
+      file.contentType?.startsWith('text/csv'),
+    'tarca/testing: export CSV, BOM-mal',
+  )
+  assert(
+    billingo.count('CreateDocument') === 1 && billingo.count('GetDocumentByVendorId') === 2,
+    'tarca/testing: kéréstábla',
   )
 }

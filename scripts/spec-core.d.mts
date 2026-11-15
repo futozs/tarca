@@ -1,3 +1,5 @@
+import type { SpecOverride } from './spec-overrides.mjs'
+
 export declare const SWAGGERHUB_API: string
 export declare const MIN_SPEC_VERSION: string
 export declare const HTTP_METHODS: readonly string[]
@@ -18,5 +20,22 @@ export interface MergedSpec {
   readonly paths: Readonly<Record<string, Readonly<Record<string, unknown>>>>
   readonly components: { readonly schemas: Readonly<Record<string, unknown>> }
 }
-export declare function mergeSpecs(specs: readonly unknown[]): MergedSpec
+export interface OverrideResult {
+  readonly spec: MergedSpec
+  readonly problems: readonly string[]
+}
+export declare function mergeRawSpecs(specs: readonly unknown[]): MergedSpec
+export declare function mergeSpecs(
+  specs: readonly unknown[],
+  overrides?: readonly SpecOverride[],
+): MergedSpec
+export declare function specOverrideProblems(
+  specs: readonly unknown[],
+  overrides?: readonly SpecOverride[],
+): readonly string[]
+export declare function applySpecOverrides(
+  spec: unknown,
+  overrides: readonly SpecOverride[],
+): OverrideResult
+export declare function describeOverride(override: SpecOverride): string
 export declare function canonicalJson(value: unknown): string

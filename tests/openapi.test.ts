@@ -352,7 +352,7 @@ describe('OpenAPI validátor viselkedése', () => {
     expect(validate('Free', { b: 1 })).toEqual([])
   })
 
-  test('laza módban az extra mező és az opcionális null figyelmeztetés, minden más hiba', () => {
+  test('laza módban csak az extra mező figyelmeztetés, a nem nullable mező null értéke is hiba', () => {
     const { report } = createValidator({
       Account: {
         type: 'object',
@@ -372,11 +372,9 @@ describe('OpenAPI validátor viselkedése', () => {
         'Account.name: null nem engedett',
         'Account.currency: "USD" nincs az engedett értékek között',
         'Account.date: nem YYYY-MM-DD dátum',
+        'Account.url: null nem engedett',
       ],
-      warnings: [
-        'Account.url: null, pedig a spec szerint nem nullable',
-        'Account.extra: a sémában nem szereplő mező',
-      ],
+      warnings: ['Account.extra: a sémában nem szereplő mező'],
     })
     expect(report('Account', value, { direction: 'response', mode: 'strict' })).toEqual({
       errors: [
@@ -650,7 +648,7 @@ const SYNTHETIC_SPEC = {
   },
 } as unknown as OpenApiSpec
 
-const spec = createSpecValidator(SYNTHETIC_SPEC, {})
+const spec = createSpecValidator(SYNTHETIC_SPEC)
 
 describe('műveletszintű szerződés (szintetikus spec)', () => {
   test('a kéréstörzset a requestBody hivatkozásán és a JSON tartalomtípuson át találja meg', () => {
@@ -800,13 +798,24 @@ describe('műveletszintű szerződés (szintetikus spec)', () => {
       'a spec ezen az útvonalon a(z) GetServerTime műveletet írja le',
     )
     expect(() => spec.operation('ListPartner')).toThrow('ListPartner: nincs a spec-ben')
-    expect(() => spec.operation('GetDocumentBlock')).toThrow('UNDOCUMENTED_SCHEMAS')
-    const mapped = createSpecValidator(SYNTHETIC_SPEC, {
-      GetDocumentBlock: {
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-        responses: {
-          '200': {
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Payment' } } },
+    expect(() => spec.operation('GetDocumentBlock')).toThrow(
+      'GetDocumentBlock: a művelet nincs a Billingo spec-ben, és a scripts/spec-overrides.mjs sem írja le',
+    )
+    const mapped = createSpecValidator({
+      ...SYNTHETIC_SPEC,
+      paths: {
+        ...SYNTHETIC_SPEC.paths,
+        '/document-blocks/{id}': {
+          get: {
+            operationId: 'GetDocumentBlock',
+            parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+            responses: {
+              '200': {
+                content: {
+                  'application/json': { schema: { $ref: '#/components/schemas/Payment' } },
+                },
+              },
+            },
           },
         },
       },

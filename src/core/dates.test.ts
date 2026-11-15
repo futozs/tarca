@@ -5,6 +5,7 @@ import {
   toBudapestDate,
   toBudapestTimestamp,
   todayInBudapest,
+  toOptionalBillingoDate,
 } from './dates'
 
 describe('toBudapestDate', () => {
@@ -54,6 +55,14 @@ describe('toBillingoDate', () => {
   test('rossz formátumra és nem létező napra RangeError-t dob', () => {
     expect(() => toBillingoDate('2026.02.28')).toThrow(RangeError)
     expect(() => toBillingoDate('2026-02-30')).toThrow(RangeError)
+  })
+})
+
+describe('toOptionalBillingoDate', () => {
+  test('a hiányzó dátum hiányzó marad, a megadottat a toBillingoDate szabályai szerint alakítja', () => {
+    expect(toOptionalBillingoDate(undefined)).toBeUndefined()
+    expect(toOptionalBillingoDate(new Date('2026-07-14T22:30:00Z'))).toBe('2026-07-15')
+    expect(() => toOptionalBillingoDate('2026-02-30')).toThrow(RangeError)
   })
 })
 

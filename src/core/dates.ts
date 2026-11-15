@@ -83,6 +83,10 @@ export function toBillingoDate(input: DateInput): string {
   return match[0]
 }
 
+export function toOptionalBillingoDate(input: DateInput | undefined): string | undefined {
+  return input === undefined ? undefined : toBillingoDate(input)
+}
+
 export function todayInBudapest(now: Date = new Date()): string {
   return toBudapestDate(now)
 }

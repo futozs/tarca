@@ -18,6 +18,7 @@ import {
   registryVersions,
   SWAGGERHUB_API,
   specOperations,
+  specOverrideProblems,
   trackedVersions,
 } from './spec-core.mjs'
 
@@ -109,6 +110,7 @@ const problems = consistencyProblems({
   specOperations: specs.length > 0 ? specOperations(mergeSpecs(specs)) : [],
   knownOperations,
   missingRoutes: skipRoutes ? [] : await probeRoutes(knownOperations),
+  overrideProblems: specs.length > 0 ? specOverrideProblems(specs) : [],
 })
 const report = renderReport(changes, problems)
 process.stdout.write(report)

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { canonicalJson, mergeSpecs } from '../scripts/spec-core.mjs'
+import type { SpecOverride } from '../scripts/spec-overrides.mjs'
 import { BILLINGO_API_URL } from '../src/core/context'
 import { BILLINGO_OPERATIONS, type OperationId } from '../src/core/operations'
 
@@ -484,15 +485,6 @@ export function createSchemaChecker(root: unknown): SchemaChecker {
           out.errors.push(`${itemPath}: csak írható mező, válaszban nem szerepelhet`)
           continue
         }
-        if (
-          item === null &&
-          ctx.mode === 'lenient' &&
-          resolved.nullable !== true &&
-          !required.includes(key)
-        ) {
-          out.warnings.push(`${itemPath}: null, pedig a spec szerint nem nullable`)
-          continue
-        }
         check(property, item, itemPath, ctx, out, undefined)
         continue
       }
@@ -673,8 +665,6 @@ export function unsupportedSchemaUsage(spec: unknown): string[] {
   return problems
 }
 
-export const UNDOCUMENTED_SCHEMAS: Readonly<Partial<Record<OperationId, OpenApiOperation>>> = {}
-
 export interface ParameterInput {
   readonly path: Readonly<Record<string, string>>
   readonly query: URLSearchParams
@@ -723,10 +713,7 @@ function mediaMatches(range: string, mediaType: string): boolean {
 
 const PARAMETER_LOCATIONS: ReadonlySet<string> = new Set(['path', 'query'])
 
-export function createSpecValidator(
-  spec: OpenApiSpec,
-  undocumented: Readonly<Partial<Record<OperationId, OpenApiOperation>>> = UNDOCUMENTED_SCHEMAS,
-): SpecValidator {
+export function createSpecValidator(spec: OpenApiSpec): SpecValidator {
   const checker = createSchemaChecker(spec)
   const cache = new Map<OperationId, OpenApiOperation>()
 
@@ -745,37 +732,30 @@ export function createSpecValidator(
     const cached = cache.get(operationId)
     if (cached) return cached
     const info = BILLINGO_OPERATIONS[operationId]
-    let found: OpenApiOperation
-    if (info.spec === 'undocumented') {
-      const mapped = undocumented[operationId]
-      if (!mapped) {
-        throw new Error(
-          `${operationId}: a művelet nincs a Billingo spec-ben, és az UNDOCUMENTED_SCHEMAS sem írja le. Élő ellenőrzés után vedd fel a tests/openapi.ts UNDOCUMENTED_SCHEMAS táblájába.`,
-        )
-      }
-      found = mapped
-    } else {
-      const item = spec.paths[info.path]
-      const raw = item?.[info.method.toLowerCase()]
-      if (!item || !isRecord(raw)) {
-        throw new Error(`${operationId}: nincs a spec-ben (${info.method} ${info.path}).`)
-      }
-      const fromSpec = raw as OpenApiOperation
-      if (fromSpec.operationId !== operationId) {
-        throw new Error(
-          `${operationId}: a spec ezen az útvonalon a(z) ${String(fromSpec.operationId)} műveletet írja le (${info.method} ${info.path}).`,
-        )
-      }
-      const shared = Array.isArray(item.parameters) ? (item.parameters as OpenApiParameter[]) : []
-      const own = (fromSpec.parameters ?? []).map((parameter) => deref(parameter))
-      const inherited = shared
-        .map((parameter) => deref(parameter))
-        .filter(
-          (parameter) =>
-            !own.some((mine) => mine.name === parameter.name && mine.in === parameter.in),
-        )
-      found = { ...fromSpec, parameters: [...inherited, ...own] }
+    const item = spec.paths[info.path]
+    const raw = item?.[info.method.toLowerCase()]
+    if (!item || !isRecord(raw)) {
+      throw new Error(
+        info.spec === 'undocumented'
+          ? `${operationId}: a művelet nincs a Billingo spec-ben, és a scripts/spec-overrides.mjs sem írja le (${info.method} ${info.path}). Élő ellenőrzés után vedd fel operation felülírásként, bizonyítékkal.`
+          : `${operationId}: nincs a spec-ben (${info.method} ${info.path}).`,
+      )
     }
+    const fromSpec = raw as OpenApiOperation
+    if (fromSpec.operationId !== operationId) {
+      throw new Error(
+        `${operationId}: a spec ezen az útvonalon a(z) ${String(fromSpec.operationId)} műveletet írja le (${info.method} ${info.path}).`,
+      )
+    }
+    const shared = Array.isArray(item.parameters) ? (item.parameters as OpenApiParameter[]) : []
+    const own = (fromSpec.parameters ?? []).map((parameter) => deref(parameter))
+    const inherited = shared
+      .map((parameter) => deref(parameter))
+      .filter(
+        (parameter) =>
+          !own.some((mine) => mine.name === parameter.name && mine.in === parameter.in),
+      )
+    const found: OpenApiOperation = { ...fromSpec, parameters: [...inherited, ...own] }
     cache.set(operationId, found)
     return found
   }
@@ -1019,10 +999,10 @@ export function loadCachedSpecs(): OpenApiSpec[] {
   )
 }
 
-export function loadMergedSpec(): OpenApiSpec | undefined {
+export function loadMergedSpec(overrides?: readonly SpecOverride[]): OpenApiSpec | undefined {
   const specs = loadCachedSpecs()
   if (specs.length === 0) return undefined
-  return mergeSpecs(specs) as unknown as OpenApiSpec
+  return mergeSpecs(specs, overrides) as unknown as OpenApiSpec
 }
 
 const mergedSpec = loadMergedSpec()

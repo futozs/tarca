@@ -1,5 +1,5 @@
 import { fromApiCase, toApiCase } from './case'
-import { BillingoError, errorFromResponse, type RateLimitInfo } from './errors'
+import { BillingoError, configurationError, errorFromResponse, type RateLimitInfo } from './errors'
 import { type HttpMethod, type OperationId, operationInfo } from './operations'
 import { buildQuery, fillPath, joinUrl, type PathParams, type QueryParams } from './url'
 
@@ -38,29 +38,30 @@ export interface CompleteEvent extends RequestEvent {
 }
 
 export interface HookWarning {
-  readonly hook: HookName
+  readonly hook: HookName | 'createOnceLock'
   readonly operation: OperationId
   readonly error: unknown
+  readonly message?: string
 }
 
 export interface TarcaHooks {
-  readonly onRequest?: (event: RequestEvent) => void
-  readonly onResponse?: (event: ResponseEvent) => void
-  readonly onError?: (event: ErrorEvent) => void
-  readonly onComplete?: (event: CompleteEvent) => void
-  readonly onWarning?: (warning: HookWarning) => void
+  readonly onRequest?: ((event: RequestEvent) => void) | undefined
+  readonly onResponse?: ((event: ResponseEvent) => void) | undefined
+  readonly onError?: ((event: ErrorEvent) => void) | undefined
+  readonly onComplete?: ((event: CompleteEvent) => void) | undefined
+  readonly onWarning?: ((warning: HookWarning) => void) | undefined
 }
 
 type HookName = 'onRequest' | 'onResponse' | 'onError' | 'onComplete'
 
 export interface BillingoOptions {
-  readonly apiKey?: string
-  readonly baseUrl?: string
-  readonly fetch?: typeof globalThis.fetch
-  readonly timeoutMs?: number
-  readonly maxAttempts?: number
-  readonly retryDelayMs?: number
-  readonly hooks?: TarcaHooks
+  readonly apiKey?: string | undefined
+  readonly baseUrl?: string | undefined
+  readonly fetch?: typeof globalThis.fetch | undefined
+  readonly timeoutMs?: number | undefined
+  readonly maxAttempts?: number | undefined
+  readonly retryDelayMs?: number | undefined
+  readonly hooks?: TarcaHooks | undefined
 }
 
 export interface RequestOptions {
@@ -78,6 +79,13 @@ export interface ApiRequest {
 export interface BinaryResponse {
   readonly bytes: Uint8Array
   readonly contentType: string | undefined
+  readonly filename: string | undefined
+}
+
+export function filenameFromContentDisposition(header: string | null): string | undefined {
+  const match = /(?:^|;)\s*filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]*))/i.exec(header ?? '')
+  const filename = match?.[1]?.replace(/\\(.)/g, '$1') ?? match?.[2]?.trim()
+  return filename ? filename : undefined
 }
 
 export interface TarcaContext {
@@ -99,10 +107,6 @@ function readEnv(name: string): string | undefined {
     ?.env
   const value = env?.[name]?.trim()
   return value ? value : undefined
-}
-
-function configurationError(message: string): BillingoError {
-  return new BillingoError(message, { category: 'configuration' })
 }
 
 export function resolveApiKey(options: BillingoOptions): string {
@@ -167,7 +171,15 @@ export function retryDelay(
   return Math.round(backoff * (1 - RETRY_JITTER + 2 * RETRY_JITTER * random))
 }
 
-function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+export function resolveMaxWait(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`A maxWaitMs értéke nemnegatív szám legyen, kapott: ${value}`)
+  }
+  return value
+}
+
+export function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(signal.reason)
@@ -296,19 +308,36 @@ export function createContext(options: BillingoOptions = {}): TarcaContext {
     if (expect === 'empty') return undefined
     if (expect === 'binary') {
       const contentType = raw.headers.get('content-type') ?? undefined
-      return { bytes: raw.bytes, contentType } satisfies BinaryResponse
+      return {
+        bytes: raw.bytes,
+        contentType,
+        filename: filenameFromContentDisposition(raw.headers.get('content-disposition')),
+      } satisfies BinaryResponse
     }
-    try {
-      return fromApiCase(decodeJson(raw.bytes))
-    } catch (error) {
-      throw new BillingoError('A Billingo válasza nem értelmezhető JSON.', {
+    const unexpected = (problem: string, cause?: unknown): BillingoError => {
+      const { method } = operationInfo(request.operation)
+      const warning =
+        method === 'GET'
+          ? ''
+          : ' A művelet a Billingo oldalán ettől még végrehajtódhatott: ne ismételd meg vakon, előbb ellenőrizd (például listázással vagy a vendorId-val).'
+      return new BillingoError(`${problem}${warning}`, {
         category: 'unexpected_response',
         status: raw.status,
         operation: request.operation,
         requestId,
-        cause: error,
+        cause,
       })
     }
+    let decoded: unknown
+    try {
+      decoded = decodeJson(raw.bytes)
+    } catch (error) {
+      throw unexpected('A Billingo válasza nem értelmezhető JSON.', error)
+    }
+    if (decoded === undefined) {
+      throw unexpected(`A Billingo válasza üres (HTTP ${raw.status}), pedig JSON törzset vártunk.`)
+    }
+    return fromApiCase(decoded)
   }
 
   async function execute(request: ApiRequest, expect: Expect): Promise<unknown> {

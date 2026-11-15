@@ -21,8 +21,8 @@ export interface BankAccountList {
   readonly perPage?: number
   readonly currentPage?: number
   readonly lastPage?: number
-  readonly prevPageUrl?: string
-  readonly nextPageUrl?: string
+  readonly prevPageUrl?: string | null
+  readonly nextPageUrl?: string | null
 }
 
 export type Category =
@@ -541,9 +541,9 @@ export interface Document {
   readonly kobakReceiptStatus?: KobakReceiptStatus | null
   readonly kobakReceiptMessage?: string | null
   readonly relatedDocuments?: readonly DocumentAncestor[]
-  readonly discount?: Discount
+  readonly discount?: Discount | null
   readonly correctionType?: CorrectionType
-  readonly recurringId?: number
+  readonly recurringId?: number | null
 }
 
 export interface DocumentAncestor {
@@ -574,19 +574,19 @@ export interface DocumentBlockList {
   readonly perPage?: number
   readonly currentPage?: number
   readonly lastPage?: number
-  readonly prevPageUrl?: string
-  readonly nextPageUrl?: string
+  readonly prevPageUrl?: string | null
+  readonly nextPageUrl?: string | null
 }
 
 export interface DocumentBlockSchema {
   readonly id?: number
-  readonly name?: string
-  readonly prefix?: string
-  readonly type?: DocumentBlockType
+  readonly name: string
+  readonly prefix: string
+  readonly type: DocumentBlockType
   readonly customField1?: string | null
   readonly customField2?: string | null
   readonly templateId?: number
-  readonly picPath?: string
+  readonly picPath?: string | null
   readonly normalNotificationId?: number
   readonly proformaNotificationId?: number
   readonly generated?: boolean
@@ -600,7 +600,7 @@ export interface DocumentBlockSchema {
   readonly advancePaidInstant?: boolean
   readonly financialFulfillmentHighlight?: FinancialFulfillmentHighlight
   readonly entitlementsInDocumentComment?: boolean
-  readonly bankAccountId?: number
+  readonly bankAccountId?: number | null
 }
 
 export type DocumentBlockType =
@@ -611,6 +611,29 @@ export type DocumentBlockType =
   | 'order_form'
   | 'receipt'
   | 'waybill'
+
+export interface DocumentBlockUpdate {
+  readonly name: string
+  readonly prefix: string
+  readonly type: DocumentBlockType
+  readonly customField1?: string
+  readonly customField2?: string
+  readonly templateId?: number
+  readonly normalNotificationId?: number
+  readonly proformaNotificationId?: number
+  readonly generated?: boolean
+  readonly invoiceNumberFormat?: InvoiceNumberFormat
+  readonly senderEmail?: string
+  readonly senderName?: string
+  readonly bccEmail?: string
+  readonly createInvoiceFromPaidProforma?: boolean
+  readonly fulfillmentDateFromProformaPaymentDate?: boolean
+  readonly attachXmlToInvoicePdf?: boolean
+  readonly advancePaidInstant?: boolean
+  readonly financialFulfillmentHighlight?: FinancialFulfillmentHighlight
+  readonly entitlementsInDocumentComment?: boolean
+  readonly bankAccountId?: number
+}
 
 export interface DocumentCancellation {
   readonly cancellationReason?: string
@@ -693,7 +716,7 @@ export interface DocumentInsert {
   readonly conversionRate?: number
   readonly electronic?: boolean
   readonly paid?: boolean
-  readonly items?: readonly (DocumentItemData | DocumentProductData)[]
+  readonly items: readonly (DocumentItemData | DocumentProductData)[]
   readonly comment?: string
   readonly settings?: DocumentSettings
   readonly advanceInvoice?: readonly number[]
@@ -720,12 +743,12 @@ export interface DocumentItem {
   readonly grossAmount?: number
   readonly vat?: Vat
   readonly vatAmount?: number
-  readonly entitlement?: Entitlement
+  readonly entitlement?: Entitlement | null
   readonly comment?: string
-  readonly sku?: string
-  readonly dataEraserCodes?: string
+  readonly sku?: string | null
+  readonly dataEraserCodes?: string | null
   readonly isDepositFee?: boolean
-  readonly ean?: string
+  readonly ean?: string | null
   readonly isConnectProduct?: boolean
   readonly connectedItem?: ConnectedItem | null
   readonly connectDocumentItemSetting?: ConnectDocumentItemSetting | null
@@ -745,8 +768,8 @@ export interface DocumentList {
   readonly perPage?: number
   readonly currentPage?: number
   readonly lastPage?: number
-  readonly prevPageUrl?: string
-  readonly nextPageUrl?: string
+  readonly prevPageUrl?: string | null
+  readonly nextPageUrl?: string | null
 }
 
 export type DocumentNotificationStatus =
@@ -1083,8 +1106,8 @@ export interface OrganizationData {
 
 export interface Partner {
   readonly id?: number
-  readonly name?: string
-  readonly address?: Address
+  readonly name: string
+  readonly address: Address
   readonly emails?: readonly string[]
   readonly taxcode?: string
   readonly iban?: string
@@ -1110,8 +1133,8 @@ export interface PartnerAutocomplete {
 export interface PartnerCustomBillingSettings {
   readonly paymentMethod?: PaymentMethod | null
   readonly documentForm?: DocumentForm | null
-  readonly dueDays?: number
-  readonly documentCurrency?: Currency
+  readonly dueDays?: number | null
+  readonly documentCurrency?: Currency | null
   readonly templateLanguageCode?: DocumentLanguage | null
   readonly discount?: Discount | null
   readonly customLabel?: CustomLabel | null
@@ -1129,8 +1152,8 @@ export interface PartnerList {
   readonly perPage?: number
   readonly currentPage?: number
   readonly lastPage?: number
-  readonly prevPageUrl?: string
-  readonly nextPageUrl?: string
+  readonly prevPageUrl?: string | null
+  readonly nextPageUrl?: string | null
 }
 
 export interface PartnerListForReceiptAutocomplete {
@@ -1208,13 +1231,13 @@ export interface Product {
   readonly unit: string
   readonly generalLedgerNumber?: string
   readonly generalLedgerTaxcode?: string
-  readonly entitlement?: Entitlement
+  readonly entitlement?: Entitlement | null
   readonly ean?: string
   readonly sku?: string
   readonly isManage?: boolean
-  readonly purchasePrice?: number
+  readonly purchasePrice?: number | null
   readonly isGenerateEraseCode?: boolean
-  readonly connectProductId?: number
+  readonly connectProductId?: number | null
   readonly applyDiscount?: boolean
   readonly applyQuantity?: boolean
   readonly isConnectProduct?: boolean
@@ -1227,8 +1250,8 @@ export interface ProductList {
   readonly perPage?: number
   readonly currentPage?: number
   readonly lastPage?: number
-  readonly prevPageUrl?: string
-  readonly nextPageUrl?: string
+  readonly prevPageUrl?: string | null
+  readonly nextPageUrl?: string | null
 }
 
 export interface ProductQuantity {
@@ -1245,7 +1268,7 @@ export interface ReceiptInsert {
   readonly paymentMethod: PaymentMethod
   readonly currency: Currency
   readonly conversionRate?: number
-  readonly electronic?: boolean
+  readonly electronic: boolean
   readonly items?: readonly (ReceiptItemData | ReceiptProductData)[]
 }
 
@@ -1330,7 +1353,7 @@ export interface Spending {
   readonly category?: Category
   readonly paidAt?: string | null
   readonly fulfillmentDate?: string
-  readonly partner?: SpendingPartner
+  readonly partner?: SpendingPartner | null
   readonly invoiceNumber?: string
   readonly currency?: Currency
   readonly conversionRate?: number
@@ -1367,8 +1390,8 @@ export interface SpendingList {
   readonly perPage?: number
   readonly currentPage?: number
   readonly lastPage?: number
-  readonly prevPageUrl?: string
-  readonly nextPageUrl?: string
+  readonly prevPageUrl?: string | null
+  readonly nextPageUrl?: string | null
 }
 
 export interface SpendingListItem {
@@ -1377,7 +1400,7 @@ export interface SpendingListItem {
   readonly category?: Category
   readonly paidAt?: string | null
   readonly fulfillmentDate?: string
-  readonly partner?: SpendingPartner
+  readonly partner?: SpendingPartner | null
   readonly invoiceNumber?: string
   readonly currency?: Currency
   readonly conversionRate?: number
@@ -1389,7 +1412,7 @@ export interface SpendingListItem {
   readonly dueDate?: string
   readonly paymentMethod?: SpendingPaymentMethod
   readonly comment?: string | null
-  readonly isCreatedByNav?: boolean
+  readonly createdByNav?: boolean
 }
 
 export interface SpendingPartner {
@@ -1444,7 +1467,7 @@ export type SpendingPaymentMethod =
 
 export interface SpendingSave {
   readonly currency: Currency
-  readonly conversionRate?: number
+  readonly conversionRate: number
   readonly totalGross: number
   readonly totalGrossHuf: number
   readonly totalVatAmount: number
@@ -1453,9 +1476,9 @@ export interface SpendingSave {
   readonly paidAt?: string
   readonly category: Category
   readonly comment?: string
-  readonly invoiceNumber?: string
-  readonly invoiceDate?: string
-  readonly dueDate?: string
+  readonly invoiceNumber: string
+  readonly invoiceDate: string
+  readonly dueDate: string
   readonly paymentMethod: SpendingPaymentMethod
   readonly partnerId?: number
 }
@@ -1466,7 +1489,7 @@ export interface SpendingShow {
   readonly category?: Category
   readonly paidAt?: string | null
   readonly fulfillmentDate?: string
-  readonly partner?: SpendingPartner
+  readonly partner?: SpendingPartner | null
   readonly invoiceNumber?: string
   readonly currency?: Currency
   readonly conversionRate?: number
@@ -1479,7 +1502,7 @@ export interface SpendingShow {
   readonly paymentMethod?: SpendingPaymentMethod
   readonly comment?: string | null
   readonly items?: readonly SpendingItem[]
-  readonly isCreatedByNav?: boolean
+  readonly createdByNav?: boolean
 }
 
 export interface Subscription {

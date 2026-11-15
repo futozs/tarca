@@ -68,7 +68,12 @@ export function compareSnapshots(locked, current) {
   return changes
 }
 
-export function consistencyProblems({ specOperations, knownOperations, missingRoutes }) {
+export function consistencyProblems({
+  specOperations,
+  knownOperations,
+  missingRoutes,
+  overrideProblems = [],
+}) {
   const problems = []
   const known = new Map(knownOperations.map((operation) => [operation.id, operation]))
   const unknown = specOperations.filter((operation) => {
@@ -84,6 +89,9 @@ export function consistencyProblems({ specOperations, knownOperations, missingRo
     problems.push(
       `Ezek az útvonalak 404-et adnak az éles API-n (kulcs nélküli próba): ${missingRoutes.join(', ')}.`,
     )
+  }
+  for (const problem of overrideProblems) {
+    problems.push(`Spec-felülírás (scripts/spec-overrides.mjs): ${problem}`)
   }
   return problems
 }

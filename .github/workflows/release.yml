@@ -75,6 +75,7 @@ jobs:
 
       - name: Kiadás (lint, típusellenőrzés, teszt, build, verziólépés, publish, tag, push)
         env:
+          TARCA_REQUIRE_SPEC: '1'
           BUMP: ${{ inputs.bump }}
           TARCA_ALLOW_STABLE: ${{ inputs.stable && '1' || '0' }}
         run: |

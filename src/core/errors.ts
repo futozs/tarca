@@ -1,3 +1,4 @@
+import { isPlainObject } from './case'
 import type { OperationId } from './operations'
 
 export type BillingoErrorCategory =
@@ -14,6 +15,8 @@ export type BillingoErrorCategory =
   | 'timeout'
   | 'configuration'
   | 'unexpected_response'
+  | 'in_progress'
+  | 'store_unavailable'
 
 export interface FieldError {
   readonly field: string
@@ -86,6 +89,39 @@ export function isBillingoError(error: unknown): error is BillingoError {
   return error instanceof BillingoError
 }
 
+export async function nullIfNotFound<T>(promise: Promise<T>): Promise<T | null> {
+  try {
+    return await promise
+  } catch (error) {
+    if (isBillingoError(error) && error.isNotFound) return null
+    throw error
+  }
+}
+
+export function configurationError(message: string): BillingoError {
+  return new BillingoError(message, { category: 'configuration' })
+}
+
+export function withHint(
+  error: BillingoError,
+  hint: string,
+  message: string = error.message,
+): BillingoError {
+  return new BillingoError(message, {
+    category: error.category,
+    status: error.status,
+    operation: error.operation,
+    apiMessage: error.apiMessage,
+    traceId: error.traceId,
+    fieldErrors: error.fieldErrors,
+    retryAfterMs: error.retryAfterMs,
+    rateLimit: error.rateLimit,
+    requestId: error.requestId,
+    hint,
+    cause: error,
+  })
+}
+
 interface StatusInfo {
   readonly category: BillingoErrorCategory
   readonly message: string
@@ -143,10 +179,6 @@ export function statusInfo(status: number): StatusInfo {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 export interface ParsedErrorBody {
   readonly apiMessage: string | undefined
   readonly traceId: string | undefined
@@ -154,12 +186,12 @@ export interface ParsedErrorBody {
 }
 
 export function parseErrorBody(body: unknown): ParsedErrorBody {
-  if (!isRecord(body)) return { apiMessage: undefined, traceId: undefined, fieldErrors: [] }
-  const wrapper = isRecord(body.error) ? body.error : undefined
+  if (!isPlainObject(body)) return { apiMessage: undefined, traceId: undefined, fieldErrors: [] }
+  const wrapper = isPlainObject(body.error) ? body.error : undefined
   const message = typeof wrapper?.message === 'string' ? wrapper.message : body.message
   const traceId = wrapper?.trace_id ?? body.trace_id
   const errors = Array.isArray(body.errors) ? body.errors : []
-  const fieldErrors = errors.filter(isRecord).map((item) => ({
+  const fieldErrors = errors.filter(isPlainObject).map((item) => ({
     field: typeof item.field === 'string' ? item.field : '',
     message: typeof item.message === 'string' ? item.message : '',
   }))

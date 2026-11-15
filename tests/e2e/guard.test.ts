@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest'
 import { createTarca } from '../../src/client'
-import { createFakeBillingo } from '../fake-billingo'
+import { createFakeBillingoFetch } from '../../src/testing'
 import { TEST_API_KEY } from '../helpers'
 import { assertTestProfile } from './guard'
 
 function tarcaFor(hasNavConnection: boolean) {
-  const billingo = createFakeBillingo({ taxCode: '12345678', hasNavConnection })
+  const billingo = createFakeBillingoFetch({ taxCode: '12345678', hasNavConnection })
   return createTarca({ apiKey: TEST_API_KEY, fetch: billingo.fetch, retryDelayMs: 0 })
 }
 

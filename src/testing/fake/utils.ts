@@ -14,6 +14,12 @@ const TAX_NUMBER = /^([0-9]{8})-([12345])-([0-9]{2})$/
 
 export const LEGACY_ID_NOT_FOUND = 'Legacy id is not found.'
 
+export function derivedLegacyId(legacyId: number): number {
+  const low = legacyId >>> 0
+  const high = Math.floor(legacyId / 2 ** 32)
+  return (Math.imul(low ^ Math.imul(high, 0x85ebca6b), 0x9e3779b1) >>> 2) + 1
+}
+
 export const utilsRoutes: FakeRoutes = {
   GetServerTime: (state) => {
     const now = state.config.now()
@@ -56,8 +62,8 @@ export const utilsRoutes: FakeRoutes = {
   },
   GetId: (state, request) => {
     const legacyId = positiveIntegerParam(request, 'id')
-    const id = legacyId === undefined ? undefined : state.config.legacyIds.get(legacyId)
-    if (legacyId === undefined || id === undefined) return clientError(404, LEGACY_ID_NOT_FOUND)
+    if (legacyId === undefined) return clientError(404, LEGACY_ID_NOT_FOUND)
+    const id = state.config.legacyIds.get(legacyId) ?? derivedLegacyId(legacyId)
     return ok({ id, legacyId })
   },
 }

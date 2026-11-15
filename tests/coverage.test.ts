@@ -50,10 +50,10 @@ describe('API lefedettség', () => {
     ).toEqual([])
   })
 
-  test('a megvalósítatlan műveletek listája csak fogyhat', () => {
+  test('a Billingo minden művelete meg van valósítva', () => {
     const missing = (Object.keys(BILLINGO_OPERATIONS) as OperationId[]).filter(
       (id) => !implemented.has(id),
     )
-    expect(missing.length).toBeLessThanOrEqual(46)
+    expect(missing.length, `megvalósítatlan: ${missing.join(', ')}`).toBe(0)
   })
 })

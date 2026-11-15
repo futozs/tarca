@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'vitest'
 import {
   BillingoError,
+  configurationError,
   errorFromResponse,
   isBillingoError,
   parseErrorBody,
   statusInfo,
+  withHint,
 } from './errors'
 
 describe('Billingo hibák', () => {
@@ -119,5 +121,40 @@ describe('Billingo hibák', () => {
     ).toBe('auth')
     expect(fromStatus(500, sandbox).category).toBe('server')
     expect(fromStatus(422, sandbox).category).toBe('validation')
+  })
+})
+
+describe('withHint', () => {
+  test('a Billingo hibájának minden mezőjét megtartja, csak a tippet (és ha kell, az üzenetet) cseréli', () => {
+    const original = new BillingoError('Eredeti üzenet', {
+      category: 'rate_limit',
+      status: 429,
+      operation: 'CancelDocument',
+      apiMessage: 'Too many requests',
+      traceId: 'trace-1',
+      fieldErrors: [{ field: 'name', message: 'required' }],
+      retryAfterMs: 1500,
+      rateLimit: { limit: 300, remaining: 0, resetAt: undefined },
+      requestId: 'req-1',
+      hint: 'régi tipp',
+    })
+
+    const kept = withHint(original, 'új tipp')
+    const renamed = withHint(original, 'új tipp', 'Új üzenet')
+
+    const { hint: _hint, ...fields } = original
+    expect(kept).toMatchObject({ ...fields, message: 'Eredeti üzenet', hint: 'új tipp' })
+    expect(kept.retryable).toBe(true)
+    expect(kept.cause).toBe(original)
+    expect(renamed.message).toBe('Új üzenet')
+    expect(renamed).toMatchObject({ ...fields, hint: 'új tipp' })
+  })
+
+  test('a configurationError configuration kategóriájú, nem ismételhető hiba', () => {
+    expect(configurationError('Rossz beállítás.')).toMatchObject({
+      category: 'configuration',
+      retryable: false,
+      message: 'Rossz beállítás.',
+    })
   })
 })

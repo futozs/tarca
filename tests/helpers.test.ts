@@ -107,7 +107,17 @@ describe.skipIf(!SPEC_AVAILABLE)('mockBillingo: a kérés a friss spec ellen', (
     ])
   })
 
-  test('a leíratlan, nem dokumentált műveletre szóló kérés nem mehet át csendben', () => {
-    expect(violations('GET', '/document-blocks/1')[0]).toContain('UNDOCUMENTED_SCHEMAS')
+  test('a nem dokumentált műveletek kérését a spec-felülírások szerint ellenőrzi', () => {
+    expect(violations('GET', '/document-blocks/1')).toEqual([])
+    expect(
+      violations('PUT', '/document-blocks/1', {
+        body: JSON.stringify({ name: 'Tömb', sender_email: null }),
+        headers: JSON_HEADERS,
+      }),
+    ).toEqual([
+      'DocumentBlockUpdate.prefix: kötelező mező hiányzik',
+      'DocumentBlockUpdate.type: kötelező mező hiányzik',
+      'DocumentBlockUpdate.sender_email: null nem engedett',
+    ])
   })
 })

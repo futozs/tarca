@@ -7,14 +7,14 @@ export const UTILS_E2E_OPERATIONS: readonly OperationId[] = [
   'GetServerTime',
   'GetConversionRate',
   'CheckTaxNumber',
+  'GetId',
 ]
 
-export const UTILS_E2E_EXCLUDED: E2eExclusions = {
-  GetId: 'A teszt profilban nincs régi (v2) azonosító, amit át lehetne váltani.',
-}
+export const UTILS_E2E_EXCLUDED: E2eExclusions = {}
 
 const RATE_DATE = '2026-11-13'
 const PUBLIC_TAX_NUMBER = '13421739-2-41'
+const LEGACY_ID = 123
 
 export function defineUtilsSteps(ctx: E2eContext): void {
   const step = ctx.groupSteps()
@@ -40,5 +40,13 @@ export function defineUtilsSteps(ctx: E2eContext): void {
     )
     expect(outcome).toBeInstanceOf(BillingoError)
     expect(outcome).toMatchObject({ category: 'nav_unavailable', status: 401, retryable: false })
+  })
+  step(`régi azonosító átváltása (${LEGACY_ID}): bármely számra determinisztikus`, async () => {
+    const first = await ctx.tarca.utils.convertLegacyId(LEGACY_ID)
+    const again = await ctx.tarca.utils.convertLegacyId(LEGACY_ID)
+    expect(first.legacyId).toBe(LEGACY_ID)
+    expect(Number.isSafeInteger(first.id)).toBe(true)
+    expect(first.id).toBeGreaterThan(0)
+    expect(again).toEqual(first)
   })
 }

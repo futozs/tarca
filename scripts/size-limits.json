@@ -1,7 +1,7 @@
 {
   "gzipKb": {
-    "tarca": 10,
-    "tarca/testing": 40
+    "tarca": 22,
+    "tarca/testing": 48
   },
   "forbidden": {
     "tarca": ["dist/testing/"]

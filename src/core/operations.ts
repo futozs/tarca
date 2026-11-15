@@ -19,6 +19,7 @@ export type OperationId =
   | 'CreateDocumentBlock'
   | 'GetDocumentBlock'
   | 'UpdateDocumentBlock'
+  | 'DeleteDocumentBlock'
   | 'Create'
   | 'Download'
   | 'Poll'
@@ -77,6 +78,7 @@ export const BILLINGO_OPERATIONS: Readonly<Record<OperationId, OperationInfo>> =
   CreateDocumentBlock: { method: 'POST', path: '/document-blocks', spec: 'only-3.0.15' },
   GetDocumentBlock: { method: 'GET', path: '/document-blocks/{id}', spec: 'undocumented' },
   UpdateDocumentBlock: { method: 'PUT', path: '/document-blocks/{id}', spec: 'undocumented' },
+  DeleteDocumentBlock: { method: 'DELETE', path: '/document-blocks/{id}', spec: 'undocumented' },
   Create: { method: 'POST', path: '/document-export', spec: 'both' },
   Download: { method: 'GET', path: '/document-export/{id}/download', spec: 'both' },
   Poll: { method: 'GET', path: '/document-export/{id}/poll', spec: 'both' },

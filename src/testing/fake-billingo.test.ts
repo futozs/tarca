@@ -7,11 +7,18 @@ import {
 } from '../../tests/openapi'
 import { createTarca } from '../client'
 import { BillingoError } from '../core/errors'
-import type { OperationId } from '../core/operations'
+import { BILLINGO_OPERATIONS, type OperationId } from '../core/operations'
 import { missingRateMessage } from './fake/currencies'
-import { CURRENCIES } from './fake/enums'
+import { documentActionRoutes } from './fake/document-actions'
+import { documentRoutes } from './fake/documents'
+import { COUNTRIES, CURRENCIES } from './fake/enums'
+import { exportRoutes } from './fake/exports'
+import { inventoryRoutes } from './fake/inventory'
+import { productRoutes } from './fake/products'
+import { receiptRoutes } from './fake/receipts'
 import { FAKE_ROUTES } from './fake/registry'
-import { LEGACY_ID_NOT_FOUND } from './fake/utils'
+import { spendingRoutes } from './fake/spendings'
+import { derivedLegacyId, LEGACY_ID_NOT_FOUND } from './fake/utils'
 import { createFakeBillingoFetch, FAKE_BILLINGO_MESSAGES, type FakeBillingoOptions } from './index'
 
 const API = 'https://api.billingo.hu/v3'
@@ -151,20 +158,10 @@ describe('hitelesítés és útvonalak', () => {
     })
   })
 
-  test('a még meg nem valósított művelet 501-et ad a művelet nevével', async () => {
-    const { call, billingo } = setup()
-
-    const response = await call('GET', '/documents')
-
-    expect(response.status).toBe(501)
-    expect(response.body).toEqual({
-      error: {
-        message:
-          'A hamis Billingo még nem valósítja meg ezt a műveletet: ListDocument (GET /documents).',
-        trace_id: expect.stringMatching(HEX_TRACE_ID),
-      },
-    })
-    expect(billingo.requests[0]?.operation).toBe('ListDocument')
+  test('a műveleti tábla minden műveletének van hamis útvonala (501 csak új műveletre jöhet)', () => {
+    expect(
+      Object.keys(BILLINGO_OPERATIONS).filter((operation) => !(operation in FAKE_ROUTES)),
+    ).toEqual([])
   })
 
   test('HEAD a GET útvonalon törzs nélkül válaszol', async () => {
@@ -426,19 +423,37 @@ describe('segédfüggvények', () => {
     })
   })
 
-  test('régi azonosító átváltása: ismert, ismeretlen és nem szám', async () => {
+  test('régi azonosító átváltása: a megadott párost adja, minden más számra determinisztikus 200-at, mint élőben', async () => {
     const { call, tarca } = setup({ legacyIds: { 12345: 987654321 } })
 
     const known = await tarca.utils.convertLegacyId(12345)
-    const unknown = await call('GET', '/utils/convert-legacy-id/1')
+    const first = await tarca.utils.convertLegacyId(123)
+    const again = await tarca.utils.convertLegacyId(123)
+    const other = await tarca.utils.convertLegacyId(124)
+    const huge = await call('GET', '/utils/convert-legacy-id/987654321')
     const text = await call('GET', '/utils/convert-legacy-id/abc')
+    const zero = await call('GET', '/utils/convert-legacy-id/0')
 
     expect(known).toEqual({ id: 987654321, legacyId: 12345 })
-    expect(unknown).toMatchObject({
-      status: 404,
-      body: { error: { message: LEGACY_ID_NOT_FOUND } },
-    })
-    expect(text.status).toBe(404)
+    expect(first.legacyId).toBe(123)
+    expect(Number.isSafeInteger(first.id) && (first.id ?? 0) > 0).toBe(true)
+    expect(again).toEqual(first)
+    expect(other.id).not.toBe(first.id)
+    expect(huge).toMatchObject({ status: 200, body: { legacy_id: 987654321 } })
+    expect(huge.body).not.toMatchObject({ id: first.id })
+    for (const invalid of [text, zero]) {
+      expect(invalid).toMatchObject({
+        status: 404,
+        body: { error: { message: LEGACY_ID_NOT_FOUND } },
+      })
+    }
+  })
+
+  test('a származtatott régi azonosító pozitív, int32 tartományú, és a felső biteket is figyelembe veszi', () => {
+    const ids = [1, 2, 123, 2 ** 32, 2 ** 32 + 123, Number.MAX_SAFE_INTEGER].map(derivedLegacyId)
+
+    expect(ids.every((id) => Number.isInteger(id) && id >= 1 && id <= 2 ** 31 - 1)).toBe(true)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 
   test('a legacyIds és a hufRates hibás értékeit már létrehozáskor elutasítja', () => {
@@ -783,6 +798,550 @@ describe('bankszámlák', () => {
   })
 })
 
+const PARTNER_ADDRESS = {
+  country_code: 'HU',
+  post_code: '1011',
+  city: 'Budapest',
+  address: 'Fő utca 1.',
+}
+
+function partnerBody(name: string, fields: Record<string, unknown> = {}) {
+  return { name, address: PARTNER_ADDRESS, ...fields }
+}
+
+describe('partnerek', () => {
+  test('létrehozás: 201, a teljes partner az élőben mért alapértékekkel és mezősorrenddel', async () => {
+    const { call } = setup()
+
+    const created = await call('POST', '/partners', {
+      body: partnerBody('Alfa Kft', {
+        emails: ['szamla@alfa.example'],
+        taxcode: '12345676-2-42',
+        tax_type: 'HAS_TAX_NUMBER',
+        phone: '+36301234567',
+      }),
+    })
+    const lowercase = await call('POST', '/partners', {
+      body: partnerBody('  Kisbetűs Bt ', {
+        tax_type: 'has_tax_number',
+        emails: [' szamla@kisbetus.example '],
+      }),
+    })
+
+    expect(created.status).toBe(201)
+    expect(JSON.stringify(created.body)).toBe(
+      JSON.stringify({
+        id: 1,
+        name: 'Alfa Kft',
+        address: PARTNER_ADDRESS,
+        emails: ['szamla@alfa.example'],
+        taxcode: '12345676-2-42',
+        iban: '',
+        swift: '',
+        account_number: '',
+        phone: '+36301234567',
+        general_ledger_number: '',
+        tax_type: 'HAS_TAX_NUMBER',
+        custom_billing_settings: {
+          payment_method: null,
+          document_form: null,
+          due_days: null,
+          document_currency: null,
+          template_language_code: null,
+          discount: null,
+          custom_label: null,
+        },
+        group_member_tax_number: '',
+        giro_settings: {
+          giro_default_settings: true,
+          giro_payment_request_enabled: false,
+          giro_different_amount_allowed: false,
+        },
+        partner_shipping: {
+          match: true,
+          name: '',
+          mode: 'none',
+          address: { country_code: 'HU', post_code: '', city: '', address: '' },
+        },
+        internal_comment: '',
+        partner_show_type: 'show_all',
+      }),
+    )
+    expect(lowercase).toMatchObject({
+      status: 201,
+      body: { id: 2, name: 'Kisbetűs Bt', emails: ['szamla@kisbetus.example'], tax_type: '' },
+    })
+  })
+
+  test('validáció: üres törzsre az élőben mért öt mezőhiba, a többi mező típusa és az országkód', async () => {
+    const { call, billingo } = setup()
+
+    const empty = await call('POST', '/partners', { body: {} })
+    const guess = await call('POST', '/partners/guess', { body: {} })
+    const numericName = await call('POST', '/partners', { body: partnerBody('x', { name: 42 }) })
+    const wrong = await call('POST', '/partners', {
+      body: {
+        name: 'Hibás',
+        address: { ...PARTNER_ADDRESS, country_code: 'XX', city: 5 },
+        emails: 'nem@lista.example',
+        phone: 36,
+        partner_show_type: 'show_none',
+        giro_settings: 'igen',
+      },
+    })
+
+    const fiveErrors = [
+      { field: 'name', message: 'The name field is required.' },
+      { field: 'address', message: 'The address field is required.' },
+      { field: 'address.post_code', message: 'The address.post code field is required.' },
+      { field: 'address.city', message: 'The address.city field is required.' },
+      { field: 'address.address', message: 'The address.address field is required.' },
+    ]
+    expect(empty).toMatchObject({ status: 422, body: { errors: fiveErrors } })
+    expect(guess).toMatchObject({ status: 422, body: { errors: fiveErrors } })
+    expect(numericName).toMatchObject({
+      status: 422,
+      body: { errors: [{ field: 'name', message: 'The name must be a string.' }] },
+    })
+    expect(wrong.status).toBe(422)
+    expect(wrong.body).toMatchObject({
+      errors: [
+        { field: 'address.city', message: 'The address.city must be a string.' },
+        { field: 'address.country_code', message: 'The selected address.country code is invalid.' },
+        { field: 'emails', message: 'The emails must be an array.' },
+        { field: 'phone', message: 'The phone must be a string.' },
+        { field: 'partner_show_type', message: 'The selected partner show type is invalid.' },
+        { field: 'giro_settings', message: 'The giro settings must be an array.' },
+      ],
+    })
+    expect(billingo.data.partners.size).toBe(0)
+  })
+
+  test('lista: szó eleji, kisbetű-nagybetű független névkeresés, adószámra és e-mailre nem talál', async () => {
+    const { call, tarca } = setup()
+    for (const [name, fields] of [
+      ['TARCA-PROBE mwhwjef5 Béta Bt', { emails: ['beta@vevo.example'] }],
+      ['TARCA-PROBE mwhwjef5 Alfa Kft modositott', { taxcode: '12345676-2-42' }],
+      ['TARCA-PROBE mwhwjef5 Alfa Kft modositott', {}],
+      ['Más Cég Zrt', {}],
+    ] as const) {
+      await call('POST', '/partners', { body: partnerBody(name, fields) })
+    }
+    const ids = async (query: string) =>
+      (await tarca.partners.list({ query })).data.map((partner) => partner.id)
+
+    expect(await ids('mwhwjef5')).toEqual([2, 3, 1])
+    expect(await ids('MWHW')).toEqual([2, 3, 1])
+    expect(await ids('hwjef5')).toEqual([])
+    expect(await ids('Alfa Kft modositott')).toEqual([2, 3])
+    expect(await ids('Alfa Zrt')).toEqual([])
+    expect(await ids('modositott alfa')).toEqual([2, 3])
+    expect(await ids('TARCA-PROBE')).toEqual([2, 3, 1])
+    expect(await ids('probe')).toEqual([2, 3, 1])
+    expect(await ids('bé')).toEqual([1])
+    expect(await ids('12345676-2-42')).toEqual([])
+    expect(await ids('12345676')).toEqual([])
+    expect(await ids('beta@vevo.example')).toEqual([])
+    expect(await ids('example')).toEqual([])
+    expect(await ids('')).toEqual([4, 2, 3, 1])
+    const paged = await call('GET', '/partners?query=mwhwjef5&per_page=2&page=2')
+    expect(paged.body).toMatchObject({
+      total: 3,
+      per_page: 2,
+      current_page: 2,
+      last_page: 2,
+      data: [{ id: 1 }],
+    })
+  })
+
+  test('lekérés, teljes cserés módosítás, törlés, utána 404 „Partner is not found.”', async () => {
+    const { call, tarca } = setup()
+    const created = await tarca.partners.create({
+      name: 'Alfa Kft',
+      address: { postCode: '1011', city: 'Budapest', address: 'Fő utca 1.' },
+      phone: '+36301234567',
+      partnerShowType: 'show_incoming',
+      customBillingSettings: { paymentMethod: 'cash', dueDays: 8 },
+      partnerShipping: {
+        match: false,
+        address: { countryCode: 'AT', postCode: '1010', city: 'Wien', address: 'Ring 1.' },
+      },
+    })
+    const id = created.id ?? Number.NaN
+
+    const fetched = await tarca.partners.get(id)
+    const updated = await tarca.partners.update(id, {
+      name: 'Alfa Kft modositott',
+      address: { postCode: '1011', city: 'Budapest', address: 'Fő utca 1.' },
+      customBillingSettings: { documentCurrency: 'EUR' },
+    })
+    const invalid = await call('PUT', `/partners/${id}`, { body: { name: 'Csak név' } })
+    const deleted = await call('DELETE', `/partners/${id}`)
+    const afterDelete = await call('GET', `/partners/${id}`)
+    const missing = await Promise.all([
+      call('PUT', '/partners/424242', { body: partnerBody('Senki') }),
+      call('DELETE', '/partners/424242'),
+      call('GET', '/partners/abc'),
+    ])
+    const error = await tarca.partners.get(id).catch((caught: unknown) => caught)
+
+    expect(fetched).toEqual(created)
+    expect(created).toMatchObject({
+      phone: '+36301234567',
+      partnerShowType: 'show_incoming',
+      customBillingSettings: { paymentMethod: 'cash', dueDays: 8, documentCurrency: null },
+      partnerShipping: { match: false, name: '', mode: 'none', address: { city: 'Wien' } },
+    })
+    expect(updated).toMatchObject({
+      id,
+      name: 'Alfa Kft modositott',
+      phone: '',
+      partnerShowType: 'show_all',
+      customBillingSettings: { paymentMethod: null, dueDays: null, documentCurrency: 'EUR' },
+      partnerShipping: { match: true, address: { countryCode: 'HU', city: '' } },
+    })
+    expect(invalid.status).toBe(422)
+    expect(deleted).toEqual({ status: 204, body: undefined, contentType: null })
+    for (const response of [afterDelete, ...missing]) {
+      expect(response).toEqual({
+        status: 404,
+        contentType: 'application/json',
+        body: { error: { message: 'Partner is not found.' } },
+      })
+    }
+    expect(error).toMatchObject({ category: 'not_found', status: 404, isNotFound: true })
+  })
+
+  test('guess: pontos névre a meglévőt adja (201, tax_type ""), minden másra újat hoz létre', async () => {
+    const { call, billingo } = setup()
+    await call('POST', '/partners', {
+      body: partnerBody('Alfa Kft', { taxcode: '12345676-2-42', tax_type: 'HAS_TAX_NUMBER' }),
+    })
+    await call('POST', '/partners', {
+      body: partnerBody('Béta Bt', { emails: ['beta@vevo.example'] }),
+    })
+
+    const exact = await call('POST', '/partners/guess', {
+      body: partnerBody('Alfa Kft', { taxcode: '12345676-2-42', tax_type: 'HAS_TAX_NUMBER' }),
+    })
+    const nameOnly = await call('POST', '/partners/guess', { body: partnerBody('Béta Bt') })
+    const partial = await call('POST', '/partners/guess', { body: partnerBody('Béta') })
+    const byTaxcode = await call('POST', '/partners/guess', {
+      body: partnerBody('Másik név', { taxcode: '12345676-2-42' }),
+    })
+    const byEmail = await call('POST', '/partners/guess', {
+      body: partnerBody('Delta', { emails: ['beta@vevo.example'] }),
+    })
+
+    expect(exact).toMatchObject({ status: 201, body: { id: 1, tax_type: '' } })
+    expect(billingo.data.partners.get(1)?.taxType).toBe('HAS_TAX_NUMBER')
+    expect(nameOnly).toMatchObject({ status: 201, body: { id: 2, emails: ['beta@vevo.example'] } })
+    expect(
+      [partial, byTaxcode, byEmail].map((response) => [response.status, response.body]),
+    ).toEqual([
+      [201, expect.objectContaining({ id: 3, name: 'Béta' })],
+      [201, expect.objectContaining({ id: 4, taxcode: '12345676-2-42', tax_type: '' })],
+      [201, expect.objectContaining({ id: 5, name: 'Delta' })],
+    ])
+    expect(billingo.data.partners.size).toBe(5)
+  })
+
+  test('findOrCreate a hamis Billingón: azonos adatra ugyanazt adja, eltérő címre újat', async () => {
+    const { tarca, billingo } = setup()
+    const input = {
+      name: 'Vevő Kft.',
+      address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+      taxcode: '12345676-2-42',
+    }
+
+    const first = await tarca.partners.findOrCreate(input)
+    const second = await tarca.partners.findOrCreate({ ...input, name: ' Vevő  Kft. ' })
+    const moved = await tarca.partners.findOrCreate({
+      ...input,
+      address: { ...input.address, city: 'Debrecen' },
+    })
+
+    expect([first.created, second.created, moved.created]).toEqual([true, false, true])
+    expect(second.partner.id).toBe(first.partner.id)
+    expect(moved.partner.id).not.toBe(first.partner.id)
+    expect(billingo.count('CreatePartner')).toBe(2)
+    expect(billingo.count('PartnerGuess')).toBe(0)
+  })
+})
+
+describe('számlatömbök', () => {
+  const BLOCK_FIELDS_AFTER_TYPE = [
+    'custom_field1',
+    'custom_field2',
+    'template_id',
+    'pic_path',
+    'normal_notification_id',
+    'proforma_notification_id',
+    'generated',
+    'invoice_number_format',
+    'sender_email',
+    'sender_name',
+    'bcc_email',
+    'create_invoice_from_paid_proforma',
+    'fulfillment_date_from_proforma_payment_date',
+    'attach_xml_to_invoice_pdf',
+    'advance_paid_instant',
+    'financial_fulfillment_highlight',
+    'entitlements_in_document_comment',
+    'bank_account_id',
+  ]
+
+  test('lista: növekvő id, csak hat mező, típus szerinti szűrés, hibás típusra 422', async () => {
+    const { call, tarca } = setup()
+    await tarca.documentBlocks.create({ name: 'TARCA E2E', prefix: 'TRCE', type: 'invoice' })
+
+    const all = await call('GET', '/document-blocks?per_page=100')
+    const receipts = await tarca.documentBlocks.list({ type: 'receipt' })
+    const invoices = await tarca.documentBlocks.list({ type: 'invoice' })
+    const invalid = await call('GET', '/document-blocks?type=szamla')
+
+    expect(all.body).toMatchObject({ total: 3, per_page: 100, prev_page_url: null })
+    expect(all.body).toHaveProperty('data', [
+      { id: 1, name: 'Számlák', prefix: '', custom_field1: '', custom_field2: '', type: 'invoice' },
+      {
+        id: 2,
+        name: 'Nyugták',
+        prefix: 'NYT',
+        custom_field1: '',
+        custom_field2: '',
+        type: 'receipt',
+      },
+      {
+        id: 3,
+        name: 'TARCA E2E',
+        prefix: 'TRCE',
+        custom_field1: '',
+        custom_field2: '',
+        type: 'invoice',
+      },
+    ])
+    expect(receipts.data.map((block) => block.id)).toEqual([2])
+    expect(invoices.data.map((block) => block.id)).toEqual([1, 3])
+    expect(invalid).toMatchObject({
+      status: 422,
+      body: { errors: [{ field: 'type', message: 'The selected type is invalid.' }] },
+    })
+  })
+
+  test('létrehozás: 201 a teljes tömbbel, az élőben mért alapértékekkel és mezősorrenddel', async () => {
+    const { call } = setup()
+
+    const created = await call('POST', '/document-blocks', {
+      body: { name: 'TARCA E2E', prefix: 'TRCE', type: 'invoice' },
+    })
+
+    expect(created.status).toBe(201)
+    expect(Object.keys(created.body ?? {})).toEqual([
+      'id',
+      'name',
+      'prefix',
+      'type',
+      ...BLOCK_FIELDS_AFTER_TYPE,
+    ])
+    expect(created.body).toEqual({
+      id: 3,
+      name: 'TARCA E2E',
+      prefix: 'TRCE',
+      type: 'invoice',
+      custom_field1: '',
+      custom_field2: '',
+      template_id: 0,
+      pic_path: null,
+      normal_notification_id: 0,
+      proforma_notification_id: 0,
+      generated: false,
+      invoice_number_format: 'default',
+      sender_email: null,
+      sender_name: '',
+      bcc_email: null,
+      create_invoice_from_paid_proforma: false,
+      fulfillment_date_from_proforma_payment_date: false,
+      attach_xml_to_invoice_pdf: false,
+      advance_paid_instant: false,
+      financial_fulfillment_highlight: 'basic',
+      entitlements_in_document_comment: false,
+      bank_account_id: null,
+    })
+  })
+
+  test('létrehozás validációja: üres törzs, kötőjeles név, null e-mail, hibás típusok', async () => {
+    const { call, billingo } = setup()
+
+    const empty = await call('POST', '/document-blocks', { body: {} })
+    const hyphen = await call('POST', '/document-blocks', {
+      body: { name: 'TARCA-E2E', prefix: 'TRCE', type: 'invoice' },
+    })
+    const wrong = await call('POST', '/document-blocks', {
+      body: {
+        name: 'Rossz',
+        prefix: 5,
+        type: 'szamla',
+        sender_name: 1,
+        generated: 'igen',
+        template_id: 1.5,
+        sender_email: null,
+        bcc_email: 'nem-email',
+        invoice_number_format: 'hosszu',
+        financial_fulfillment_highlight: 'piros',
+        bank_account_id: 'egy',
+      },
+    })
+
+    expect(empty).toMatchObject({
+      status: 422,
+      body: {
+        message: 'Validation Failed',
+        errors: [
+          { field: 'name', message: 'The Invoice pad name field is required.' },
+          { field: 'prefix', message: 'The Invoice pad prefix field must be present.' },
+          { field: 'type', message: 'The type field is required.' },
+        ],
+      },
+    })
+    expect(hyphen).toMatchObject({
+      status: 422,
+      body: {
+        errors: [
+          {
+            field: 'name',
+            message: 'The Invoice pad name may only contain letters and numbers and space.',
+          },
+        ],
+      },
+    })
+    expect(wrong.body).toMatchObject({
+      errors: [
+        { field: 'prefix', message: 'The prefix must be a string.' },
+        { field: 'type', message: 'The selected type is invalid.' },
+        { field: 'sender_name', message: 'The sender name must be a string.' },
+        { field: 'generated', message: 'The generated field must be true or false.' },
+        { field: 'template_id', message: 'The template id must be an integer.' },
+        { field: 'sender_email', message: 'The Sender email must be a valid email address.' },
+        { field: 'bcc_email', message: 'The Bcc email must be a valid email address.' },
+        {
+          field: 'invoice_number_format',
+          message: 'The selected invoice number format is invalid.',
+        },
+        {
+          field: 'financial_fulfillment_highlight',
+          message: 'The selected financial fulfillment highlight is invalid.',
+        },
+        { field: 'bank_account_id', message: 'The bank account id must be an integer.' },
+      ],
+    })
+    expect(billingo.data.documentBlocks.size).toBe(2)
+  })
+
+  test('lekérés és teljes cserés módosítás: a null e-mail 422, a kihagyott mezők kiürülnek', async () => {
+    const { call, tarca } = setup()
+    const block = await tarca.documentBlocks.create({
+      name: 'TARCA E2E',
+      prefix: 'TRCE',
+      type: 'invoice',
+    })
+    const id = block.id ?? Number.NaN
+    const raw = await call('GET', `/document-blocks/${id}`)
+
+    const nullEmails = await call('PUT', `/document-blocks/${id}`, {
+      body: Object.assign({}, raw.body, { custom_field1: 'egy' }),
+    })
+    const nameOnly = await call('PUT', `/document-blocks/${id}`, { body: { name: 'TARCA E2E' } })
+    const filled = await tarca.documentBlocks.update(id, {
+      ...block,
+      customField1: 'egy',
+      customField2: 'kettő',
+      senderName: 'Tárca',
+      senderEmail: 'szamla@tarca.example',
+      bankAccountId: 7,
+      invoiceNumberFormat: 'short_with_hyphen',
+    })
+    const fetched = await tarca.documentBlocks.get(id)
+    const minimal = await tarca.documentBlocks.update(id, {
+      name: 'TARCA E2E uj',
+      prefix: '',
+      type: 'invoice',
+    })
+
+    expect(raw.body).toMatchObject({ id, sender_email: null, bcc_email: null, pic_path: null })
+    expect(nullEmails).toMatchObject({
+      status: 422,
+      body: {
+        errors: [
+          { field: 'sender_email', message: 'The Sender email must be a valid email address.' },
+          { field: 'bcc_email', message: 'The Bcc email must be a valid email address.' },
+        ],
+      },
+    })
+    expect(nameOnly).toMatchObject({
+      status: 422,
+      body: {
+        errors: [
+          { field: 'prefix', message: 'The Invoice pad prefix field must be present.' },
+          { field: 'type', message: 'The type field is required.' },
+        ],
+      },
+    })
+    expect(filled).toMatchObject({
+      id,
+      customField1: 'egy',
+      customField2: 'kettő',
+      senderName: 'Tárca',
+      senderEmail: 'szamla@tarca.example',
+      bccEmail: null,
+      bankAccountId: 7,
+      invoiceNumberFormat: 'short_with_hyphen',
+    })
+    expect(fetched).toEqual(filled)
+    expect(minimal).toEqual({ ...block, name: 'TARCA E2E uj', prefix: '' })
+  })
+
+  test('törlés: 204, utána a lekérés 403, és a listában sincs', async () => {
+    const { call, tarca } = setup()
+    const block = await tarca.documentBlocks.create({
+      name: 'TARCA TORLES',
+      prefix: 'TRDL',
+      type: 'invoice',
+    })
+    const id = block.id ?? Number.NaN
+
+    const deleted = await call('DELETE', `/document-blocks/${id}`)
+    const afterDelete = await call('GET', `/document-blocks/${id}`)
+    const list = await tarca.documentBlocks.list()
+    const error = await tarca.documentBlocks.get(id).catch((caught: unknown) => caught)
+
+    expect(deleted).toEqual({ status: 204, body: undefined, contentType: null })
+    expect(afterDelete).toMatchObject({
+      status: 403,
+      body: { error: { message: FAKE_BILLINGO_MESSAGES.forbidden } },
+    })
+    expect(list.data.map((item) => item.id)).toEqual([1, 2])
+    expect(error).toMatchObject({ category: 'forbidden', status: 403 })
+  })
+
+  test('ismeretlen tömb módosítása és törlése is 403 (a hamis Billingo feltevése, élőben nem ellenőrzött)', async () => {
+    const { billingo } = setup()
+    const headers = { 'X-API-KEY': KEY, 'content-type': 'application/json' }
+
+    const put = await billingo.fetch(`${API}/document-blocks/424242`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ name: 'Senki', prefix: '', type: 'invoice' }),
+    })
+    const remove = await billingo.fetch(`${API}/document-blocks/424242`, {
+      method: 'DELETE',
+      headers,
+    })
+
+    expect([put.status, remove.status]).toEqual([403, 403])
+    expect(billingo.data.documentBlocks.size).toBe(2)
+  })
+})
+
 describe('hibainjektálás', () => {
   test('státuszhiba egy műveletre: 500 trace_id-val, a GET-et a kliens újrapróbálja', async () => {
     const { call, tarca, billingo } = setup()
@@ -1069,7 +1628,7 @@ describe('betekintés és izoláció', () => {
   test('friss teszt profil számlatömbjei: Számlák és Nyugták NYT előtaggal', () => {
     const { billingo } = setup()
 
-    expect([...billingo.data.documentBlocks.values()]).toEqual([
+    expect([...billingo.data.documentBlocks.values()]).toMatchObject([
       {
         id: 1,
         name: 'Számlák',
@@ -1094,14 +1653,6 @@ const UNDOCUMENTED_STATUSES: Readonly<Record<string, string>> = {
   'GetBankAccount 403':
     'Az ismeretlen vagy idegen azonosítóra a Billingo élőben 403-at ad (hivatalos MCP fixture: not_found.json), a spec erre a műveletre csak 404-et dokumentál.',
 }
-
-const LIVE_DEVIATIONS: readonly { readonly pattern: RegExp; readonly reason: string }[] = [
-  {
-    pattern: /\.(prev|next)_page_url: null nem engedett$/,
-    reason:
-      'Élőben null az első és az utolsó oldalon (hivatalos MCP fixture: bank_accounts.json), a spec nem nullable stringet ír.',
-  },
-]
 
 function genericErrorSchema(status: number): string {
   if (status === 422) return 'ValidationErrorResponse'
@@ -1139,9 +1690,7 @@ function specErrors(exchange: Exchange): string[] {
   } else {
     errors = []
   }
-  return errors
-    .filter((error) => !LIVE_DEVIATIONS.some((deviation) => deviation.pattern.test(error)))
-    .map((error) => `${label}: ${error}`)
+  return errors.map((error) => `${label}: ${error}`)
 }
 
 describe.skipIf(!SPEC_AVAILABLE)('minden válasz a friss Billingo spec ellen', () => {
@@ -1202,6 +1751,12 @@ describe.skipIf(!SPEC_AVAILABLE)('minden válasz a friss Billingo spec ellen', (
     expect([...CURRENCIES].sort()).toEqual([...(currency?.enum ?? [])].sort())
   })
 
+  test('a hamis Billingo országlistája azonos a spec Country enumjával (az üres érték nélkül)', () => {
+    const country = loadMergedSpec()?.components.schemas.Country
+    expect(COUNTRIES).not.toContain('')
+    expect([...COUNTRIES, ''].sort()).toEqual([...(country?.enum ?? [])].sort())
+  })
+
   test('a fenti tesztek minden válasza megfelel a spec válaszsémájának', () => {
     expect(exchanges.length).toBeGreaterThan(50)
     expect(exchanges.flatMap(specErrors)).toEqual([])
@@ -1213,7 +1768,18 @@ describe.skipIf(!SPEC_AVAILABLE)('minden válasz a friss Billingo spec ellen', (
         .filter((exchange) => !exchange.faulted && exchange.status >= 200 && exchange.status < 300)
         .map((exchange) => exchange.operation),
     )
-    const implemented = Object.keys(FAKE_ROUTES)
+    const ownTestFile = new Set(
+      Object.keys({
+        ...productRoutes,
+        ...inventoryRoutes,
+        ...spendingRoutes,
+        ...exportRoutes,
+        ...documentRoutes,
+        ...documentActionRoutes,
+        ...receiptRoutes,
+      }),
+    )
+    const implemented = Object.keys(FAKE_ROUTES).filter((operation) => !ownTestFile.has(operation))
 
     expect(implemented.length).toBeGreaterThanOrEqual(10)
     expect(implemented.filter((operation) => !succeeded.has(operation))).toEqual([])

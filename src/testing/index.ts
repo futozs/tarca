@@ -8,7 +8,15 @@ export { FAKE_BILLINGO_MESSAGES } from './fake/http'
 export type {
   FakeBankAccount,
   FakeBillingoDataView,
+  FakeDocument,
   FakeDocumentBlock,
+  FakeDocumentExport,
+  FakeDocumentItem,
+  FakeDocumentRecord,
+  FakePartner,
+  FakePayment,
+  FakeProduct,
+  FakeSpending,
   FakeSubscription,
   FakeTaxpayer,
 } from './fake/state'

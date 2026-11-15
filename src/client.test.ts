@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { mockBillingo, TEST_API_KEY } from '../tests/helpers'
 import { parameterErrors, requestErrors, SPEC_AVAILABLE } from '../tests/openapi'
-import { createTarca, nullIfNotFound } from './client'
-import { BillingoError } from './core/errors'
+import { createTarca } from './client'
+import { BillingoError, nullIfNotFound } from './core/errors'
 
 function client(...replies: Parameters<typeof mockBillingo>) {
   const mock = mockBillingo(...replies)

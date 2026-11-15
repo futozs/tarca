@@ -72,6 +72,18 @@ describe('változásfigyelő', () => {
     expect(problems[1]).toContain('GET /partners/{id}')
   })
 
+  test('a spec-felülírások problémáit is jelzi', () => {
+    const problems = consistencyProblems({
+      specOperations: [],
+      knownOperations: [],
+      missingRoutes: [],
+      overrideProblems: ['Document: discount nullable: felesleges'],
+    })
+    expect(problems).toEqual([
+      'Spec-felülírás (scripts/spec-overrides.mjs): Document: discount nullable: felesleges',
+    ])
+  })
+
   test('a jelentés magyarul írja le a teendőt', () => {
     expect(renderReport([], [])).toContain('Nincs eltérés.')
     const report = renderReport([{ name: 'spec:3.0.15', kind: 'changed', detail: 'x' }], ['baj'])

@@ -1,5 +1,5 @@
 import type { RequestOptions, TarcaContext } from '../core/context'
-import { type DateInput, toBillingoDate } from '../core/dates'
+import { type DateInput, toOptionalBillingoDate } from '../core/dates'
 import type { ConversationRate, Currency } from '../generated/billingo'
 
 export interface ConversionRateQuery {
@@ -27,7 +27,7 @@ export function createCurrenciesApi(context: TarcaContext): CurrenciesApi {
         query: {
           from: query.from,
           to: query.to,
-          date: query.date === undefined ? undefined : toBillingoDate(query.date),
+          date: toOptionalBillingoDate(query.date),
         },
         signal: options?.signal,
       })

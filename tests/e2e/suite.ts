@@ -12,7 +12,50 @@ import {
   BANK_ACCOUNTS_E2E_OPERATIONS,
   defineBankAccountsSteps,
 } from './steps/bank-accounts'
+import { CLEANUP_E2E_EXCLUDED, CLEANUP_E2E_OPERATIONS, defineCleanupSteps } from './steps/cleanup'
+import {
+  DOCUMENT_ACTIONS_E2E_EXCLUDED,
+  DOCUMENT_ACTIONS_E2E_OPERATIONS,
+  DOCUMENT_CANCELLATION_E2E_EXCLUDED,
+  DOCUMENT_CANCELLATION_E2E_OPERATIONS,
+  defineDocumentActionsSteps,
+  defineDocumentCancellationSteps,
+} from './steps/document-actions'
+import {
+  DOCUMENT_BLOCKS_E2E_EXCLUDED,
+  DOCUMENT_BLOCKS_E2E_OPERATIONS,
+  defineDocumentBlocksSteps,
+} from './steps/document-blocks'
+import {
+  DOCUMENTS_E2E_EXCLUDED,
+  DOCUMENTS_E2E_OPERATIONS,
+  defineDocumentsSteps,
+} from './steps/documents'
+import { defineExportsSteps, EXPORTS_E2E_EXCLUDED, EXPORTS_E2E_OPERATIONS } from './steps/exports'
 import { defineGuardSteps, GUARD_E2E_EXCLUDED, GUARD_E2E_OPERATIONS } from './steps/guard'
+import {
+  definePartnerIndexSteps,
+  definePartnersSteps,
+  PARTNER_INDEX_E2E_EXCLUDED,
+  PARTNER_INDEX_E2E_OPERATIONS,
+  PARTNERS_E2E_EXCLUDED,
+  PARTNERS_E2E_OPERATIONS,
+} from './steps/partners'
+import {
+  defineProductsSteps,
+  PRODUCTS_E2E_EXCLUDED,
+  PRODUCTS_E2E_OPERATIONS,
+} from './steps/products'
+import {
+  defineReceiptsSteps,
+  RECEIPTS_E2E_EXCLUDED,
+  RECEIPTS_E2E_OPERATIONS,
+} from './steps/receipts'
+import {
+  defineSpendingsSteps,
+  SPENDINGS_E2E_EXCLUDED,
+  SPENDINGS_E2E_OPERATIONS,
+} from './steps/spendings'
 import { defineUtilsSteps, UTILS_E2E_EXCLUDED, UTILS_E2E_OPERATIONS } from './steps/utils'
 
 export interface E2eGroup {
@@ -40,6 +83,72 @@ export const E2E_GROUPS: readonly E2eGroup[] = [
     define: defineBankAccountsSteps,
     operations: BANK_ACCOUNTS_E2E_OPERATIONS,
     excluded: BANK_ACCOUNTS_E2E_EXCLUDED,
+  },
+  {
+    title: 'termékek és készlet',
+    define: defineProductsSteps,
+    operations: PRODUCTS_E2E_OPERATIONS,
+    excluded: PRODUCTS_E2E_EXCLUDED,
+  },
+  {
+    title: 'költségek',
+    define: defineSpendingsSteps,
+    operations: SPENDINGS_E2E_OPERATIONS,
+    excluded: SPENDINGS_E2E_EXCLUDED,
+  },
+  {
+    title: 'partnerek',
+    define: definePartnersSteps,
+    operations: PARTNERS_E2E_OPERATIONS,
+    excluded: PARTNERS_E2E_EXCLUDED,
+  },
+  {
+    title: 'számlatömbök',
+    define: defineDocumentBlocksSteps,
+    operations: DOCUMENT_BLOCKS_E2E_OPERATIONS,
+    excluded: DOCUMENT_BLOCKS_E2E_EXCLUDED,
+  },
+  {
+    title: 'bizonylatok: kiállítás',
+    define: defineDocumentsSteps,
+    operations: DOCUMENTS_E2E_OPERATIONS,
+    excluded: DOCUMENTS_E2E_EXCLUDED,
+  },
+  {
+    title: 'nyugták',
+    define: defineReceiptsSteps,
+    operations: RECEIPTS_E2E_OPERATIONS,
+    excluded: RECEIPTS_E2E_EXCLUDED,
+  },
+  {
+    title: 'bizonylatok: műveletek',
+    define: defineDocumentActionsSteps,
+    operations: DOCUMENT_ACTIONS_E2E_OPERATIONS,
+    excluded: DOCUMENT_ACTIONS_E2E_EXCLUDED,
+  },
+  {
+    title: 'partnerek: késleltetett keresőindex',
+    define: definePartnerIndexSteps,
+    operations: PARTNER_INDEX_E2E_OPERATIONS,
+    excluded: PARTNER_INDEX_E2E_EXCLUDED,
+  },
+  {
+    title: 'export',
+    define: defineExportsSteps,
+    operations: EXPORTS_E2E_OPERATIONS,
+    excluded: EXPORTS_E2E_EXCLUDED,
+  },
+  {
+    title: 'bizonylatok: sztornó',
+    define: defineDocumentCancellationSteps,
+    operations: DOCUMENT_CANCELLATION_E2E_OPERATIONS,
+    excluded: DOCUMENT_CANCELLATION_E2E_EXCLUDED,
+  },
+  {
+    title: 'takarítás',
+    define: defineCleanupSteps,
+    operations: CLEANUP_E2E_OPERATIONS,
+    excluded: CLEANUP_E2E_EXCLUDED,
   },
 ]
 
