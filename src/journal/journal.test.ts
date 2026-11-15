@@ -1008,6 +1008,58 @@ describe('kvJournal', () => {
     expect(await journal.entries(RANGE)).toMatchObject([{ vendorId: 'V8' }])
   })
 
+  test('setIfAbsent nélküli resilientStore fölött a bejegyzés elnyelt írása JournalWriteError, a foglalás megmarad, a settle pótolja', async () => {
+    const inner = memoryStore()
+    let failEntry = true
+    const flaky: KeyValueStore = {
+      get: inner.get,
+      delete: inner.delete,
+      increment: (key, ttl) => inner.increment?.(key, ttl) ?? 0,
+      set: (key, value, ttl) => {
+        if (failEntry && key.includes(':entry:')) throw new Error('a Redis nem érhető el')
+        return inner.set(key, value, ttl)
+      },
+    }
+    const journal = createJournal(kvJournal(resilientStore(flaky, { onError: () => undefined })), {
+      now: () => NOW,
+    })
+    const { tarca } = fakeTarca()
+
+    const failure = await journal
+      .track('V9', () => tarca.documents.create({ ...INVOICE, vendorId: 'V9' }))
+      .catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(JournalWriteError)
+    expect((failure as JournalWriteError).cause).toMatchObject({ category: 'store_unavailable' })
+    expect(await journal.entries(RANGE)).toEqual([])
+    expect(await journal.pending(RANGE)).toMatchObject([{ vendorId: 'V9' }])
+    failEntry = false
+    expect(await journal.settle(tarca)).toMatchObject({ recorded: [{ vendorId: 'V9' }] })
+    expect(await journal.entries(RANGE)).toMatchObject([{ vendorId: 'V9' }])
+  })
+
+  test('setIfAbsent nélküli resilientStore fölött a foglalás elnyelt írása store_unavailable, a bizonylat ki sem állítódik', async () => {
+    const inner = memoryStore()
+    const flaky: KeyValueStore = {
+      get: inner.get,
+      delete: inner.delete,
+      increment: (key, ttl) => inner.increment?.(key, ttl) ?? 0,
+      set: (key, value, ttl) => {
+        if (key.includes(':reservation:')) throw new Error('a Redis nem érhető el')
+        return inner.set(key, value, ttl)
+      },
+    }
+    const journal = createJournal(kvJournal(resilientStore(flaky, { onError: () => undefined })), {
+      now: () => NOW,
+    })
+    const { billingo, tarca } = fakeTarca()
+
+    await expect(
+      journal.track('V10', () => tarca.documents.create({ ...INVOICE, vendorId: 'V10' })),
+    ).rejects.toMatchObject({ category: 'store_unavailable' })
+    expect(billingo.count('CreateDocument')).toBe(0)
+  })
+
   test('a reconcile a tárolt, de indexből hiányzó bejegyzést újraindexeli, és nem jelzi újra', async () => {
     const store = memoryStore()
     const journal = createJournal(kvJournal(store), { now: () => NOW })

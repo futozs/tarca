@@ -17,6 +17,8 @@ import type { PaymentAmount, PaymentEvent, PaymentRefund } from './types'
 
 export type PartialRefundMode = 'auto' | 'proportional' | 'skip'
 
+export type RefundTarget = () => Promise<Document | SkippedPayment>
+
 export interface RefundItemsContext {
   readonly refund: PaymentRefund
   readonly document: Document
@@ -348,22 +350,21 @@ export async function issueForPartialRefund(
   payment: PaymentEvent,
   vendorId: string,
   options: IssueForPaymentOptions,
+  target: RefundTarget,
 ): Promise<IssuedModification | IssuedRefundProposal | SkippedPayment> {
-  if (options.partialRefund === 'skip') {
-    return skipped(
-      vendorId,
-      'Részleges visszatérítés: a partialRefund: skip beállítás miatt nem készül bizonylat.',
-    )
-  }
   const refunds = payment.refunds ?? []
-  if (refunds.length === 0) {
-    return skipped(
-      vendorId,
-      `Részleges visszatérítés: a(z) ${payment.provider} esemény nem adta át tételesen a visszatérítéseket (azonosító és összeg), ezért a tárca nem tud pontosan egyszeri módosító számlát kiállítani. Állítsd ki kézzel, vagy kapcsold be a szolgáltató részletes lekérdezését.`,
-    )
+  const reason =
+    options.partialRefund === 'skip'
+      ? 'Részleges visszatérítés: a partialRefund: skip beállítás miatt nem készül bizonylat.'
+      : refunds.length === 0
+        ? `Részleges visszatérítés: a(z) ${payment.provider} esemény nem adta át tételesen a visszatérítéseket (azonosító és összeg), ezért a tárca nem tud pontosan egyszeri módosító számlát kiállítani. Állítsd ki kézzel, vagy kapcsold be a szolgáltató részletes lekérdezését.`
+        : undefined
+  if (reason !== undefined) {
+    if (payment.includesPayment === true) await target()
+    return skipped(vendorId, reason)
   }
-  const document = await tarca.documents.findByVendorId(vendorId, requestOptions(options))
-  if (!document) throw refundBeforeDocumentError(payment, vendorId)
+  const document = await target()
+  if ('kind' in document) return document
   if (document.cancelled === true) {
     return skipped(
       vendorId,

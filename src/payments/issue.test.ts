@@ -4,6 +4,7 @@ import { BillingoError } from '../core/errors'
 import type { KeyValueStore } from '../core/store'
 import { createFakeBillingoFetch, type FakeBillingoOptions } from '../testing'
 import { issueForPayment, paymentVendorId } from './issue'
+import { refundLedgerKey } from './modification'
 import type { PaymentCustomer, PaymentEvent } from './types'
 
 const NOW = new Date('2026-10-02T10:00:00Z')
@@ -807,6 +808,32 @@ describe('issueForPayment: teljes visszatérítés', () => {
     expect(receipt?.document.cancelled).toBe(true)
   })
 
+  test('a teljes fizetést is hordozó visszatérítés (includesPayment) bizonylat nélkül előbb kiállítja a fizetés bizonylatát, skip módban is', async () => {
+    const { billingo, tarca } = setup()
+    const partial = refunded({
+      kind: 'partially-refunded',
+      includesPayment: true,
+      refunds: [{ id: 're_1', amount: huf(540) }],
+    })
+
+    const skippedResult = await issueForPayment(tarca, partial, {
+      ...OPTIONS,
+      partialRefund: 'skip',
+    })
+    const proposal = await issueForPayment(tarca, partial, OPTIONS)
+
+    expect(skippedResult).toMatchObject({
+      kind: 'skipped',
+      reason: expect.stringContaining('skip'),
+    })
+    expect(proposal).toMatchObject({ kind: 'refund-proposal', document: 'receipt' })
+    expect(billingo.count('CreateReceipt')).toBe(1)
+    await expect(
+      issueForPayment(tarca, refunded({ id: 'pi_456', includesPayment: false }), OPTIONS),
+    ).rejects.toMatchObject({ category: 'in_progress' })
+    expect(billingo.count('CreateReceipt')).toBe(1)
+  })
+
   test('két egyidejű teljes visszatérítés egy folyamatban egyetlen sztornó kérést küld', async () => {
     const billingo = createFakeBillingoFetch({ now: () => NOW })
     const tarca = createTarca({
@@ -869,6 +896,136 @@ describe('issueForPayment: teljes visszatérítés', () => {
     await expect(
       issueForPayment(second, refunded(), { ...OPTIONS, ledger }),
     ).resolves.toMatchObject({ kind: 'cancellation', created: false })
+  })
+
+  test('a közös ledgerrel a későn ébredő második folyamat a zár után újraolvassa a bizonylatot, és nem küld második sztornó kérést', async () => {
+    const billingo = createFakeBillingoFetch({ now: () => NOW })
+    const first = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      fetch: billingo.fetch,
+      retryDelayMs: 0,
+    })
+    let open: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    let held = false
+    const second = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      retryDelayMs: 0,
+      fetch: async (resource, init) => {
+        const response = await billingo.fetch(resource, init)
+        if (!held) {
+          held = true
+          await gate
+        }
+        return response
+      },
+    })
+    const ledger = memoryLedger()
+    await issueForPayment(first, paid({ customer: COMPANY }), OPTIONS)
+
+    const late = issueForPayment(second, refunded(), { ...OPTIONS, ledger })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const winner = await issueForPayment(first, refunded(), { ...OPTIONS, ledger })
+    open()
+
+    expect(winner).toMatchObject({ kind: 'cancellation', created: true })
+    await expect(late).resolves.toMatchObject({ kind: 'cancellation', created: false })
+    expect(billingo.count('CancelDocument')).toBe(1)
+  })
+
+  test('a zár megszerzése után újraolvasott, közben módosított számlát nem sztornózza, a maradékra módosítót ad', async () => {
+    const { billingo, tarca } = setup()
+    const issued = await issueForPayment(tarca, paid({ customer: COMPANY }), OPTIONS)
+    if (issued.kind !== 'invoice') throw new Error('számla várt')
+    const id = issued.document.id ?? 0
+    const stale = {
+      ...tarca,
+      documents: {
+        ...tarca.documents,
+        findByVendorId: async (...args: Parameters<typeof tarca.documents.findByVendorId>) => {
+          const document = await tarca.documents.findByVendorId(...args)
+          await tarca.documents.createModification(id, {
+            items: [{ name: 'Kézi jóváírás', quantity: 1, grossUnitPrice: -540, vat: 27 }],
+          })
+          return document
+        },
+      },
+    }
+
+    const result = await issueForPayment(stale, refunded(), { ...OPTIONS, ledger: memoryLedger() })
+
+    expect(result).toMatchObject({
+      kind: 'modification',
+      modifications: [{ refundId: 'teljes', amount: { minor: -200_000 } }],
+    })
+    expect(billingo.count('CancelDocument')).toBe(0)
+  })
+
+  test('ha a sztornó zárát más tartja, de a bizonylatot közben sztornózták, a meglévő sztornót jelzi, hiba és második sztornó nélkül', async () => {
+    const { billingo, tarca } = setup()
+    const issued = await issueForPayment(tarca, paid(), OPTIONS)
+    if (issued.kind !== 'receipt') throw new Error('nyugta várt')
+    const id = issued.document.id ?? 0
+    const ledger = memoryLedger()
+    ledger.values.set(await refundLedgerKey('STRIPE-pi_123', id, 'sztorno'), 'masik-folyamat')
+    const racing = {
+      ...tarca,
+      documents: {
+        ...tarca.documents,
+        findByVendorId: async (...args: Parameters<typeof tarca.documents.findByVendorId>) => {
+          const document = await tarca.documents.findByVendorId(...args)
+          await tarca.documents.cancel(id)
+          return document
+        },
+      },
+    }
+
+    const result = await issueForPayment(racing, refunded(), { ...OPTIONS, ledger })
+
+    expect(result).toMatchObject({ kind: 'cancellation', created: false, originalId: id })
+    expect(billingo.count('CancelDocument')).toBe(1)
+    expect(ledger.values.get(await refundLedgerKey('STRIPE-pi_123', id, 'sztorno'))).toBe(
+      'masik-folyamat',
+    )
+  })
+
+  test('a másik visszatérítésre váró hívás a megszakító jelre azonnal leáll, nem várja meg a futót', async () => {
+    const billingo = createFakeBillingoFetch({ now: () => NOW })
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const tarca = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      retryDelayMs: 0,
+      fetch: async (resource, init) => {
+        if (String(resource).endsWith('/cancel')) await held
+        return billingo.fetch(resource, init)
+      },
+    })
+    await issueForPayment(tarca, paid(), OPTIONS)
+    const controller = new AbortController()
+    const reason = new Error('a platform időkorlátja lejárt')
+
+    const running = issueForPayment(tarca, refunded(), OPTIONS)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const waiting = issueForPayment(tarca, refunded(), { ...OPTIONS, signal: controller.signal })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    controller.abort(reason)
+    const outcome = await Promise.race([
+      waiting.then(
+        () => 'teljesült',
+        (error: unknown) => error,
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('vár'), 50)),
+    ])
+    release()
+
+    expect(outcome).toBe(reason)
+    await expect(running).resolves.toMatchObject({ kind: 'cancellation', created: true })
+    expect(billingo.count('CancelDocument')).toBe(1)
   })
 
   test('a sztornó zárához setIfAbsent nélküli ledger konfigurációs hiba, az elérhetetlen ledger store_unavailable, sztornó nélkül', async () => {

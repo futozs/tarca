@@ -218,6 +218,43 @@ describe('issueForPayment részleges visszatérítésnél', () => {
     ])
   })
 
+  test('a teljes visszatérítés maradékát a korábbi részleges visszatérítés után osztja szét, így tételenként pontosan a bruttó összeg térül vissza', async () => {
+    const items: PaymentLineItem[] = [
+      { name: 'Póló', quantity: 1, totalGross: huf(100), vat: 27 },
+      { name: 'Könyv', quantity: 1, totalGross: huf(100), vat: 5 },
+      { name: 'Szállás', quantity: 1, totalGross: huf(100), vat: 18 },
+    ]
+    const billingo = createFakeBillingoFetch({ now: () => NOW })
+    const tarca = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      fetch: billingo.fetch,
+      retryDelayMs: 0,
+    })
+    await issueForPayment(
+      tarca,
+      { ...paid(items), amount: huf(300) },
+      { document: 'invoice', recoveryDelayMs: 0 },
+    )
+    const options = { partialRefund: 'proportional', ledger: memoryLedger() } as const
+
+    await issueForPayment(tarca, { ...partial([refund('TR-1', 100)]), amount: huf(300) }, options)
+    const rest = await issueForPayment(
+      tarca,
+      { ...partial(undefined), kind: 'refunded', amount: huf(300) },
+      options,
+    )
+
+    expect(rest).toMatchObject({ kind: 'modification', modifications: [{ refundId: 'teljes' }] })
+    const byVat = new Map<string, number>()
+    for (const modification of modifications(billingo)) {
+      for (const item of modification.items) {
+        const vat = String(item.vat)
+        byVat.set(vat, (byVat.get(vat) ?? 0) + Math.round((item.grossAmount ?? 0) * 100))
+      }
+    }
+    expect(Object.fromEntries(byVat)).toEqual({ '27%': -10_000, '5%': -10_000, '18%': -10_000 })
+  })
+
   test('a refundItems pontosan a megadott tételeket adja vissza negatív egységárral', async () => {
     const { billingo, tarca, originalId } = await invoiced(MIXED_VAT)
 

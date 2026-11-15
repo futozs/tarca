@@ -205,6 +205,50 @@ describe('MCP eszközök: számla', () => {
     expect(foreign.billingo.count('CreateDocument')).toBe(0)
   })
 
+  test('a megerősítő kód más partnerre, vendorId-ra vagy számlatömbre nem állít ki számlát', async () => {
+    const harness = mcpHarness({ allowWrite: true })
+    const input = { ...INVOICE, vendorId: 'A-1' }
+    const preview = await harness.call('preview_document', input)
+    const confirmation = preview.data.confirmation
+
+    const results = [
+      await harness.call('create_document', {
+        ...input,
+        partner: { ...PARTNER, name: 'Másik Kft.' },
+        confirmation,
+      }),
+      await harness.call('create_document', { ...input, vendorId: 'A-2', confirmation }),
+      await harness.call('create_document', { ...input, blockId: 2, confirmation }),
+    ]
+
+    for (const result of results) {
+      expect(result).toMatchObject({ isError: true, summary: expect.stringContaining('eltérnek') })
+    }
+    expect(harness.billingo.count('CreateDocument')).toBe(0)
+  })
+
+  test('a nyugta megerősítő kódja más tételre, vendorId-ra vagy nyugtatömbre nem állít ki nyugtát', async () => {
+    const harness = mcpHarness({ allowWrite: true })
+    const input = { ...RECEIPT, vendorId: 'N-1' }
+    const preview = await harness.call('preview_receipt', input)
+    const confirmation = preview.data.confirmation
+
+    const results = [
+      await harness.call('create_receipt', {
+        ...input,
+        items: [{ ...RECEIPT.items[0], quantity: 20 }],
+        confirmation,
+      }),
+      await harness.call('create_receipt', { ...input, vendorId: 'N-2', confirmation }),
+      await harness.call('create_receipt', { ...input, blockId: 2, confirmation }),
+    ]
+
+    for (const result of results) {
+      expect(result).toMatchObject({ isError: true, summary: expect.stringContaining('eltérnek') })
+    }
+    expect(harness.billingo.count('CreateReceipt')).toBe(0)
+  })
+
   test('éjfél után a korábbi előnézet kódja nem állít ki második, más dátumú számlát', async () => {
     let current = new Date('2026-11-16T22:55:00.000Z')
     const harness = mcpHarness({ allowWrite: true, now: () => current })

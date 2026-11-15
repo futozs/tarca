@@ -826,10 +826,28 @@ async function cancelOnce(
     )
   }
   try {
-    return await cancelDocument(tarca, payment, vendorId, document, options)
+    const current = await tarca.documents.get(id, requestOptions(options))
+    if (current.cancelled === true) return cancellation(vendorId, current, undefined, false)
+    if (kindOf(current) === 'invoice' && current.correctionType === 'modified') {
+      return await issueForRemainder(tarca, payment, vendorId, current, options)
+    }
+    return await cancelDocument(tarca, payment, vendorId, current, options)
   } finally {
     await releaseCancelLock(ledger, key, value)
   }
+}
+
+async function refundTarget(
+  tarca: PaymentTarca,
+  payment: PaymentEvent,
+  vendorId: string,
+  options: IssueForPaymentOptions,
+): Promise<Document | SkippedPayment> {
+  const document = await tarca.documents.findByVendorId(vendorId, requestOptions(options))
+  if (document) return document
+  if (payment.includesPayment !== true) throw refundBeforeDocumentError(payment, vendorId)
+  const issued = await issueForPaid(tarca, payment, vendorId, options)
+  return issued.kind === 'skipped' ? issued : issued.document
 }
 
 async function refundOnce(
@@ -838,8 +856,8 @@ async function refundOnce(
   vendorId: string,
   options: IssueForPaymentOptions,
 ): Promise<IssuedDocument> {
-  const document = await tarca.documents.findByVendorId(vendorId, requestOptions(options))
-  if (!document) throw refundBeforeDocumentError(payment, vendorId)
+  const document = await refundTarget(tarca, payment, vendorId, options)
+  if ('kind' in document) return document
   if (document.cancelled === true) return cancellation(vendorId, document, undefined, false)
   if (kindOf(document) === 'invoice' && document.correctionType === 'modified') {
     return issueForRemainder(tarca, payment, vendorId, document, options)
@@ -894,7 +912,9 @@ export async function issueForPayment(
     case 'refunded':
       return issueForRefund(tarca, payment, vendorId, options)
     case 'partially-refunded':
-      return issueForPartialRefund(tarca, payment, vendorId, options)
+      return issueForPartialRefund(tarca, payment, vendorId, options, () =>
+        refundTarget(tarca, payment, vendorId, options),
+      )
     case 'refund-failed':
       return issueForRefundFailure(tarca, payment, vendorId, options)
     case 'other':

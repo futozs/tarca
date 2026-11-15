@@ -100,6 +100,25 @@ export function kvJournal(store: KeyValueStore, options: KvJournalOptions = {}):
     return (await store.get(key)) === target
   }
 
+  async function setChecked(
+    key: string,
+    value: string,
+    ttl: number,
+    taken: (stored: string | undefined | null) => boolean,
+  ): Promise<boolean> {
+    await store.set(key, value, ttl)
+    const stored = await store.get(key)
+    if (stored === value) return true
+    if (taken(stored)) return false
+    throw new BillingoError(
+      `A napló „${key}” kulcsát nem sikerült beírni: visszaolvasáskor nem a beírt érték jött vissza.`,
+      {
+        category: 'store_unavailable',
+        hint: 'Ellenőrizd a tárolót; a resilientStore elnyeli a set hibáját, ezért a naplóhoz ne használd.',
+      },
+    )
+  }
+
   async function appendToDay(index: 'day' | 'rday', day: string, target: string, ttl: number) {
     const slot = await increment?.(`${prefix}${index}:${day}:count`, ttl)
     const key = `${prefix}${index}:${day}:${slot}`
@@ -145,8 +164,12 @@ export function kvJournal(store: KeyValueStore, options: KvJournalOptions = {}):
       await appendToDay('day', entry.date, `${ENTRY_SLOT}${entry.id}`, retention)
       const value = JSON.stringify(entry)
       if (store.setIfAbsent) return store.setIfAbsent(key, value, retention)
-      await store.set(key, value, retention)
-      return true
+      return setChecked(
+        key,
+        value,
+        retention,
+        (stored) => parseJson<JournalEntry>(stored, isEntry)?.id === entry.id,
+      )
     },
     async indexEntry(entry) {
       await appendToDay('day', entry.date, `${ENTRY_SLOT}${entry.id}`, retention)
@@ -171,8 +194,13 @@ export function kvJournal(store: KeyValueStore, options: KvJournalOptions = {}):
       if (store.setIfAbsent) return store.setIfAbsent(key, value, reservationTtl)
       const existing = await store.get(key)
       if (existing !== undefined && existing !== null) return false
-      await store.set(key, value, reservationTtl)
-      return true
+      return setChecked(
+        key,
+        value,
+        reservationTtl,
+        (stored) =>
+          parseJson<JournalReservation>(stored, isReservation)?.vendorId === reservation.vendorId,
+      )
     },
     async deleteReservation(vendorId) {
       await store.delete(reservationKey(vendorId))

@@ -1,4 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
+import { createTarca } from '../client'
+import type { KeyValueStore } from '../core/store'
+import { createFakeBillingoFetch } from '../testing'
 import {
   BARION_SANDBOX_API_URL,
   barionPaymentEvent,
@@ -7,7 +10,7 @@ import {
   fetchBarionPaymentState,
 } from './barion'
 import { PaymentProviderError } from './errors'
-import { paymentVendorId } from './issue'
+import { issueForPayment, paymentVendorId } from './issue'
 
 interface RecordedRequest {
   readonly url: string
@@ -300,7 +303,10 @@ describe('barionPaymentEvent', () => {
       kind: 'refunded',
       refundedAmount: huf(3023),
       eventId: `${PAYMENT_ID}:Succeeded:1`,
+      includesPayment: true,
+      amount: huf(3023),
     })
+    expect(barionPaymentEvent(paymentState()).includesPayment).toBeUndefined()
   })
 
   test('a részleges és a több részletben teljes visszatérítést részlegesnek jelöli, egész minor unitban hasonlít', () => {
@@ -447,6 +453,99 @@ describe('barionWebhook', () => {
     expect((await handler(webhookRequest(`paymentId=${PAYMENT_ID}`))).status).toBe(500)
     expect(onPayment).not.toHaveBeenCalled()
     expect(onError).toHaveBeenCalledWith(expect.any(PaymentProviderError))
+  })
+
+  test('ha a fizetés callbackje elbukott, és közben visszatérítés jött, az újraküldött callback előbb kiállítja a fizetés bizonylatát', async () => {
+    const billingo = createFakeBillingoFetch({ now: () => new Date('2026-10-02T10:00:00Z') })
+    const tarca = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      fetch: billingo.fetch,
+      retryDelayMs: 0,
+    })
+    const values = new Map<string, string>()
+    const ledger: KeyValueStore = {
+      get: (key) => values.get(key),
+      set: (key, value) => {
+        values.set(key, value)
+      },
+      delete: (key) => {
+        values.delete(key)
+      },
+      setIfAbsent: (key, value) => {
+        if (values.has(key)) return false
+        values.set(key, value)
+        return true
+      },
+    }
+    let state = paymentState()
+    const api = routedFetch([[/PaymentState$/, () => jsonResponse(state)]])
+    const handler = barionWebhook({
+      posKey: POS_KEY,
+      fetch: api.fetch,
+      onError: () => undefined,
+      onPayment: (payment) =>
+        issueForPayment(tarca, payment, {
+          vat: 27,
+          recoveryDelayMs: 0,
+          ledger,
+          partner: {
+            name: 'Példa Kft.',
+            address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+            taxcode: '12345678-2-42',
+            taxType: 'HAS_TAX_NUMBER',
+          },
+        }),
+    })
+    const callback = () => handler(webhookRequest(`paymentId=${PAYMENT_ID}`))
+    billingo.fail({ status: 503 }, { operation: 'CreateDocument', times: 1 })
+
+    expect((await callback()).status).toBe(500)
+    state = paymentState({ Transactions: [shopTransaction(), refund(1000)] })
+    const partial = await callback()
+    const again = await callback()
+    state = paymentState({ Transactions: [shopTransaction(), refund(1000), refund(2023)] })
+    const rest = await callback()
+
+    expect([partial.status, again.status, rest.status]).toEqual([200, 200, 200])
+    const records = [...billingo.data.documents.values()]
+    expect(
+      records
+        .filter((record) => record.document.type === 'invoice')
+        .map((record) => record.vendorId),
+    ).toEqual([`BARION-${PAYMENT_ID}`])
+    const documents = records.map((record) => record.document)
+    expect(
+      documents
+        .filter((document) => document.type === 'modification')
+        .map((document) => document.grossTotal)
+        .sort(),
+    ).toEqual([-1000, -2023])
+  })
+
+  test('ha a fizetés callbackje elbukott, a teljes visszatérítés előbb kiállítja, majd sztornózza a bizonylatot', async () => {
+    const billingo = createFakeBillingoFetch({ now: () => new Date('2026-10-02T10:00:00Z') })
+    const tarca = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      fetch: billingo.fetch,
+      retryDelayMs: 0,
+    })
+    const event = barionPaymentEvent(
+      paymentState({ Transactions: [shopTransaction(), refund(3023)] }),
+    )
+
+    const first = await issueForPayment(tarca, event, { vat: 27, recoveryDelayMs: 0 })
+    const second = await issueForPayment(tarca, event, { vat: 27, recoveryDelayMs: 0 })
+
+    expect(event.kind).toBe('refunded')
+    expect(first).toMatchObject({ kind: 'cancellation', document: 'receipt', created: true })
+    expect(second).toMatchObject({ kind: 'cancellation', created: false })
+    expect(billingo.count('CreateReceipt')).toBe(1)
+    expect(billingo.count('CancelDocument')).toBe(1)
+    expect(
+      [...billingo.data.documents.values()].find(
+        (record) => record.vendorId === `BARION-${PAYMENT_ID}`,
+      )?.document,
+    ).toMatchObject({ type: 'receipt', cancelled: true })
   })
 
   test('POSKey nélkül létrehozáskor TypeError-t dob', () => {
