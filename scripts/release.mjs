@@ -268,6 +268,19 @@ process.once('SIGTERM', abort)
 writeFileSync(packagePath, `${JSON.stringify({ ...pkg, version }, null, 2)}\n`)
 writeChangelog(entry)
 
+log(`Build az új verzióval (${version}), hogy a CLI és az MCP szerver ezt a számot mutassa`)
+if (!run('npm', ['run', 'build'])) {
+  restore()
+  fail('A build az új verzióval elbukott, a verziót és a changelogot visszaállítottam.')
+}
+const builtVersion = execFileSync(process.execPath, [join(root, 'dist', 'cli.js'), '--help'], {
+  encoding: 'utf8',
+}).split('\n')[0]
+if (!builtVersion.includes(` ${version}:`)) {
+  restore()
+  fail(`A dist/cli.js nem a ${version} verziót tartalmazza, nem adom ki.`)
+}
+
 log(
   ciMode
     ? `Publikálás: ${pkg.name}@${version} (OIDC Trusted Publisher, automatikus)`
