@@ -13,6 +13,7 @@
       "!.research",
       "!kezdo-docs",
       "!.spec-cache",
+      "!.claude/workflows",
       "!.vercel",
       "!readme/assets",
       "!tests/__snapshots__",

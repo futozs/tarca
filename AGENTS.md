@@ -62,6 +62,7 @@ npm run ci
 | `agents/` | Docs shipped in the npm package for AI agents of package users |
 | `readme/` | README source: `template.md`, `config.json`, the `build.mjs` renderer (`{{operations}}` is counted from `src/core/operations.ts` by `site-data.mjs`), the `art/` SVG generator and the generated `assets/` |
 | `web/content/docs/` | MDX docs (planned, same format as kassza); the website comes later |
+| `.claude/workflows/` | Multi-agent workflows for Claude Code: `tarca-vegpont` (a new or changed Billingo operation), `tarca-review` (adversarial review plus fixes), `tarca-kassza-modulok` (port kassza's CLI, MCP, payments, storage, stores, journal, node, batch, observe), `tarca-docs` (MDX docs at kassza depth), `tarca-web` (the website: `stage: "irany"` first, for the owner to approve the look, then `stage: "epites"`; light mode only) |
 
 ## Conventions
 
