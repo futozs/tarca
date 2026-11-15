@@ -13,27 +13,34 @@ import { createTarca } from 'tarca'
 
 const tarca = createTarca() // reads BILLINGO_API_KEY
 
-const company = await tarca.utils.checkTaxNumber('12345676-2-41')
+const invoice = await tarca.documents.create({
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+    emails: ['vevo@ceg.hu'],
+  },
+  items: [{ name: 'Web development', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+})
 
-if (company.result === 'validation_ok') {
-  console.log(company.taxpayerName, company.addresses?.[0]?.city)
-}
+console.log(invoice.invoiceNumber, invoice.grossTotal)
 ```
+
+tarca finds the partner or creates it, and fills in the document block, the fulfillment date, the 8-day payment deadline and the VAT code. Invalid input is rejected before the request is sent.
+
+For webshops and webhooks, use `createOnce()` with the order ID as `vendorId`. It looks the document up first, so running the same call twice (a webhook delivered twice, a retried job) never issues a second invoice.
 
 ## Status
 
-tarca is 0.x and under active development. The API may still change between 0.x releases; see the [changelog](CHANGELOG.md) (in Hungarian).
+tarca is 0.x. All 57 Billingo API v3 operations are implemented: the 54 documented in the 3.0.14 and 3.0.15 OpenAPI specs plus 3 undocumented document block routes that work in production. Every operation runs in a live end-to-end test against a Billingo developer test profile. The API may still change between 0.x releases; see the [changelog](CHANGELOG.md) (in Hungarian).
 
-Available today:
+- Documents: invoices, proformas, advance and final invoices, drafts, copies, cancellations, modification documents, `createOnce` (exactly-once issuing through `vendorId`), PDF and POS PDF download, public URLs, sending by e-mail, reminders, NAV status, payments (`tarca.documents.*`)
+- Receipts: `tarca.receipts.create()`, `createOnce()`, `finalizeDraft()`
+- Partners (including `findOrCreate()`), products, inventory, document blocks, bank accounts, spendings, exports
+- Organization data, tax number check, server time, legacy ID conversion, exchange rates
+- `tarca/testing`: an in-memory fake Billingo (`createFakeBillingoFetch()`) and `createMockTarca()` for your own tests
+- Full TypeScript types generated from the official OpenAPI spec, corrected where the live API differs: `import type { Billingo } from 'tarca'`
 
-- Organization data: `tarca.organization.get()`
-- Utilities: `tarca.utils.serverTime()`, `checkTaxNumber()`, `convertLegacyId()`
-- Exchange rates: `tarca.currencies.rate({ from, to, date })`
-- Bank accounts: `tarca.bankAccounts.list()`, `all()`, `get()`, `create()`, `update()`, `delete()`
-- `verifyCredentials()` and `nullIfNotFound()`
-- Full TypeScript types generated from the official OpenAPI spec (3.0.14 and 3.0.15): `import type { Billingo } from 'tarca'`
-
-Planned: documents (invoices, proformas, advance invoices, drafts, receipts, cancellations, modifications, copies, sending, PDFs, POS printing, public URLs, payments, NAV status, exactly-once `createOnce` via `vendorId`), partners, products, document blocks, spendings, export, inventory, a fake Billingo for tests (`tarca/testing`), a CLI and an MCP server. The goal is all 54 documented operations of the API, plus the 2 undocumented ones that work in production.
+Planned: a CLI (`npx tarca doctor`), an MCP server, and a documentation website.
 
 ## How it behaves
 
@@ -41,7 +48,7 @@ Planned: documents (invoices, proformas, advance invoices, drafts, receipts, can
 - Each `createTarca()` instance has its own API key and settings, so one process can serve several Billingo accounts.
 - Field names are camelCase in TypeScript; tarca converts to and from Billingo's snake_case at the boundary.
 - Reads (GET) are retried after 429, 5xx, network errors and timeouts, honouring `Retry-After`, 3 attempts by default. Writes (POST, PUT, DELETE) are never retried automatically.
-- Errors are `BillingoError` with a `category` (`auth`, `subscription`, `forbidden`, `not_found`, `validation`, `rate_limit`, `server`, `not_ready`, `network`, `timeout`, `configuration`, `unexpected_response`), plus `fieldErrors`, `traceId` and a `hint`. Messages are in Hungarian.
+- Errors are `BillingoError` with a `category` (`auth`, `nav_unavailable`, `subscription`, `forbidden`, `not_found`, `validation`, `rate_limit`, `server`, `not_ready`, `network`, `timeout`, `configuration`, `unexpected_response`, `in_progress`, `store_unavailable`), plus `fieldErrors`, `traceId` and a `hint`. Messages are in Hungarian.
 - Hooks (`onRequest`, `onResponse`, `onError`, `onComplete`, `onWarning`) never receive the API key.
 - Sends no telemetry.
 

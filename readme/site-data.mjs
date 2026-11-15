@@ -4,6 +4,7 @@ const ROOT = new URL('../', import.meta.url)
 const DOCS_DIR = new URL('web/content/docs/', ROOT)
 const CATALOG = new URL('web/sandbox/examples/catalog.ts', ROOT)
 const RECIPES_META = new URL('web/content/docs/receptek/meta.json', ROOT)
+const OPERATIONS = new URL('src/core/operations.ts', ROOT)
 
 async function ifExists(read, fallback) {
   try {
@@ -71,8 +72,35 @@ async function loadRecipes(pages) {
   })
 }
 
+export function hungarianArticle(count) {
+  const digits = String(count)
+  const vowel =
+    digits.startsWith('5') || count === 1 || (digits.length === 4 && digits.startsWith('1'))
+  return vowel ? 'az' : 'a'
+}
+
+export async function loadOperationCounts() {
+  const source = await readFile(OPERATIONS, 'utf8')
+  const ids = source.match(/^ {2}\| '\w+'$/gm)?.length ?? 0
+  const specs = [...source.matchAll(/\bspec: '([\w.-]+)'/g)].map(([, spec]) => spec)
+  if (ids === 0 || specs.length !== ids) {
+    throw new Error(
+      `A src/core/operations.ts nem olvasható be: ${ids} OperationId, ${specs.length} spec jelölés.`,
+    )
+  }
+  return {
+    total: ids,
+    article: hungarianArticle(ids),
+    undocumented: specs.filter((spec) => spec === 'undocumented').length,
+  }
+}
+
 export async function loadSiteData() {
   const pages = await loadDocsPages()
-  const [examples, recipes] = await Promise.all([loadSandboxExamples(), loadRecipes(pages)])
-  return { pages, examples, recipes }
+  const [examples, recipes, operations] = await Promise.all([
+    loadSandboxExamples(),
+    loadRecipes(pages),
+    loadOperationCounts(),
+  ])
+  return { pages, examples, recipes, operations }
 }

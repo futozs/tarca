@@ -23,8 +23,8 @@ npm run ci
 
 - `npm test` runs Vitest. The live e2e (`tests/e2e/live.test.ts`) is excluded.
 - `npm run spec:fetch` downloads every tracked OpenAPI version (the SwaggerHub default and anything newer) into `.spec-cache/`. The contract tests need it; without it they are skipped, unless `TARCA_REQUIRE_SPEC=1` (CI sets it), which turns a missing spec into a failure.
-- `npm run spec:types` regenerates `src/generated/billingo.ts` from `.spec-cache/` (`scripts/generate-types.mjs`, `scripts/types-core.mjs`). Never edit that file by hand. CI runs it with `--check`, so any change to Billingo's spec fails CI until the types are regenerated and the client is adapted.
-- `npm run drift` compares upstream sources with `scripts/drift.lock.json`: the SwaggerHub version list and default version, the sha256 of every tracked spec, the version numbers on the developer changelog, the `@billingo/billingo-mcp` version, and an **unauthenticated route probe** of all operations (a missing route answers 404, an existing one 401 or 405; about 80 seconds, paced under the 60 requests/minute anonymous limit). `--skip-routes` skips the probe. After adapting tarca to a change, run `npm run drift -- --update`. Only hashes and version numbers are stored, never docs text.
+- `npm run spec:types` regenerates `src/generated/billingo.ts` from `.spec-cache/` with the live-deviation table `scripts/spec-overrides.mjs` applied (`scripts/generate-types.mjs`, `scripts/types-core.mjs`). Never edit that file by hand. CI runs it with `--check`, so any change to Billingo's spec fails CI until the types are regenerated and the client is adapted; it also fails when an override no longer applies or has become redundant because Billingo fixed its spec.
+- `npm run drift` compares upstream sources with `scripts/drift.lock.json`: the SwaggerHub version list and default version, the sha256 of every tracked spec, the version numbers on the developer changelog, the `@billingo/billingo-mcp` version, whether every entry of `scripts/spec-overrides.mjs` still applies and is still needed, and an **unauthenticated route probe** of all operations (a missing route answers 404, an existing one 401 or 405; about 80 seconds, paced under the 60 requests/minute anonymous limit). `--skip-routes` skips the probe. After adapting tarca to a change, run `npm run drift -- --update`. Only hashes and version numbers are stored, never docs text.
 - `npm run readme` regenerates the README images in `readme/assets/` and then `README.md` (see [README](#readme)).
 - `npm run e2e` runs the live scenario against a Billingo **developer test profile**. It needs `BILLINGO_TEST_API_KEY` and `BILLINGO_E2E_TAX_CODE` (see `.env.example`), and it is not part of `npm run ci`. See [E2E](#e2e).
 - `npm run ci` runs lint, typecheck, the README sync check, coverage (at least 80%), build, publint and attw.
@@ -38,23 +38,29 @@ npm run ci
 | Path | Contents |
 |---|---|
 | `src/core/context.ts` | Transport: `X-API-KEY`, JSON in snake_case, retries (GET only), timeout, abort, hooks |
-| `src/core/operations.ts` | `BILLINGO_OPERATIONS`: every operation (operationId → method, path, which spec documents it) |
+| `src/core/operations.ts` | `BILLINGO_OPERATIONS`: every operation (operationId → method, path, which spec documents it; `undocumented` ones are described in the override table) |
 | `src/core/errors.ts` | `BillingoError`, status → category, the three Billingo error body shapes |
 | `src/core/case.ts`, `src/core/url.ts` | camelCase ↔ snake_case conversion, path and query building |
 | `src/core/pagination.ts` | `Page`, `list` + `all` (async iteration, `perPage` up to 100) |
-| `src/core/dates.ts` | `Europe/Budapest` dates (`toBillingoDate`) |
+| `src/core/dates.ts` | `Europe/Budapest` dates (`toBillingoDate`, `toOptionalBillingoDate`) |
+| `src/core/once-guard.ts`, `src/core/store.ts` | `createOnce` singleflight and the optional cross-process lock (`KeyValueStore`, the same interface as kassza's stores) |
 | `src/generated/billingo.ts` | Generated spec types (camelCase, readonly). Exported as `import type { Billingo } from 'tarca'` |
-| `src/<resource>/` | One folder per resource (`bank-accounts`, `currencies`, `organization`, `utils`, …), each a `create<X>Api(context)` factory |
+| `src/<resource>/` | One folder per resource (`bank-accounts`, `currencies`, `document-blocks`, `exports`, `inventory`, `organization`, `partners`, `products`, `receipts`, `spendings`, `utils`), each a `create<X>Api(context)` factory |
+| `src/documents/` | `DocumentsApi`, assembled from parts: `query.ts` (get, list, vendorId lookup), `issue.ts` (create, createRaw, createOnce, drafts), `files.ts` (PDF, POS, public URL), `actions.ts` (send, reminders, NAV status, cancel, copy, archive, proforma, modification), `payments.ts`; the ergonomic input in `input.ts`, `check.ts` (local validation with Hungarian `fieldErrors`), `defaults.ts`, `enums.ts`, `once.ts` |
 | `src/client.ts` | `createTarca()`, which wires every resource to one context |
-| `tests/helpers.ts` | `mockBillingo` (captures requests, scripted replies) and `createTestContext` |
-| `tests/openapi.ts` | Strict OpenAPI validator and `contractErrors(schema, body)` against the fresh spec |
+| `src/testing/` | The `tarca/testing` entry: `createFakeBillingoFetch()` (in-memory Billingo for all 57 operations: `fake/state.ts`, `router.ts`, `http.ts` (responses and the shared request-field helpers), `faults.ts`, `money.ts` (Billingo's rounding), one route module per resource, wired in `fake/registry.ts`) and `createMockTarca()` |
+| `scripts/spec-overrides.mjs` | The live-deviation table: where the real API differs from the spec (null fields, renamed fields, live-required fields, status codes, content types, undocumented routes), each entry with its evidence. `mergeSpecs` applies it, so the generated types, the validator, the contract tests and the drift watcher see the same corrected spec |
+| `tests/helpers.ts` | `mockBillingo` (captures requests, scripted replies, validates every request against the corrected spec) and `createTestContext` |
+| `tests/openapi.ts` | Strict OpenAPI validator (`requestErrors`, `parameterErrors`, `responseErrors`, `contractErrors`) against the corrected spec |
 | `tests/spec-contract.test.ts` | The operations table and every field name against the spec |
-| `tests/coverage.test.ts` | Implemented operations must have an e2e step or a justified exclusion; the number of unimplemented operations may only shrink |
-| `tests/fake-billingo.ts` | A minimal in-memory Billingo for the fake e2e run (grows into `tarca/testing`) |
-| `tests/e2e/` | `suite.ts` (the scenario), `guard.ts` (test profile guard), `throttle.ts`, `live.test.ts` (real API, only via `npm run e2e`), `fake.test.ts` (the same scenario against the fake, part of `npm test`) |
-| `scripts/` | spec fetch and type generation, drift, release, changelog, commitlint, coverage badges, size, smoke, stats, e2e runner |
+| `tests/spec-overrides.test.ts` | The override engine, the table's evidence, no redundant override, and (locally, when `.research/probe/out` exists) every override proven by a live probe |
+| `tests/coverage.test.ts` | Every operation of `BILLINGO_OPERATIONS` must be implemented and have an e2e step or a justified exclusion (0 missing) |
+| `tests/fake-exchanges.ts` | Helper for the per-resource fake tests: every fake response checked strictly against the corrected spec |
+| `tests/e2e/` | `suite.ts` (composes the groups), `context.ts` (`E2eContext`, shared state, `groupSteps`), `recorder.ts` (validates every recorded exchange), `guard.ts` (test profile guard), `throttle.ts`, `live.test.ts` (real API, only via `npm run e2e`), `fake.test.ts` (the same scenario against `createFakeBillingoFetch`, part of `npm test`) |
+| `tests/e2e/steps/` | One file per e2e group (`define<Group>Steps`, its operations and its justified exclusions); a new group is one file plus one line in `suite.ts` |
+| `scripts/` | spec fetch, override table and type generation, drift, release, changelog, commitlint, coverage badges, size, smoke, stats, e2e runner |
 | `agents/` | Docs shipped in the npm package for AI agents of package users |
-| `readme/` | README source: `template.md`, `config.json`, the `build.mjs` renderer, the `art/` SVG generator and the generated `assets/` |
+| `readme/` | README source: `template.md`, `config.json`, the `build.mjs` renderer (`{{operations}}` is counted from `src/core/operations.ts` by `site-data.mjs`), the `art/` SVG generator and the generated `assets/` |
 | `web/content/docs/` | MDX docs (planned, same format as kassza); the website comes later |
 
 ## Conventions
@@ -64,10 +70,12 @@ npm run ci
 - TypeScript is strict, with `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess` and `isolatedDeclarations`, so exported functions need explicit return types.
 - Biome: single quotes, no semicolons, 100-column lines.
 - Zero runtime dependencies. Keep `src/` runtime-neutral: no `Buffer`, no `node:` imports.
-- The public API is camelCase; the wire format is snake_case. Convert only at the boundary (`toApiCase`, `fromApiCase`). Response types come from `src/generated/billingo.ts`; `context.json<T>()` is the single place where a response is trusted to match the spec.
+- The public API is camelCase; the wire format is snake_case. Convert only at the boundary (`toApiCase`, `fromApiCase`). Response types come from `src/generated/billingo.ts`; `context.json<T>()` is the single place where a response is trusted to match the spec, and it rejects an empty or non-JSON body with `unexpected_response` instead of returning `undefined`.
+- Where the live API differs from the spec, the correction goes into `scripts/spec-overrides.mjs` with its evidence (probe file, MCP fixture or e2e run, and date), never into a validator exception, a test-local allowlist or a hand-edited type; an override may only make the spec match what was observed.
 - **Never retry a write.** The transport retries only GET (429, 5xx, network, timeout, 202 not ready), at most `maxAttempts` (default 3, cap 5), honouring `Retry-After` up to 60 seconds. A retried `POST /documents` issues a second invoice that is reported to NAV and can only be cancelled, never deleted. Exactly-once issuing goes through `vendorId` (`GET /documents/vendor/{vendor_id}`).
 - PUT endpoints replace the whole resource; `update` methods take the full object.
-- Every new operation needs: an entry in `BILLINGO_OPERATIONS` (already there for all known ones), a method on its resource API, a unit test with `mockBillingo`, a contract test (`contractErrors`) for every request body, an e2e step in `tests/e2e/suite.ts` (or a reason in `E2E_EXCLUDED`), the fake extended accordingly, and the ratchet number in `tests/coverage.test.ts` lowered.
+- Every operation needs: an entry in `BILLINGO_OPERATIONS`, a method on its resource API, a unit test with `mockBillingo`, a contract test (`requestErrors` or `contractErrors`) for every request body, an e2e step in its group under `tests/e2e/steps/` (or a reason in that group's exclusions), and a route in `src/testing/fake/`. All 57 are done; `tests/coverage.test.ts` requires 0 missing, so an operation Billingo adds (caught by the drift watcher) fails CI until it is implemented the same way.
+- Errors: a malformed request body (anything the user passes to be sent) is a `validation` `BillingoError` with Hungarian `fieldErrors` and no request (`src/documents/check.ts`, or a dedicated helper for single-field rules); a malformed argument (page, date, `maxWaitMs`) is a `RangeError`; an invalid client or `createOnce` setting is a `configuration` `BillingoError`. To add a hint to a Billingo error, wrap it with `withHint(error, hint)` from `src/core/errors.ts` (it keeps every field and sets `cause`).
 - Every module has colocated `*.test.ts` files. Tests never call the real Billingo API, with one exception: `tests/e2e/live.test.ts`.
 - When a public API changes, update `readme/template.md` (then `npm run readme`), `agents/api.md` and `agents/recipes.md` in the same change.
 

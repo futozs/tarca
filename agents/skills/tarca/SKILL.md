@@ -1,6 +1,6 @@
 ---
 name: tarca
-description: Work with the Billingo API v3 (Hungarian invoicing) through the tarca npm package. Use when code reads Billingo organization data, bank accounts, exchange rates or tax numbers, issues or queries Billingo documents (számla, díjbekérő, nyugta, sztornó), handles BillingoError, or mentions billingo.hu, Billingo API or BILLINGO_API_KEY.
+description: Work with the Billingo API v3 (Hungarian invoicing) through the tarca npm package. Use when code issues or queries Billingo documents (számla, díjbekérő, előlegszámla, nyugta, sztornó, módosító számla), records payments, downloads PDFs, manages partners, products, document blocks, bank accounts or spendings, runs exports, handles BillingoError, tests Billingo code with tarca/testing, or mentions billingo.hu, Billingo API or BILLINGO_API_KEY.
 ---
 
 # tarca: Billingo integration
@@ -8,23 +8,23 @@ description: Work with the Billingo API v3 (Hungarian invoicing) through the tar
 Before writing code, read the package docs from `node_modules/tarca/agents/`:
 
 - `pitfalls.md`: hard rules, always read it.
-- `api.md`: exact method signatures. Use only methods listed there; tarca is 0.x and some Billingo resources are not implemented yet.
-- `recipes.md`: setup, errors, pagination, tests.
+- `api.md`: exact method signatures for all 57 Billingo operations. Use only methods listed there; tarca is 0.x and names may still change between minor versions.
+- `recipes.md`: webshop invoice with `createOnce`, proforma to invoice, receipts, PDFs, exports, errors, tests.
 
 ## Non-negotiable rules
 
 1. Create one server-side client with `createTarca()`. The key comes from `BILLINGO_API_KEY`. Never import tarca in client-side code.
 2. Never retry a write (create, update, delete, cancel, send) yourself. tarca retries only GET requests.
-3. Give every document a `vendorId` derived from the order ID, and look it up by `vendorId` before issuing again after an uncertain failure.
+3. Issue documents with `documents.createOnce` / `receipts.createOnce` and a `vendorId` derived from the order or payment ID. Never call `documents.create` in a retry loop.
 4. Branch on `BillingoError.category`, not on message text, and log `traceId`.
 5. `update` replaces the whole resource: pass the complete object.
 6. Use `toBillingoDate()` for dates, never `toISOString().slice(0, 10)`.
-7. Develop against a Billingo developer test profile. Unit tests inject `fetch`; they never call the real API.
+7. Develop against a Billingo developer test profile. Unit tests use `createMockTarca()` from `tarca/testing`; they never call the real API.
 
 ## Checklist before finishing
 
 - [ ] The key is read from the environment and never logged.
-- [ ] Every create path is idempotent through `vendorId`.
+- [ ] Every create path goes through `createOnce` with a stable `vendorId`.
 - [ ] Errors are handled by category, and `validation` errors surface `fieldErrors`.
 - [ ] List code uses `all()` or loops pages with `perPage` at most 100.
-- [ ] There is a unit test with an injected `fetch`.
+- [ ] There is a unit test with `createMockTarca()`, including a `failNext(..., { afterSuccess: true })` case for the issuing path.

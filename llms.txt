@@ -1,13 +1,13 @@
 # tarca
 
-> A zero-dependency TypeScript client for the Billingo API v3 (Hungarian invoicing), the sibling of kassza (Számlázz.hu). Status 0.x: organization data, utilities, exchange rates and bank accounts are implemented; documents, partners, products, document blocks, spendings and exports are in progress. Ships TypeScript types for every Billingo schema, generated from the official OpenAPI spec. Retries only GET requests, never writes. Runs on Node 22+, Bun, Deno, Cloudflare Workers and Vercel Edge. Independent open-source project, not a Billingo product.
+> A zero-dependency TypeScript client for the Billingo API v3 (Hungarian invoicing), the sibling of kassza (Számlázz.hu). Status 0.x: all 57 Billingo operations are implemented (invoices, proformas, advance invoices, receipts, cancellations, modification documents, payments, PDFs, partners, products, inventory, document blocks, bank accounts, spendings, exports) and run in a live end-to-end test on a Billingo developer test profile. Exactly-once issuing with `createOnce` and a `vendorId`. Ships TypeScript types for every Billingo schema, generated from the official OpenAPI spec and corrected where the live API differs, and `tarca/testing` (an in-memory fake Billingo and a mock client). Retries only GET requests, never writes. Runs on Node 22+, Bun, Deno, Cloudflare Workers and Vercel Edge. Independent open-source project, not a Billingo product.
 
 ## Docs for coding agents
 
 - [Start here](agents/README.md): overview, the five rules
-- [Pitfalls](agents/pitfalls.md): duplicate documents, keys and plans, limits, data shapes, error categories
-- [API reference](agents/api.md): every implemented method
-- [Recipes](agents/recipes.md): setup, error handling, pagination, tests, logging
+- [Pitfalls](agents/pitfalls.md): duplicate documents, partner search lag, keys and plans, limits, data shapes, error categories
+- [API reference](agents/api.md): every method, and every Billingo operation mapped to its method
+- [Recipes](agents/recipes.md): webshop order to invoice with createOnce, proforma to invoice, payments, receipts, PDF download, export, testing with tarca/testing, logging
 - [Claude Code skill](agents/skills/tarca/SKILL.md)
 
 ## Human docs

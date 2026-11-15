@@ -273,6 +273,9 @@ function createRenderer({ config, pkg, site, assetNames }) {
     pages: String(site.pages.size),
     examples: String(site.examples.length),
     recipeCount: String(site.recipes.length),
+    operations: String(site.operations.total),
+    operationsArticle: site.operations.article,
+    undocumentedOperations: String(site.operations.undocumented),
   }
 
   const helpers = {

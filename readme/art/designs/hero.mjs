@@ -16,19 +16,22 @@ const RADIUS = 28
 const ICON_SIZE = 128
 const WORD_SIZE = 124
 
-const TAX_NUMBER = '12345676-2-41'
+const BARCODE_SEED = 'RENDELES-1001'
 
 const CODE = [
-  "import { createTarca } from 'tarca'",
-  '',
-  'const tarca = createTarca()',
-  '',
-  'const ceg = await tarca.utils',
-  `  .checkTaxNumber('${TAX_NUMBER}')`,
-  '',
-  'ceg.result',
-  'ceg.taxpayerName',
-  'ceg.addresses?.[0]?.city',
+  'const szamla =',
+  '  await tarca.documents.create({',
+  '    partner: {',
+  "      name: 'Vevő Kft.',",
+  '      address,',
+  '    },',
+  '    items: [{',
+  "      name: 'Webfejlesztés',",
+  '      quantity: 10,',
+  '      netUnitPrice: 15_000,',
+  '      vat: 27,',
+  '    }],',
+  '  })',
 ]
 
 const RECEIPT_WIDTH = 292
@@ -79,7 +82,7 @@ function dashedRule(y, theme, double = false) {
 }
 
 function stamp(scope, type, theme) {
-  const label = 'ÉRVÉNYES'
+  const label = 'KIÁLLÍTVA'
   const size = 17
   const textWidth = type.measure(label, { font: 'monoBold', size, tracking: 0.14 })
   const width = textWidth + 58
@@ -131,7 +134,7 @@ function receipt(scope, type, theme) {
       }),
       fill: 'url(#hero-paper)',
     }),
-    scope.text('ADÓSZÁM', {
+    scope.text('SZÁMLA', {
       font: 'monoBold',
       size: 20,
       x: RECEIPT_WIDTH / 2,
@@ -140,7 +143,7 @@ function receipt(scope, type, theme) {
       tracking: 0.26,
       fill: ink,
     }),
-    scope.text(`${TAX_NUMBER} · NAV`, {
+    scope.text('WEB / 2026-000042 · NAV', {
       font: 'mono',
       size: 12.5,
       x: RECEIPT_WIDTH / 2,
@@ -158,11 +161,11 @@ function receipt(scope, type, theme) {
       fill: muted,
     }),
     dashedRule(166, theme),
-    receiptRow(scope, { y: 192, left: 'Címtípus', right: 'székhely', fill: ink }),
-    receiptRow(scope, { y: 216, left: 'Forrás', right: 'NAV Online Számla', fill: ink }),
+    receiptRow(scope, { y: 192, left: 'Webfejlesztés', right: '10 óra', fill: ink }),
+    receiptRow(scope, { y: 216, left: 'Nettó, 27% áfa', right: '150 000 Ft', fill: ink }),
     dashedRule(234, theme, true),
-    scope.text('EREDMÉNY', { font: 'monoBold', size: 15, x: 22, y: 268, tracking: 0.1, fill: ink }),
-    scope.text('validation_ok', {
+    scope.text('BRUTTÓ', { font: 'monoBold', size: 15, x: 22, y: 268, tracking: 0.1, fill: ink }),
+    scope.text('190 500 Ft', {
       font: 'monoBold',
       size: 16,
       x: RECEIPT_WIDTH - 22,
@@ -175,7 +178,7 @@ function receipt(scope, type, theme) {
       y: 346,
       width: RECEIPT_WIDTH - 44,
       height: 28,
-      seed: TAX_NUMBER,
+      seed: BARCODE_SEED,
       fill: ink,
     }),
     icon('globe', { x: 66, y: 386, size: 16, stroke: theme.receiptMuted, width: 1.8 }),
@@ -192,7 +195,7 @@ function receipt(scope, type, theme) {
 }
 
 function flowLabels(scope, type, theme, points) {
-  const labels = ['hitelesít', 'újrapróbál', 'camelCase-re vált']
+  const labels = ['validál', 'partnert keres', 'tömböt választ']
   return labels
     .map((label, index) => {
       const point = cubicPoint(points, 0.28 + index * 0.22)
@@ -225,10 +228,10 @@ function flowLabels(scope, type, theme, points) {
     .join('')
 }
 
-function announcement(scope, type, theme, centerY) {
+function announcement(scope, type, theme, centerY, operations) {
   const size = 17
   const label = '0.x'
-  const message = 'Fejlesztés alatt, a cél a Billingo API v3 mind az 56 művelete'
+  const message = `Mind ${operations.article} ${operations.total} Billingo művelet, élő e2e teszttel`
   const labelWidth = type.measure(label, { font: 'monoBold', size: 12.5, tracking: 0.12 }) + 20
   const messageWidth = type.measure(message, { font: 'sansMedium', size })
   const width = 5 + labelWidth + 12 + messageWidth + 12 + 18 + 14
@@ -351,7 +354,7 @@ function defs(theme) {
   ].join('')
 }
 
-export function heroDocument({ type, theme }) {
+export function heroDocument({ type, theme, site }) {
   const scope = type.scope()
   const layout = measureLockup(type, { iconSize: ICON_SIZE, fontSize: WORD_SIZE })
   const lockupTop = 138
@@ -367,7 +370,7 @@ export function heroDocument({ type, theme }) {
   const code = codeWindow(scope, type, theme, {
     width: 372,
     lines: CODE,
-    title: 'adoszam.ts',
+    title: 'szamla.ts',
     fontSize: 13.5,
     lineHeight: 22,
     cursor: true,
@@ -411,7 +414,7 @@ export function heroDocument({ type, theme }) {
       centered(code.width, code.height, 192, 332, -6, code.markup),
       centered(RECEIPT_WIDTH, RECEIPT_HEIGHT, 1100, 332, 5, receipt(scope, type, theme)),
       flowLabels(scope, type, theme, flow),
-      announcement(scope, type, theme, 76),
+      announcement(scope, type, theme, 76, site.operations),
       brand.markup,
       installPill(scope, type, theme, pillCenter),
       metaRow(scope, type, theme, pillCenter + 78),
