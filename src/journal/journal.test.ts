@@ -925,6 +925,37 @@ describe('kvJournal', () => {
     expect(await journal.entries(RANGE)).toHaveLength(1)
   })
 
+  test('setIfAbsent nélküli tárolón, ha egy másik író közben a saját foglalását vagy bejegyzését írta be, false-t ad, és a track nem törli a másik foglalását', async () => {
+    const inner = memoryStore()
+    const store: KeyValueStore = {
+      get: inner.get,
+      delete: inner.delete,
+      increment: (key, ttl) => inner.increment?.(key, ttl) ?? 0,
+      set: async (key, value, ttl) => {
+        await inner.set(key, value, ttl)
+        if (key.includes(':reservation:') || key.includes(':entry:')) {
+          const rival = { ...JSON.parse(value), reservedAt: 'másik', recordedAt: 'másik' }
+          await inner.set(key, JSON.stringify(rival), ttl)
+        }
+      },
+    }
+    const storage = kvJournal(store)
+    const journal = createJournal(storage, { now: () => NOW })
+
+    expect(await journal.reserve('RACE-1')).toBe(false)
+    await expect(
+      journal.track('RACE-2', async () => {
+        throw new BillingoError('hibás adat', { category: 'validation' })
+      }),
+    ).rejects.toMatchObject({ category: 'validation' })
+    expect(await storage.putEntry(entryOf(5, 'E-5'))).toBe(false)
+
+    expect(
+      (await journal.pending(RANGE)).map((reservation) => reservation.vendorId).sort(),
+    ).toEqual(['RACE-1', 'RACE-2'])
+    expect(await storage.getEntry(5)).toMatchObject({ id: 5, recordedAt: 'másik' })
+  })
+
   test('a bejegyzés a megőrzési idővel, a foglalás a saját idejével íródik', async () => {
     const store = memoryStore()
     const set = vi.spyOn(store, 'set')

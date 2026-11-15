@@ -299,6 +299,38 @@ describe('issueForPayment részleges visszatérítésnél', () => {
     expect(ledger.values.size).toBe(0)
   })
 
+  test('a refundItems egyetlen minor unitnyi eltérésére is validációs hibát dob, kiállítás nélkül', async () => {
+    const eur = (value: number) => ({ value, minor: Math.round(value * 100), currency: 'EUR' })
+    const billingo = createFakeBillingoFetch({ now: () => NOW })
+    const tarca = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      fetch: billingo.fetch,
+      retryDelayMs: 0,
+    })
+    await issueForPayment(
+      tarca,
+      {
+        ...paid([{ name: 'Póló', quantity: 1, totalGross: eur(30), vat: 27 }]),
+        amount: eur(30),
+      },
+      { document: 'invoice', recoveryDelayMs: 0 },
+    )
+    const ledger = memoryLedger()
+
+    await expect(
+      issueForPayment(
+        tarca,
+        {
+          ...partial([{ id: 'TR-1', amount: eur(10), refundedBefore: eur(0) }]),
+          amount: eur(30),
+        },
+        { ledger, refundItems: () => [{ name: 'Póló', grossUnitPrice: 9.99, vat: 27 }] },
+      ),
+    ).rejects.toMatchObject({ category: 'validation', message: expect.stringContaining('9.99') })
+    expect(billingo.count('CreateModificationDocument')).toBe(0)
+    expect(ledger.values.size).toBe(0)
+  })
+
   test('nyugtánál csak javaslatot ad (nyugta nem módosítható)', async () => {
     const { billingo, tarca } = await invoiced(SINGLE_VAT, 'receipt')
 

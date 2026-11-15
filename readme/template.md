@@ -835,7 +835,7 @@ const tarca = createTarca({
 const bejegyzesek = await naplo.entries({ from: '2026-10-01', to: '2026-10-31' })
 ```
 
-- Az `onDocument` hook minden új bizonylatnál lefut: kiállítás (`create`, `createRaw`, `createOnce`, nyugta is), piszkozat véglegesítése, díjbekérőből számla, másolat, sztornó és módosító számla. A befizetés nem bizonylat, arra nem fut. A `createOnce` csak akkor szól, ha új bizonylat készült.
+- Az `onDocument` hook minden új bizonylatnál lefut: kiállítás (`create`, `createRaw`, `createOnce`, nyugta is), piszkozat véglegesítése, díjbekérőből számla, másolat, sztornó és módosító számla. A befizetés nem bizonylat, arra nem fut. A `createOnce` csak akkor szól, ha új bizonylat készült. Egy kivétel van: ha a sztornó vagy a módosító számla kérésének válasza elveszett (hálózati hiba, időtúllépés), és a tárca utólag visszaolvasva látja, hogy elkészült (`issueForPayment` visszatérítésnél `created: true`, az MCP `cancel_document`), a hook nem fut le. A tárca ilyenkor nem kapta meg a bizonylatot a Billingótól, ezt a bejegyzést a `reconcile` pótolja (`added`).
 - A tárca kivárja a hookot. Alapból (`'warn'`) a hook hibája az `onWarning`-hoz megy, vagy ha az nincs, a konzolra. `'throw'` esetén a hívó `DocumentHookError`-t kap: a bizonylat ilyenkor is elkészült, az `error.document` és az `error.event` alapján pótold a naplót, de ne állítsd ki újra.
 - A bejegyzés: Billingo-azonosító, `vendorId`, sorszám, típus, esemény, kiállítási dátum, kapcsolódó bizonylatok, nettó és bruttó végösszeg, pénznem, fizetési állapot, a rögzítés budapesti ideje és forrása. Vevői adat (név, cím, e-mail) nincs benne.
 - A piszkozat nem kerül a naplóba, a díjbekérő igen. Ugyanaz a bizonylat kétszer sem kerül bele.

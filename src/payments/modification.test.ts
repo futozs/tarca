@@ -481,6 +481,7 @@ describe('relatedModifications', () => {
       [
         { id: 8, type: 'invoice', relatedDocuments: [] },
         { id: 9, type: 'modification', relatedDocuments: [{ id: 99 }] },
+        { id: 11, type: 'modification', relatedDocuments: [{ id: 7 }] },
       ],
       [{ id: 10, type: 'modification', relatedDocuments: [{ id: 7 }] }],
     ]
@@ -502,7 +503,7 @@ describe('relatedModifications', () => {
       },
       original,
     )
-    expect(found.documents.map((document) => document.id)).toEqual([10])
+    expect(found.documents.map((document) => document.id)).toEqual([11, 10])
     expect(found.complete).toBe(true)
     expect(queries).toEqual([
       { page: 1, perPage: 100, partnerId: 3, startDate: '2026-10-01' },

@@ -286,6 +286,7 @@ const report = await journal.reconcile(tarca, { from: '2026-10-01', to: '2026-10
 - With `onDocumentError: 'throw'` a failed hook gives `DocumentHookError` after the document exists: record `error.document`, never issue again.
 - `track` keeps a pending reservation when the outcome is uncertain or the process dies; `settle` finds it by `vendorId` later. `JournalWriteError` means the document exists but the entry was not written.
 - `reconcile` reports `added`, `missing`, `mismatched` and `changed` (paid or cancelled since recording); entries are never rewritten.
+- Run `reconcile` regularly even with the hook: a cancellation or modification whose response was lost and that `issueForPayment` or MCP `cancel_document` resolved by reading back emits no `onDocument` event, so only `reconcile` adds it.
 
 ## Monthly subscription invoicing
 

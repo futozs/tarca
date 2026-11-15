@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { createTarca } from '../client'
 import { BillingoError } from '../core/errors'
 import type { KeyValueStore } from '../core/store'
+import { createJournal, memoryJournal } from '../journal'
 import { createFakeBillingoFetch, type FakeBillingoOptions } from '../testing'
 import { issueForPayment, paymentVendorId } from './issue'
 import { refundLedgerKey } from './modification'
@@ -820,12 +821,13 @@ describe('issueForPayment: teljes visszatérítés', () => {
       ...OPTIONS,
       partialRefund: 'skip',
     })
-    const proposal = await issueForPayment(tarca, partial, OPTIONS)
 
     expect(skippedResult).toMatchObject({
       kind: 'skipped',
       reason: expect.stringContaining('skip'),
     })
+    expect(billingo.count('CreateReceipt')).toBe(1)
+    const proposal = await issueForPayment(tarca, partial, OPTIONS)
     expect(proposal).toMatchObject({ kind: 'refund-proposal', document: 'receipt' })
     expect(billingo.count('CreateReceipt')).toBe(1)
     await expect(
@@ -1337,6 +1339,43 @@ describe('issueForPayment: teljes visszatérítés', () => {
     expect(billingo.count('CreateModificationDocument')).toBe(1)
   })
 
+  test('a maradékból több oldalon szereplő módosítókat is levonja', async () => {
+    const { billingo, tarca } = setup()
+    const issued = await issueForPayment(tarca, paid({ customer: COMPANY }), OPTIONS)
+    if (issued.kind !== 'invoice') throw new Error('számla várt')
+    for (const grossUnitPrice of [-540, -1000]) {
+      await tarca.documents.createModification(issued.document.id ?? 0, {
+        items: [{ name: 'Kézi jóváírás', quantity: 1, grossUnitPrice, vat: 27 }],
+      })
+    }
+    const paged = {
+      ...tarca,
+      documents: {
+        ...tarca.documents,
+        list: async (...args: Parameters<typeof tarca.documents.list>) => {
+          const [query = {}, options] = args
+          const all = await tarca.documents.list({ ...query, page: 1 }, options)
+          const page = query.page ?? 1
+          return {
+            ...all,
+            data: all.data.slice(page - 1, page),
+            perPage: 1,
+            currentPage: page,
+            lastPage: all.data.length,
+          }
+        },
+      },
+    }
+
+    await expect(
+      issueForPayment(paged, refunded(), { ...OPTIONS, ledger: memoryLedger() }),
+    ).resolves.toMatchObject({
+      kind: 'modification',
+      modifications: [{ refundId: 'teljes', created: true, amount: { minor: -100_000 } }],
+    })
+    expect(billingo.count('CreateModificationDocument')).toBe(3)
+  })
+
   test('a teljesen visszatérített módosított számlánál kihagyja', async () => {
     const { billingo, tarca } = setup()
     const issued = await issueForPayment(tarca, paid({ customer: COMPANY }), OPTIONS)
@@ -1350,6 +1389,46 @@ describe('issueForPayment: teljes visszatérítés', () => {
     ).resolves.toMatchObject({ kind: 'skipped', reason: expect.stringContaining('módosító') })
     expect(billingo.count('CreateModificationDocument')).toBe(1)
   })
+})
+
+describe('issueForPayment: elveszett válaszú sztornó és módosító a naplóban', () => {
+  for (const [operation, event, action] of [
+    ['CancelDocument', refunded(), 'cancellation'],
+    [
+      'CreateModificationDocument',
+      refunded({ kind: 'partially-refunded', refunds: [{ id: 're_1', amount: huf(1000) }] }),
+      'modification',
+    ],
+  ] as const) {
+    test(`a ${operation} elveszett válasza után az onDocument nem fut, a reconcile pótolja a bizonylatot`, async () => {
+      const billingo = createFakeBillingoFetch({ now: () => NOW })
+      const journal = createJournal(memoryJournal(), { now: () => NOW })
+      const events: string[] = []
+      const tarca = createTarca({
+        apiKey: 'tarca-teszt-kulcs',
+        fetch: billingo.fetch,
+        retryDelayMs: 0,
+        hooks: {
+          onDocument: async (documentEvent) => {
+            events.push(`${documentEvent.action}:${documentEvent.document.type}`)
+            await journal.record(documentEvent)
+          },
+          onDocumentError: 'throw',
+        },
+      })
+      const ledger = memoryLedger()
+      await issueForPayment(tarca, paid({ customer: COMPANY }), { ...OPTIONS, ledger })
+      billingo.fail('network', { operation, afterSuccess: true })
+
+      const result = await issueForPayment(tarca, event, { ...OPTIONS, ledger })
+      const reconciled = await journal.reconcile(tarca, { from: '2026-10-02', to: '2026-10-02' })
+
+      expect(result).toMatchObject({ kind: action, created: true })
+      expect(events).toEqual(['created:invoice'])
+      expect(reconciled.added.map((entry) => entry.type)).toEqual([action])
+      expect((await journal.entries({ from: '2026-10-02', to: '2026-10-02' })).length).toBe(2)
+    })
+  }
 })
 
 describe('issueForPayment: meghiúsult visszatérítés', () => {

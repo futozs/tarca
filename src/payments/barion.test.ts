@@ -548,6 +548,64 @@ describe('barionWebhook', () => {
     ).toMatchObject({ type: 'receipt', cancelled: true })
   })
 
+  test('ha a fizetés callbackje elbukott, a részleges visszatérítés skip módban és tételes lista nélkül is kiállítja a fizetés bizonylatát', async () => {
+    const cases = [
+      {
+        state: paymentState({ Transactions: [shopTransaction(), refund(1000)] }),
+        partialRefund: 'skip' as const,
+      },
+      {
+        state: paymentState({
+          Transactions: [
+            shopTransaction(),
+            refund(1000, { TransactionId: undefined, POSTransactionId: undefined }),
+          ],
+        }),
+        partialRefund: undefined,
+      },
+    ]
+    for (const { state, partialRefund } of cases) {
+      const billingo = createFakeBillingoFetch({ now: () => new Date('2026-10-02T10:00:00Z') })
+      const tarca = createTarca({
+        apiKey: 'tarca-teszt-kulcs',
+        fetch: billingo.fetch,
+        retryDelayMs: 0,
+      })
+      const event = barionPaymentEvent(state)
+
+      const result = await issueForPayment(tarca, event, {
+        vat: 27,
+        recoveryDelayMs: 0,
+        partialRefund,
+      })
+
+      expect(event).toMatchObject({ kind: 'partially-refunded', includesPayment: true })
+      expect(result).toMatchObject({ kind: 'skipped' })
+      expect(billingo.count('CreateReceipt') + billingo.count('CreateDocument')).toBe(1)
+      expect(billingo.count('CreateModificationDocument')).toBe(0)
+    }
+  })
+
+  test('sikeres eladás nélküli, csak visszatérítést tartalmazó állapotból nem állít ki bizonylatot', async () => {
+    const billingo = createFakeBillingoFetch({ now: () => new Date('2026-10-02T10:00:00Z') })
+    const tarca = createTarca({
+      apiKey: 'tarca-teszt-kulcs',
+      fetch: billingo.fetch,
+      retryDelayMs: 0,
+    })
+    const event = barionPaymentEvent(
+      paymentState({
+        Transactions: [shopTransaction({ POSTransactionId: undefined }), refund(1000)],
+      }),
+    )
+
+    expect(event.includesPayment).toBeUndefined()
+    await expect(
+      issueForPayment(tarca, event, { vat: 27, recoveryDelayMs: 0 }),
+    ).rejects.toMatchObject({ category: 'in_progress' })
+    expect(billingo.count('CreateReceipt') + billingo.count('CreateDocument')).toBe(0)
+  })
+
   test('POSKey nélkül létrehozáskor TypeError-t dob', () => {
     expect(() => barionWebhook({ posKey: ' ', onPayment: vi.fn() })).toThrow(TypeError)
   })
