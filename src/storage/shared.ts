@@ -1,0 +1,104 @@
+import { type StorageError, storageError } from './errors'
+
+export const PDF_CONTENT_TYPE = 'application/pdf'
+export const DEFAULT_URL_EXPIRES_SECONDS = 3600
+export const S3_MAX_PRESIGN_SECONDS = 604_800
+const MAX_KEY_LENGTH = 1024
+const CONTROL_CHARACTERS = /[\p{Cc}]/u
+
+function isDotSegment(segment: string): boolean {
+  const decoded = segment.replace(/%2e/gi, '.')
+  return decoded === '.' || decoded === '..'
+}
+
+export function assertStorageKey(key: string): string {
+  const invalid = (reason: string): StorageError =>
+    storageError('key', key, `Érvénytelen tárhelykulcs (${reason}): ${JSON.stringify(key)}`)
+  if (typeof key !== 'string' || key.length === 0) throw invalid('üres')
+  if (key.length > MAX_KEY_LENGTH) throw invalid(`legfeljebb ${MAX_KEY_LENGTH} karakter lehet`)
+  if (key.startsWith('/')) throw invalid('nem kezdődhet perjellel')
+  if (key.includes('\\')) throw invalid('visszaperjel nem lehet benne')
+  if (CONTROL_CHARACTERS.test(key)) throw invalid('vezérlőkaraktert tartalmaz')
+  for (const segment of key.split('/')) {
+    if (segment === '' || isDotSegment(segment)) {
+      throw invalid('üres, "." vagy ".." útvonalszakaszt tartalmaz, akár %2e kódolással')
+    }
+  }
+  return key
+}
+
+export function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end -= 1
+  return value.slice(0, end)
+}
+
+export function trimSlashes(value: string): string {
+  let start = 0
+  while (start < value.length && value[start] === '/') start += 1
+  return trimTrailingSlashes(value.slice(start))
+}
+
+export function normalizePrefix(prefix: string | undefined): string {
+  if (!prefix) return ''
+  const trimmed = trimSlashes(prefix)
+  if (trimmed === '') return ''
+  assertStorageKey(trimmed)
+  return `${trimmed}/`
+}
+
+export function resolveKey(prefix: string, key: string): string {
+  return `${prefix}${assertStorageKey(key)}`
+}
+
+export function encodeRfc3986(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+}
+
+export function encodeKeyPath(key: string): string {
+  return key.split('/').map(encodeRfc3986).join('/')
+}
+
+export function joinPublicUrl(baseUrl: string, key: string): string {
+  return `${trimTrailingSlashes(baseUrl)}/${encodeKeyPath(key)}`
+}
+
+export function assertExpires(expiresInSeconds: number, maximum: number, key: string): number {
+  if (!Number.isInteger(expiresInSeconds) || expiresInSeconds < 1 || expiresInSeconds > maximum) {
+    throw storageError(
+      'getUrl',
+      key,
+      `Az expiresInSeconds 1 és ${maximum} közötti egész szám legyen, kapott: ${expiresInSeconds}`,
+    )
+  }
+  return expiresInSeconds
+}
+
+export function unsupportedSignedUrl(adapter: string, key: string): StorageError {
+  return storageError(
+    'getUrl',
+    key,
+    `A(z) ${adapter} adapter nem tud lejáró (aláírt) URL-t készíteni. Hagyd el az expiresInSeconds opciót, vagy használj másik adaptert.`,
+  )
+}
+
+export function missingPublicBaseUrl(adapter: string, key: string): StorageError {
+  return storageError(
+    'getUrl',
+    key,
+    `A(z) ${adapter} adapterrel URL készítéséhez add meg a publicBaseUrl opciót.`,
+  )
+}
+
+export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(copy).set(bytes)
+  return copy
+}
+
+export function basename(key: string): string {
+  return key.slice(key.lastIndexOf('/') + 1)
+}
