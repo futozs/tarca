@@ -2,6 +2,7 @@ import { runSmoke } from './smoke-core.mjs'
 
 const ENTRIES = {
   root: '../dist/index.js',
+  testing: '../dist/testing/index.js',
 }
 
 function runtimeName() {
