@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['web/**', '.github/workflows/web.yml']
+  pull_request:
+    paths-ignore: ['web/**', '.github/workflows/web.yml']
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - name: Csomag-aláírások és provenance ellenőrzése
+        if: matrix.node == 24
+        run: npm audit signatures
+      - run: npm run spec:fetch
+      - name: A generált típusok szinkronban vannak a friss Billingo spec-kel
+        run: node scripts/generate-types.mjs --check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run readme:check
+      - name: Tesztek lefedettséggel (szigorú spec mód, a szerződéstesztek nem maradhatnak ki)
+        env:
+          TARCA_REQUIRE_SPEC: '1'
+        run: npm run test:coverage
+      - run: npm run build
+      - run: npm run size
+      - run: npm run check:package
+
+  runtimes:
+    name: Futtatókörnyezetek (Bun, Deno, Cloudflare workerd)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          cache: npm
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - run: npm run build
+      - name: Node.js (ESM és CommonJS)
+        run: node scripts/smoke.mjs
+      - name: Bun
+        run: bun scripts/smoke.mjs
+      - name: Deno
+        run: deno run --allow-read scripts/smoke.mjs
+      - name: Cloudflare workerd (Miniflare)
+        run: |
+          npm install --no-save --no-audit --no-fund miniflare@4.20260730.0
+          node scripts/smoke-workerd.mjs
+
+  commitlint:
+    name: Commit üzenetek (Conventional Commits)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - name: Pull request címe
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/commitlint.mjs --message "$TITLE"
+      - name: Pull request commitjai
+        if: github.event_name == 'pull_request'
+        run: node scripts/commitlint.mjs --range "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+      - name: Pusholt commitok
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: node scripts/commitlint.mjs --range "${{ github.event.before }}..${{ github.sha }}"

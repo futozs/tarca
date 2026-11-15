@@ -1,0 +1,50 @@
+name: Lefedettségi jelvények
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['web/**', '.github/workflows/web.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: badges
+  cancel-in-progress: true
+
+jobs:
+  badges:
+    if: github.repository == 'futozs/tarca'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run spec:fetch
+      - name: Tesztek lefedettséggel
+        env:
+          TARCA_REQUIRE_SPEC: '1'
+        run: npm run test:coverage
+      - name: Jelvények elkészítése
+        run: node scripts/coverage-badges.mjs coverage/coverage-summary.json "$RUNNER_TEMP/badges"
+      - name: Közzététel a badges ágon
+        working-directory: ${{ runner.temp }}/badges
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir web
+          printf '%s\n' '{"git":{"deploymentEnabled":{"badges":false}},"ignoreCommand":"exit 0"}' > web/vercel.json
+          git init -q -b badges
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .
+          git commit -q -m 'chore: lefedettségi jelvények frissítése [skip ci]'
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" badges

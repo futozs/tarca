@@ -1,0 +1,8 @@
+{
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "Conventional Commits formátumban írj, magyarul: típus(hatókör): rövid leírás, kisbetűvel kezdve, pont nélkül, legfeljebb 100 karakter. Típusok: feat, fix, perf, refactor, docs, test, ci, chore, build, style, revert. Csak a web/ mappát érintő változásnál a hatókör legyen web. Példák: feat(documents): createOnce a vendorId alapján; fix(core): a 422-es hiba mezőinek olvasása; docs(readme): jelvények a kártyák helyett; ci: heti teljes ellenőrzés."
+    }
+  ],
+  "js/ts.tsdk.path": "node_modules/typescript"
+}

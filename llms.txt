@@ -1,0 +1,17 @@
+# tarca
+
+> A zero-dependency TypeScript client for the Billingo API v3 (Hungarian invoicing), the sibling of kassza (Számlázz.hu). Status 0.x: organization data, utilities, exchange rates and bank accounts are implemented; documents, partners, products, document blocks, spendings and exports are in progress. Ships TypeScript types for every Billingo schema, generated from the official OpenAPI spec. Retries only GET requests, never writes. Runs on Node 22+, Bun, Deno, Cloudflare Workers and Vercel Edge. Independent open-source project, not a Billingo product.
+
+## Docs for coding agents
+
+- [Start here](agents/README.md): overview, the five rules
+- [Pitfalls](agents/pitfalls.md): duplicate documents, keys and plans, limits, data shapes, error categories
+- [API reference](agents/api.md): every implemented method
+- [Recipes](agents/recipes.md): setup, error handling, pagination, tests, logging
+- [Claude Code skill](agents/skills/tarca/SKILL.md)
+
+## Human docs
+
+- [README](README.md): Hungarian quick start
+- [Billingo developer portal](https://developers.billingo.hu)
+- [Billingo API v3 guide](https://developers.billingo.hu/post/api-v3)

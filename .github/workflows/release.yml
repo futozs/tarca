@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['web/**', '.github/workflows/web.yml']
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Kényszerített verziólépés (auto esetén a commitokból számolja)
+        type: choice
+        default: auto
+        options: [auto, patch, minor, major]
+      stable:
+        description: A 0.x → 1.0 stabil ugrás engedélyezése (TARCA_ALLOW_STABLE)
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  full-check:
+    if: >-
+      github.repository == 'futozs/tarca' &&
+      !startsWith(github.event.head_commit.message, 'release:') &&
+      !contains(github.event.head_commit.message, '[skip release]')
+    uses: ./.github/workflows/full-check.yml
+    secrets: inherit
+    permissions:
+      contents: read
+
+  release:
+    needs: full-check
+    if: >-
+      github.repository == 'futozs/tarca' &&
+      !startsWith(github.event.head_commit.message, 'release:') &&
+      !contains(github.event.head_commit.message, '[skip release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Repó kiolvasása
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Node.js beállítása
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm frissítése (Trusted Publishing >=11.5.1-et igényel)
+        run: npm install -g npm@11.21.0
+
+      - name: Git szerző beállítása
+        run: |
+          git config user.name "futozs"
+          git config user.email "zsombi.futo@gmail.com"
+
+      - name: Függőségek telepítése
+        run: npm ci
+
+      - name: A Billingo spec letöltése
+        run: npm run spec:fetch
+
+      - name: Kiadás (lint, típusellenőrzés, teszt, build, verziólépés, publish, tag, push)
+        env:
+          BUMP: ${{ inputs.bump }}
+          TARCA_ALLOW_STABLE: ${{ inputs.stable && '1' || '0' }}
+        run: |
+          if [ -n "$BUMP" ] && [ "$BUMP" != "auto" ]; then
+            npm run release:ci -- "$BUMP"
+          else
+            npm run release:ci
+          fi

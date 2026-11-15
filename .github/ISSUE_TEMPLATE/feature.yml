@@ -1,0 +1,21 @@
+name: Új funkció
+description: Javaslat egy hiányzó funkcióra
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Mi a probléma, amit ez megoldana?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Hogyan nézne ki a használata?
+      render: ts
+  - type: input
+    id: docs
+    attributes:
+      label: Hivatkozás a Billingo docsra
+      description: Ha a funkció egy Billingo végpontra vagy mezőre épül, add meg a Swagger műveletet vagy a docs oldalát.
+      placeholder: https://developers.billingo.hu/post/api-v3

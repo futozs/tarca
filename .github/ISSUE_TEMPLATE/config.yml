@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Biztonsági hiba bejelentése
+    url: https://github.com/futozs/tarca/security/advisories/new
+    about: Sebezhetőséget ne nyilvános issue-ban jelents, használd a privát bejelentést.
+  - name: Billingo API dokumentáció
+    url: https://developers.billingo.hu/post/api-v3
+    about: A Billingo működésével kapcsolatos kérdésekre a hivatalos docs ad választ.

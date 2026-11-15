@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+# A Billingo docsból és a SwaggerHubról letöltött anyagok csak lokális fejlesztési
+# referenciának vannak itt (szerzői jog miatt nem kerülnek a publikus repóba).
+.research/
+.spec-cache/
+# A kezdő munkaanyagok (kutatás, terv, promptok) AI munkamenetekhez, nem publikusak.
+kezdo-docs/
+.vercel
