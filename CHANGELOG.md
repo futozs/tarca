@@ -1,5 +1,11 @@
 # Változásnapló
 
+## 0.1.2 (2026-11-16)
+
+### Javítások
+
+- **release:** survive a push that lands on main during a release [skip release] (472db80)
+
 ## 0.1.1 (2026-11-16)
 
 ### Javítások
