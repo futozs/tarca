@@ -167,6 +167,14 @@ function writeChangelog(entry) {
 
 const pkg = JSON.parse(readFileSync(packagePath, 'utf8'))
 
+if (pkg.private === true && !dryRun) {
+  if (ciMode) {
+    log('A package.json "private": true, ezért a CI nem ad ki semmit.')
+    process.exit(0)
+  }
+  fail('A package.json "private": true. Kiadás előtt vedd ki belőle.')
+}
+
 if (git('status', '--porcelain') !== '' && !dryRun) {
   fail('Van nem commitolt változás. Commitold vagy stash-eld, aztán futtasd újra.')
 }
