@@ -40,7 +40,18 @@ tarca is 0.x. All 57 Billingo API v3 operations are implemented: the 54 document
 - `tarca/testing`: an in-memory fake Billingo (`createFakeBillingoFetch()`) and `createMockTarca()` for your own tests
 - Full TypeScript types generated from the official OpenAPI spec, corrected where the live API differs: `import type { Billingo } from 'tarca'`
 
-Planned: a CLI (`npx tarca doctor`), an MCP server, and a documentation website.
+Add-ons, each a separate subpath that the root `tarca` entry never loads:
+
+- `tarca/payments` (`/stripe`, `/simplepay`, `/barion`, `/revolut`, `/paypal`): verifies the provider's webhook without its SDK and issues a receipt or an invoice exactly once, with the payment id as `vendorId`. Refunds become a cancellation or, for a partial refund, a modification invoice.
+- `tarca/storage` and `tarca/storage/fs` (Node): stores document PDFs in S3, Cloudflare R2, Vercel Blob, Supabase, UploadThing or on disk. S3 is signed with SigV4 over `fetch`, no AWS SDK.
+- `tarca/stores`: Upstash, Redis, Durable Object and Cloudflare KV adapters for the cross-process `createOnce` lock, the journal, webhook dedupe and the refund ledger.
+- `tarca/journal`: an append-only record of every issued, cancelled and modified document, reconciled against Billingo.
+- `tarca/batch`: bulk and recurring invoicing, exactly once and paced under the rate limit, with a dry run.
+- `tarca/observe`: redacted structured logs, OpenTelemetry-compatible spans and Prometheus metrics.
+- `tarca/node`: mounts the web-standard handlers under Node `http`, Express, NestJS and Fastify with the raw body intact.
+- `tarca/mcp` and the `tarca` command: `npx tarca doctor` checks the key, profile, NAV connection, subscription and document blocks read-only; `npx tarca mcp` is an MCP server for AI assistants that issues documents only with `--allow-write` and a confirmation code from a preview.
+
+Planned: a documentation website.
 
 ## How it behaves
 
@@ -49,7 +60,7 @@ Planned: a CLI (`npx tarca doctor`), an MCP server, and a documentation website.
 - Field names are camelCase in TypeScript; tarca converts to and from Billingo's snake_case at the boundary.
 - Reads (GET) are retried after 429, 5xx, network errors and timeouts, honouring `Retry-After`, 3 attempts by default. Writes (POST, PUT, DELETE) are never retried automatically.
 - Errors are `BillingoError` with a `category` (`auth`, `nav_unavailable`, `subscription`, `forbidden`, `not_found`, `validation`, `rate_limit`, `server`, `not_ready`, `network`, `timeout`, `configuration`, `unexpected_response`, `in_progress`, `store_unavailable`), plus `fieldErrors`, `traceId` and a `hint`. Messages are in Hungarian.
-- Hooks (`onRequest`, `onResponse`, `onError`, `onComplete`, `onWarning`) never receive the API key.
+- Hooks (`onRequest`, `onResponse`, `onError`, `onComplete`, `onWarning`, and `onDocument` for every new document) never receive the API key.
 - Sends no telemetry.
 
 License: MIT.

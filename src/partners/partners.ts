@@ -77,6 +77,10 @@ function sameAsStored(given: unknown, stored: unknown, field: string): boolean {
   return given === stored
 }
 
+export function matchesPartner(input: PartnerInput, stored: Partner): boolean {
+  return sameAsStored(withDefaultCountry(input), stored, '')
+}
+
 function blankNameError(): BillingoError {
   const message = 'A partner neve nem lehet üres.'
   return new BillingoError(message, {
@@ -138,7 +142,7 @@ export function createPartnersApi(context: TarcaContext): PartnersApi {
       if (name === '') throw blankNameError()
       for (let page = 1; page <= FIND_OR_CREATE_MAX_PAGES; page++) {
         const candidates = await list({ query: name, page, perPage: MAX_PER_PAGE }, options)
-        const match = candidates.data.find((candidate) => sameAsStored(wanted, candidate, ''))
+        const match = candidates.data.find((candidate) => matchesPartner(wanted, candidate))
         if (match) return { partner: match, created: false }
         if (candidates.data.length === 0 || page >= candidates.lastPage) break
       }

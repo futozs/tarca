@@ -28,7 +28,7 @@ npm run ci
 - `npm run readme` regenerates the README images in `readme/assets/` and then `README.md` (see [README](#readme)).
 - `npm run e2e` runs the live scenario against a Billingo **developer test profile**. It needs `BILLINGO_TEST_API_KEY` and `BILLINGO_E2E_TAX_CODE` (see `.env.example`), and it is not part of `npm run ci`. See [E2E](#e2e).
 - `npm run ci` runs lint, typecheck, the README sync check, coverage (at least 80%), build, publint and attw.
-- `npm run smoke` runs `scripts/smoke.mjs` against the built `dist` (ESM and CommonJS). CI runs the same file under Bun and Deno, and `scripts/smoke-workerd.mjs` inside Cloudflare workerd (Miniflare).
+- `npm run smoke` runs `scripts/smoke.mjs` against the built `dist` (ESM and CommonJS), every subpath included. CI runs the same file under Bun and Deno, and `scripts/smoke-workerd.mjs` inside Cloudflare workerd (Miniflare).
 - `npm run size` measures the gzip size of every entry point against `scripts/size-limits.json`.
 - `npm run stats` prints npm downloads, GitHub dependents and stars. The package sends no telemetry and must never get any.
 - `npm run commitlint` checks the commit messages since `origin/main`. `npm install` enables the local `commit-msg` hook.
@@ -43,12 +43,23 @@ npm run ci
 | `src/core/case.ts`, `src/core/url.ts` | camelCase ↔ snake_case conversion, path and query building |
 | `src/core/pagination.ts` | `Page`, `list` + `all` (async iteration, `perPage` up to 100) |
 | `src/core/dates.ts` | `Europe/Budapest` dates (`toBillingoDate`, `toOptionalBillingoDate`) |
+| `src/core/document-events.ts` | The `onDocument` hook: one event per newly issued, cancelled or modified document, `onDocumentError` (`'warn'` or `'throw'`, which gives `DocumentHookError` after the document exists) |
+| `src/core/money.ts`, `src/core/crypto.ts` | Billingo's rounding model (shared by the fake, the MCP previews, batch dry runs and payments) and Web Crypto helpers (HMAC, SHA-256, `timingSafeEqual`; a copy of kassza's) |
 | `src/core/once-guard.ts`, `src/core/store.ts` | `createOnce` singleflight and the optional cross-process lock (`KeyValueStore`, the same interface as kassza's stores) |
 | `src/generated/billingo.ts` | Generated spec types (camelCase, readonly). Exported as `import type { Billingo } from 'tarca'` |
 | `src/<resource>/` | One folder per resource (`bank-accounts`, `currencies`, `document-blocks`, `exports`, `inventory`, `organization`, `partners`, `products`, `receipts`, `spendings`, `utils`), each a `create<X>Api(context)` factory |
 | `src/documents/` | `DocumentsApi`, assembled from parts: `query.ts` (get, list, vendorId lookup), `issue.ts` (create, createRaw, createOnce, drafts), `files.ts` (PDF, POS, public URL), `actions.ts` (send, reminders, NAV status, cancel, copy, archive, proforma, modification), `payments.ts`; the ergonomic input in `input.ts`, `check.ts` (local validation with Hungarian `fieldErrors`), `defaults.ts`, `enums.ts`, `once.ts` |
 | `src/client.ts` | `createTarca()`, which wires every resource to one context |
-| `src/testing/` | The `tarca/testing` entry: `createFakeBillingoFetch()` (in-memory Billingo for all 57 operations: `fake/state.ts`, `router.ts`, `http.ts` (responses and the shared request-field helpers), `faults.ts`, `money.ts` (Billingo's rounding), one route module per resource, wired in `fake/registry.ts`) and `createMockTarca()` |
+| `src/payments/` | `tarca/payments` and one subpath per provider (`stripe`, `simplepay`, `barion`, `revolut`, `paypal`): webhook verification, `PaymentEvent`, `issueForPayment` (receipt or invoice through `createOnce`), refunds by cancel or by `createModificationOnce` with a `setIfAbsent` ledger |
+| `src/storage/` | `tarca/storage` (`storeDocumentPdf`, S3 over SigV4, R2 binding, Vercel Blob, Supabase, UploadThing, memory) and the Node-only `tarca/storage/fs` (`fs.ts`) |
+| `src/stores/` | `tarca/stores`: `KeyValueStore` adapters (Upstash, ioredis, node-redis, Cloudflare KV, Durable Object, custom, memory), `resilientStore`, `diagnoseStore` |
+| `src/journal/` | `tarca/journal`: append-only document journal (`record`, `track`, `settle`, `reconcile`) over `kvJournal` or `memoryJournal` |
+| `src/batch/` | `tarca/batch`: `runBatch` (paced, exactly once, dry run) and recurring billing periods |
+| `src/observe/` | `tarca/observe`: redacted logs, OpenTelemetry-compatible spans, Prometheus metrics, `combineHooks` |
+| `src/node/` | `tarca/node`: `toNodeHandler`, `toWebRequest`, `writeWebResponse` for Node `http`, Express, NestJS, Fastify |
+| `src/mcp/` | `tarca/mcp`: the stateless MCP server (21 tools; writes only with `allowWrite`, a preview and a signed confirmation code) and the web `Request → Response` handler |
+| `src/cli/` | The `tarca` bin (`dist/cli.js`, Node only): `doctor`, `verify`, `document get`, `mcp` over stdio |
+| `src/testing/` | The `tarca/testing` entry: `createFakeBillingoFetch()` (in-memory Billingo for all 57 operations: `fake/state.ts`, `router.ts`, `http.ts` (responses and the shared request-field helpers), `faults.ts`, one route module per resource (the rounding comes from `src/core/money.ts`), wired in `fake/registry.ts`) and `createMockTarca()` |
 | `scripts/spec-overrides.mjs` | The live-deviation table: where the real API differs from the spec (null fields, renamed fields, live-required fields, status codes, content types, undocumented routes), each entry with its evidence. `mergeSpecs` applies it, so the generated types, the validator, the contract tests and the drift watcher see the same corrected spec |
 | `tests/helpers.ts` | `mockBillingo` (captures requests, scripted replies, validates every request against the corrected spec) and `createTestContext` |
 | `tests/openapi.ts` | Strict OpenAPI validator (`requestErrors`, `parameterErrors`, `responseErrors`, `contractErrors`) against the corrected spec |
@@ -70,7 +81,8 @@ npm run ci
 - English identifiers, Hungarian error messages, Hungarian test names.
 - TypeScript is strict, with `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess` and `isolatedDeclarations`, so exported functions need explicit return types.
 - Biome: single quotes, no semicolons, 100-column lines.
-- Zero runtime dependencies. Keep `src/` runtime-neutral: no `Buffer`, no `node:` imports.
+- Zero runtime dependencies. Keep `src/` runtime-neutral: no `Buffer`, no `node:` imports. The only exceptions are the subpaths that are Node-only by nature: `src/storage/fs.ts`, `src/cli/` and type-only imports in `src/node/`.
+- Every subpath has an entry in `package.json` `exports`, `tsdown.config.ts`, a measured budget in `scripts/size-limits.json` (the root must never pull one in: `forbidden`), smoke checks in `scripts/smoke-core.mjs` (wired in `smoke.mjs` and, unless Node-only, `smoke-worker.mjs`) and its exports listed in `tests/public-api.test.ts`.
 - The public API is camelCase; the wire format is snake_case. Convert only at the boundary (`toApiCase`, `fromApiCase`). Response types come from `src/generated/billingo.ts`; `context.json<T>()` is the single place where a response is trusted to match the spec, and it rejects an empty or non-JSON body with `unexpected_response` instead of returning `undefined`.
 - Where the live API differs from the spec, the correction goes into `scripts/spec-overrides.mjs` with its evidence (probe file, MCP fixture or e2e run, and date), never into a validator exception, a test-local allowlist or a hand-edited type; an override may only make the spec match what was observed.
 - **Never retry a write.** The transport retries only GET (429, 5xx, network, timeout), at most `maxAttempts` (default 3, cap 5), honouring `Retry-After` up to 60 seconds. A 202 (PDF not ready) is not retried by the transport: `documents.pdf` waits for it within `maxWaitMs`, measured on the clock, so the wait has one owner and one bound. A retried `POST /documents` issues a second invoice that is reported to NAV and can only be cancelled, never deleted. Exactly-once issuing goes through `vendorId` (`GET /documents/vendor/{vendor_id}`).

@@ -1,14 +1,15 @@
 # tarca
 
-> A zero-dependency TypeScript client for the Billingo API v3 (Hungarian invoicing), the sibling of kassza (Számlázz.hu). Status 0.x: all 57 Billingo operations are implemented (invoices, proformas, advance invoices, receipts, cancellations, modification documents, payments, PDFs, partners, products, inventory, document blocks, bank accounts, spendings, exports) and run in a live end-to-end test on a Billingo developer test profile. Exactly-once issuing with `createOnce` and a `vendorId`. Ships TypeScript types for every Billingo schema, generated from the official OpenAPI spec and corrected where the live API differs, and `tarca/testing` (an in-memory fake Billingo and a mock client). Retries only GET requests, never writes. Runs on Node 22+, Bun, Deno, Cloudflare Workers and Vercel Edge. Independent open-source project, not a Billingo product.
+> A zero-dependency TypeScript client for the Billingo API v3 (Hungarian invoicing), the sibling of kassza (Számlázz.hu). Status 0.x: all 57 Billingo operations are implemented (invoices, proformas, advance invoices, receipts, cancellations, modification documents, payments, PDFs, partners, products, inventory, document blocks, bank accounts, spendings, exports) and run in a live end-to-end test on a Billingo developer test profile. Exactly-once issuing with `createOnce` and a `vendorId`. Add-on subpaths: `tarca/payments` (Stripe, SimplePay, Barion, Revolut and PayPal webhooks to a receipt or invoice exactly once, refunds), `tarca/storage` (PDFs to S3, R2, Vercel Blob, Supabase, disk), `tarca/stores`, `tarca/journal`, `tarca/batch`, `tarca/observe`, `tarca/node`, `tarca/mcp` (an MCP server with confirmed writes) and the `tarca` CLI (`npx tarca doctor`). Ships TypeScript types for every Billingo schema, generated from the official OpenAPI spec and corrected where the live API differs, and `tarca/testing` (an in-memory fake Billingo and a mock client). Retries only GET requests, never writes. Runs on Node 22+, Bun, Deno, Cloudflare Workers and Vercel Edge. Independent open-source project, not a Billingo product.
 
 ## Docs for coding agents
 
 - [Start here](agents/README.md): overview, the five rules
 - [Pitfalls](agents/pitfalls.md): duplicate documents, partner search lag, keys and plans, limits, data shapes, error categories
 - [API reference](agents/api.md): every method, and every Billingo operation mapped to its method
-- [Recipes](agents/recipes.md): webshop order to invoice with createOnce, proforma to invoice, payments, receipts, PDF download, export, testing with tarca/testing, logging
+- [Recipes](agents/recipes.md): webshop order to invoice with createOnce, proforma to invoice, payments, receipts, PDF download and storage, export, payment provider webhooks, Express, serverless locks, document journal, monthly batches, MCP, testing with tarca/testing, logging and metrics
 - [Claude Code skill](agents/skills/tarca/SKILL.md)
+- [Migrating from @codingsans/billingo-client](agents/skills/migrate-from-codingsans-billingo-client/SKILL.md)
 
 ## Human docs
 

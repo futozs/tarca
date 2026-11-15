@@ -25,6 +25,15 @@ export {
   todayInBudapest,
 } from './core/dates'
 export {
+  type DocumentAction,
+  type DocumentErrorHandler,
+  type DocumentErrorMode,
+  type DocumentEvent,
+  type DocumentHook,
+  DocumentHookError,
+  isDocumentHookError,
+} from './core/document-events'
+export {
   BillingoError,
   type BillingoErrorCategory,
   type FieldError,

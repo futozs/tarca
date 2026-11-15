@@ -3,6 +3,20 @@ import { runSmoke } from './smoke-core.mjs'
 const ENTRIES = {
   root: '../dist/index.js',
   testing: '../dist/testing/index.js',
+  node: '../dist/node/index.js',
+  batch: '../dist/batch/index.js',
+  observe: '../dist/observe/index.js',
+  storage: '../dist/storage/index.js',
+  storageFs: '../dist/storage/fs.js',
+  stores: '../dist/stores/index.js',
+  journal: '../dist/journal/index.js',
+  mcp: '../dist/mcp/index.js',
+  payments: '../dist/payments/index.js',
+  paymentsStripe: '../dist/payments/stripe.js',
+  paymentsSimplePay: '../dist/payments/simplepay.js',
+  paymentsBarion: '../dist/payments/barion.js',
+  paymentsRevolut: '../dist/payments/revolut.js',
+  paymentsPayPal: '../dist/payments/paypal.js',
 }
 
 function runtimeName() {

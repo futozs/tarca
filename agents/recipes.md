@@ -149,6 +149,25 @@ await writeFile(`invoices/${pdf.filename ?? `${invoiceId}.pdf`}`, pdf.bytes)
 - `pdf.bytes` is an ArrayBuffer-backed `Uint8Array<ArrayBuffer>` that starts with `%PDF`; it works with `Response`, S3/R2 SDKs and `fs` alike. In Workers return it directly: `new Response(pdf.bytes, { headers: { 'content-type': 'application/pdf' } })`.
 - `documents.publicUrl(id)` gives Billingo's public `document-access` link to the document.
 
+To keep the PDF in object storage, use `tarca/storage` instead of writing the bytes yourself. It names the key from the document (`szamlak/2026/09/TARCA-2026-000012.pdf`), waits for the 202 the same way and refuses anything that is not a PDF:
+
+```ts
+import { s3FetchStorage, storeDocumentPdf } from 'tarca/storage'
+
+const storage = s3FetchStorage({
+  bucket: 'invoices',
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
+})
+
+const { document } = await tarca.documents.createOnce(input)
+const file = await storeDocumentPdf(tarca, storage, document)
+```
+
+S3 and R2 need no AWS SDK (SigV4 over `fetch`). Other adapters: `r2BindingStorage` (Workers binding), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage`, `memoryStorage`, and `fsStorage` from the Node-only `tarca/storage/fs`. Drafts have no number, so they cannot be stored (`StorageError`). In a webhook, answer first and store the PDF afterwards.
+
 ## Monthly export for the accountant
 
 ```ts
@@ -175,6 +194,135 @@ for await (const invoice of tarca.documents.all({ type: 'invoice', paymentStatus
 ```
 
 `all()` pages with 100 items. The document list is eventually consistent: a document issued in the last half minute may be missing.
+
+## Payment provider webhook → receipt or invoice
+
+Stripe, SimplePay, Barion, Revolut and PayPal, without their SDKs. The handler verifies the signature (Barion: queries the payment state), `issueForPayment` decides between receipt and invoice and issues it with `createOnce`, using the payment id as `vendorId` (`STRIPE-pi_…`).
+
+```ts
+import { Redis } from '@upstash/redis'
+import { issueForPayment } from 'tarca/payments'
+import { stripeWebhook } from 'tarca/payments/stripe'
+import { upstashRedisStore } from 'tarca/stores'
+
+const store = upstashRedisStore(Redis.fromEnv())
+
+export const POST = stripeWebhook({
+  secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+  apiKey: process.env.STRIPE_SECRET_KEY,
+  dedupe: store,
+  onPayment: async (payment) => {
+    const result = await issueForPayment(tarca, payment, { vat: 27, ledger: store })
+    if (result.kind === 'refund-proposal') await notifyAccountant(result)
+  },
+})
+```
+
+- 400 means a bad signature or payload and `onPayment` never ran. 500 means something after verification threw; the provider redelivers and `createOnce` returns the existing document, so a redelivery never issues twice.
+- VAT is never guessed: give `vat`, `vatFor(item)` or per-item VAT, or you get a `validation` error before any request. The items' gross sum must equal the paid amount to the minor unit (`allowAmountMismatch: true` to allow a difference).
+- An invoice is chosen for a tax-numbered or business buyer, from 900 000 Ft, or with `invoiceRequested`; otherwise a receipt. `document: 'invoice' | 'receipt'` overrides it. An invoice is marked paid with `payments.replace`.
+- Full refund: one `documents.cancel`, decided by the document's `cancelled` flag after an uncertain error. Partial refund: one modification invoice per refund, which needs `ledger` (a store with `setIfAbsent`); without it, on a receipt or with several VAT rates and no `refundItems` you get `refund-proposal` for a human to decide.
+- SimplePay: `simplePayWebhook({ merchants: { MERCHANT: secret } })` from `tarca/payments/simplepay` (the response is the signed IPN echo). Barion: `barionWebhook({ posKey })`. Revolut: `revolutWebhook({ secret, apiKey })`. PayPal: `payPalWebhook({ webhookId, clientId, clientSecret })`. All give the same `PaymentEvent`.
+
+## Express, NestJS, Fastify
+
+Webhook and MCP handlers are web-standard `(Request) => Response`. Mount them through `tarca/node`, before `express.json()`, so the raw body and its signature stay intact:
+
+```ts
+import express from 'express'
+import { toNodeHandler } from 'tarca/node'
+import { stripeWebhook } from 'tarca/payments/stripe'
+
+const app = express()
+app.post('/webhooks/stripe', toNodeHandler(stripeWebhook({ secret, onPayment })))
+app.use(express.json())
+```
+
+A body already parsed by `express.json()` throws `NodeBodyError` with the fix. NestJS: create the app with `rawBody: true`. Behind a proxy pass `{ trustProxy: true }`.
+
+## Serverless and edge: share the createOnce lock
+
+`createOnce` already prevents duplicates through the `vendorId` lookup. With several instances, a shared lock also stops two instances from POSTing the same order at the same moment:
+
+```ts
+import { Redis } from '@upstash/redis'
+import { createTarca } from 'tarca'
+import { diagnoseStore, upstashRedisStore } from 'tarca/stores'
+
+const store = upstashRedisStore(Redis.fromEnv(), { timeoutMs: 2_000 })
+export const tarca = createTarca({ createOnceLock: store })
+
+const diagnosis = await diagnoseStore(store)
+if (!diagnosis.suitableFor.createOnceLock) throw new Error(diagnosis.problems.join('; '))
+```
+
+- A store error fails the call with `store_unavailable` and nothing is issued. Do not use `resilient: true` for the lock, the journal or the refund ledger.
+- Cloudflare Workers: `durableObjectStore(stub)`, with `handleDurableObjectStoreRequest(this.ctx.storage, request)` inside the Durable Object. Cloudflare KV has no atomic write: use it only for webhook dedupe.
+- Vercel KV is gone; Vercel Marketplace Redis works with `upstashRedisStore`.
+
+## Document journal
+
+Billingo reports to NAV itself; the journal is your own append-only record of every issued, cancelled and modified document, reconciled against Billingo's list.
+
+```ts
+import { createJournal, kvJournal } from 'tarca/journal'
+
+const journal = createJournal(kvJournal(store))
+export const tarca = createTarca({
+  hooks: { onDocument: (event) => journal.record(event), onDocumentError: 'throw' },
+})
+
+const vendorId = `ORDER-${order.id}`
+await journal.track(vendorId, () => tarca.documents.createOnce({ ...input, vendorId }))
+
+await journal.settle(tarca)
+const report = await journal.reconcile(tarca, { from: '2026-10-01', to: '2026-10-31' })
+```
+
+- With `onDocumentError: 'throw'` a failed hook gives `DocumentHookError` after the document exists: record `error.document`, never issue again.
+- `track` keeps a pending reservation when the outcome is uncertain or the process dies; `settle` finds it by `vendorId` later. `JournalWriteError` means the document exists but the entry was not written.
+- `reconcile` reports `added`, `missing`, `mismatched` and `changed` (paid or cancelled since recording); entries are never rewritten.
+
+## Monthly subscription invoicing
+
+```ts
+import { billingPeriodAt, runBatch } from 'tarca/batch'
+
+const period = billingPeriodAt({ interval: 'month', anchor: '2026-01-31' }, new Date())
+const result = await runBatch(tarca, {
+  items: subscriptions.map((subscription) => ({
+    key: `SUB-${subscription.id}-${period.start}`,
+    document: () => ({ kind: 'invoice', input: invoiceFor(subscription, period) }),
+  })),
+  onProgress: (progress) => console.info(progress.done, '/', progress.total),
+})
+
+if (result.stopped) console.warn('Leállt:', result.stopped.reason)
+```
+
+- The key is the `vendorId`, so rerunning the same period returns `existing` items and never duplicates. Run it from a cron job and simply run it again after a failure.
+- It paces item starts at 30 per minute by default, because Billingo's 300 requests per minute are shared with your webhooks. It stops on `rate_limit`, `auth`, `forbidden`, `subscription`, `configuration` and `store_unavailable`; the remaining items are `skipped`.
+- `dryRun: true` with the client's `defaults` validates and estimates totals without writing anything.
+- An item that is `created` but carries an `error` (`DocumentHookError`, `JournalWriteError`) was issued: never reissue it.
+
+## Invoicing from an AI assistant (MCP)
+
+```json
+{
+  "mcpServers": {
+    "tarca": {
+      "command": "npx",
+      "args": ["-y", "tarca", "mcp"],
+      "env": { "BILLINGO_API_KEY": "..." }
+    }
+  }
+}
+```
+
+- Read-only by default: profile, documents, partners, products, spendings, tax number, exchange rate and five previews. `--allow-write` (or `TARCA_MCP_ALLOW_WRITE=1`) enables issuing, cancelling, recording payments and sending e-mail, each only with the confirmation code of a preview of exactly the same input, valid for 15 minutes and on the preview's Budapest day.
+- Use a developer test profile while trying it: on a live profile an issued invoice goes to NAV and can only be cancelled.
+- On the edge use `createTarcaMcpHandler(createTarcaMcpServer({ apiKey, confirmationSecret }), { authorize })`: `authorize` and a `confirmationSecret` of at least 16 bytes are required, and create the handler once per isolate, not per request.
+- `npx tarca doctor` checks the key, the clock, the profile, the NAV connection, the subscription, the document blocks and the bank accounts with 3 GET requests.
 
 ## Testing your own code with tarca/testing
 
@@ -221,3 +369,19 @@ const tarca = createTarca({
 ```
 
 Hooks never receive the API key. A hook that throws, or an async hook that rejects, does not break the request; the error goes to `onWarning`, and an error of `onWarning` itself is swallowed.
+
+For structured logs, OpenTelemetry spans and Prometheus metrics use `tarca/observe`. It redacts by default: no API key, no error message text, and a `vendorId` only as an HMAC reference.
+
+```ts
+import { trace } from '@opentelemetry/api'
+import { combineHooks, createMetricsRegistry, observe } from 'tarca/observe'
+
+const metrics = createMetricsRegistry()
+export const tarca = createTarca({
+  hooks: combineHooks(observe({ logger: console, tracer: trace.getTracer('tarca'), metrics }), {
+    onDocument: (event) => journal.record(event),
+  }),
+})
+
+app.get('/metrics', (_request, response) => response.type('text/plain').send(metrics.renderPrometheus()))
+```

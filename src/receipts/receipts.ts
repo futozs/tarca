@@ -190,15 +190,19 @@ export function createReceiptsApi(context: TarcaContext, deps: ReceiptsApiDeps):
   }
   const post = (body: ReceiptRequestBody, options: RequestOptions | undefined) =>
     context.json<Document>({ operation: 'CreateReceipt', body, signal: options?.signal })
+  const created = (document: Document, vendorId: string | undefined) =>
+    context.emitDocument({ action: 'created', operation: 'CreateReceipt', document, vendorId })
   return {
     async create(input, options) {
       const prepared = prepareReceipt(input, deps.defaults, 'CreateReceipt', false)
-      return post(await bodyOf(prepared, options), options)
+      const document = await post(await bodyOf(prepared, options), options)
+      await created(document, prepared.body.vendorId)
+      return document
     },
     async createOnce(input, options = {}) {
       const prepared = prepareReceipt(input, deps.defaults, 'CreateReceipt', true)
       const vendorId = input.vendorId.trim()
-      return issueOnce(
+      const result = await issueOnce(
         deps.guard,
         {
           vendorId,
@@ -209,15 +213,24 @@ export function createReceiptsApi(context: TarcaContext, deps: ReceiptsApiDeps):
         },
         options,
       )
+      if (result.created) await created(result.document, vendorId)
+      return result
     },
     async finalizeDraft(id, input, options) {
       const prepared = prepareReceipt(input, deps.defaults, 'CreateReceiptFromDraft', false)
-      return context.json<Document>({
+      const document = await context.json<Document>({
         operation: 'CreateReceiptFromDraft',
         pathParams: { id },
         body: await bodyOf(prepared, options),
         signal: options?.signal,
       })
+      await context.emitDocument({
+        action: 'finalized',
+        operation: 'CreateReceiptFromDraft',
+        document,
+        vendorId: prepared.body.vendorId,
+      })
+      return document
     },
   }
 }

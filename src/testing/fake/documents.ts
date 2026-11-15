@@ -1,5 +1,6 @@
 import { fromApiCase } from '../../core/case'
 import { toBillingoDate, toBudapestTimestamp } from '../../core/dates'
+import { documentTotals, type LineAmounts, lineAmounts, negatedAmounts } from '../../core/money'
 import {
   DOCUMENT_LANGUAGES,
   isOneOf,
@@ -40,7 +41,6 @@ import {
   serverError,
   validationFailed,
 } from './http'
-import { documentTotals, type LineAmounts, lineAmounts, negatedAmounts } from './money'
 import {
   type FakeBillingoState,
   type FakeDocument,

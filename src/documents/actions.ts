@@ -1,6 +1,8 @@
 import type { RequestOptions, TarcaContext } from '../core/context'
 import { type DateInput, toBillingoDate, toOptionalBillingoDate } from '../core/dates'
+import type { DocumentAction } from '../core/document-events'
 import { isBillingoError, withHint } from '../core/errors'
+import type { OperationId } from '../core/operations'
 import type {
   Document,
   DocumentCancellation,
@@ -163,6 +165,12 @@ export function createDocumentActionsApi(
   context: TarcaContext,
   defaults: ResolvedDefaults,
 ): DocumentActionsApi {
+  const derived = (
+    action: DocumentAction,
+    operation: OperationId,
+    sourceId: number,
+    document: Document,
+  ): Promise<void> => context.emitDocument({ action, operation, document, sourceId })
   return {
     async send(id, input, options) {
       const check = createInputCheck()
@@ -195,8 +203,9 @@ export function createDocumentActionsApi(
     },
     async cancel(id, input = {}, options) {
       const body = cancelBody(input)
+      let document: Document
       try {
-        return await context.json<Document>({
+        document = await context.json<Document>({
           operation: 'CancelDocument',
           pathParams: { id },
           body,
@@ -205,30 +214,39 @@ export function createDocumentActionsApi(
       } catch (error) {
         throw explainCancelRefusal(error)
       }
+      await derived('cancelled', 'CancelDocument', id, document)
+      return document
     },
-    copy: (id, options) =>
-      context.json<Document>({
+    async copy(id, options) {
+      const document = await context.json<Document>({
         operation: 'DocumentCopy',
         pathParams: { id },
         signal: options?.signal,
-      }),
+      })
+      await derived('copied', 'DocumentCopy', id, document)
+      return document
+    },
     archive: (id, options) =>
       context.empty({ operation: 'ArchiveDocument', pathParams: { id }, signal: options?.signal }),
     async createFromProforma(id, input = {}, options) {
-      return context.json<Document>({
+      const document = await context.json<Document>({
         operation: 'CreateDocumentFromProforma',
         pathParams: { id },
         body: conversionBody(input, defaults, new Date()),
         signal: options?.signal,
       })
+      await derived('converted', 'CreateDocumentFromProforma', id, document)
+      return document
     },
     async createModification(id, input, options) {
-      return context.json<Document>({
+      const document = await context.json<Document>({
         operation: 'CreateModificationDocument',
         pathParams: { id },
         body: modificationBody(input),
         signal: options?.signal,
       })
+      await derived('modified', 'CreateModificationDocument', id, document)
+      return document
     },
   }
 }

@@ -70,23 +70,33 @@ export function createDocumentIssuingApi(deps: IssuingDeps): DocumentIssuingApi 
     context.json<Document>({ operation: 'CreateDocument', body, signal: options?.signal })
   const targetOf = (prepared: PreparedDocument, options?: RequestOptions) =>
     resolveTarget(deps, 'invoice', prepared.blockId, prepared.partner, options)
+  const created = (document: Document, vendorId: string | undefined) =>
+    context.emitDocument({ action: 'created', operation: 'CreateDocument', document, vendorId })
   return {
     async create(input, options) {
       const prepared = prepareDocument(input, deps.defaults, 'CreateDocument')
-      return post({ ...prepared.body, ...(await targetOf(prepared, options)) }, options)
+      const document = await post(
+        { ...prepared.body, ...(await targetOf(prepared, options)) },
+        options,
+      )
+      await created(document, prepared.body.vendorId)
+      return document
     },
-    createRaw: (insert, options) =>
-      context.json<Document>({
+    async createRaw(insert, options) {
+      const document = await context.json<Document>({
         operation: 'CreateDocument',
         body: insert,
         signal: options?.signal,
-      }),
+      })
+      await created(document, insert.vendorId)
+      return document
+    },
     async createOnce(input, options = {}) {
       const prepared = prepareDocument(input, deps.defaults, 'CreateDocument', {
         vendorIdRequired: true,
       })
       const vendorId = input.vendorId.trim()
-      return issueOnce(
+      const result = await issueOnce(
         deps.guard,
         {
           vendorId,
@@ -97,16 +107,25 @@ export function createDocumentIssuingApi(deps: IssuingDeps): DocumentIssuingApi 
         },
         options,
       )
+      if (result.created) await created(result.document, vendorId)
+      return result
     },
     async finalizeDraft(id, input, options) {
       const prepared = prepareDocument(input, deps.defaults, 'CreateDocumentFromDraft')
       const target = await targetOf(prepared, options)
-      return context.json<Document>({
+      const document = await context.json<Document>({
         operation: 'CreateDocumentFromDraft',
         pathParams: { id },
         body: { ...prepared.body, ...target },
         signal: options?.signal,
       })
+      await context.emitDocument({
+        action: 'finalized',
+        operation: 'CreateDocumentFromDraft',
+        document,
+        vendorId: prepared.body.vendorId,
+      })
+      return document
     },
     deleteDraft: (id, options) =>
       context.empty({ operation: 'DeleteDocument', pathParams: { id }, signal: options?.signal }),

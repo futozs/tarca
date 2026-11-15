@@ -1,3 +1,4 @@
+import { documentTotals, negatedAmounts } from '../../core/money'
 import { isOneOf, PAYMENT_METHODS } from '../../documents/enums'
 import type { DocumentAncestor, DocumentType, OnlineSzamlaStatus } from '../../generated/billingo'
 import { fakeDocumentNumber, readItems, withDocument } from './documents'
@@ -16,7 +17,6 @@ import {
   ok,
   validationFailed,
 } from './http'
-import { documentTotals, negatedAmounts } from './money'
 import {
   type FakeBillingoState,
   type FakeDocument,

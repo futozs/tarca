@@ -3,7 +3,7 @@ import type {
   DocumentSummary,
   DocumentVatRateSummary,
   Vat,
-} from '../../generated/billingo'
+} from '../generated/billingo'
 
 export interface PricedLine {
   readonly unitPrice: number

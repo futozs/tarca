@@ -13,6 +13,9 @@
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
+  "bin": {
+    "tarca": "./dist/cli.js"
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@biomejs/biome": "^2.5.13",
@@ -44,6 +47,146 @@
       "require": {
         "types": "./dist/testing/index.d.cts",
         "default": "./dist/testing/index.cjs"
+      }
+    },
+    "./node": {
+      "import": {
+        "types": "./dist/node/index.d.ts",
+        "default": "./dist/node/index.js"
+      },
+      "require": {
+        "types": "./dist/node/index.d.cts",
+        "default": "./dist/node/index.cjs"
+      }
+    },
+    "./batch": {
+      "import": {
+        "types": "./dist/batch/index.d.ts",
+        "default": "./dist/batch/index.js"
+      },
+      "require": {
+        "types": "./dist/batch/index.d.cts",
+        "default": "./dist/batch/index.cjs"
+      }
+    },
+    "./observe": {
+      "import": {
+        "types": "./dist/observe/index.d.ts",
+        "default": "./dist/observe/index.js"
+      },
+      "require": {
+        "types": "./dist/observe/index.d.cts",
+        "default": "./dist/observe/index.cjs"
+      }
+    },
+    "./storage": {
+      "import": {
+        "types": "./dist/storage/index.d.ts",
+        "default": "./dist/storage/index.js"
+      },
+      "require": {
+        "types": "./dist/storage/index.d.cts",
+        "default": "./dist/storage/index.cjs"
+      }
+    },
+    "./storage/fs": {
+      "import": {
+        "types": "./dist/storage/fs.d.ts",
+        "default": "./dist/storage/fs.js"
+      },
+      "require": {
+        "types": "./dist/storage/fs.d.cts",
+        "default": "./dist/storage/fs.cjs"
+      }
+    },
+    "./stores": {
+      "import": {
+        "types": "./dist/stores/index.d.ts",
+        "default": "./dist/stores/index.js"
+      },
+      "require": {
+        "types": "./dist/stores/index.d.cts",
+        "default": "./dist/stores/index.cjs"
+      }
+    },
+    "./journal": {
+      "import": {
+        "types": "./dist/journal/index.d.ts",
+        "default": "./dist/journal/index.js"
+      },
+      "require": {
+        "types": "./dist/journal/index.d.cts",
+        "default": "./dist/journal/index.cjs"
+      }
+    },
+    "./mcp": {
+      "import": {
+        "types": "./dist/mcp/index.d.ts",
+        "default": "./dist/mcp/index.js"
+      },
+      "require": {
+        "types": "./dist/mcp/index.d.cts",
+        "default": "./dist/mcp/index.cjs"
+      }
+    },
+    "./payments": {
+      "import": {
+        "types": "./dist/payments/index.d.ts",
+        "default": "./dist/payments/index.js"
+      },
+      "require": {
+        "types": "./dist/payments/index.d.cts",
+        "default": "./dist/payments/index.cjs"
+      }
+    },
+    "./payments/stripe": {
+      "import": {
+        "types": "./dist/payments/stripe.d.ts",
+        "default": "./dist/payments/stripe.js"
+      },
+      "require": {
+        "types": "./dist/payments/stripe.d.cts",
+        "default": "./dist/payments/stripe.cjs"
+      }
+    },
+    "./payments/simplepay": {
+      "import": {
+        "types": "./dist/payments/simplepay.d.ts",
+        "default": "./dist/payments/simplepay.js"
+      },
+      "require": {
+        "types": "./dist/payments/simplepay.d.cts",
+        "default": "./dist/payments/simplepay.cjs"
+      }
+    },
+    "./payments/barion": {
+      "import": {
+        "types": "./dist/payments/barion.d.ts",
+        "default": "./dist/payments/barion.js"
+      },
+      "require": {
+        "types": "./dist/payments/barion.d.cts",
+        "default": "./dist/payments/barion.cjs"
+      }
+    },
+    "./payments/revolut": {
+      "import": {
+        "types": "./dist/payments/revolut.d.ts",
+        "default": "./dist/payments/revolut.js"
+      },
+      "require": {
+        "types": "./dist/payments/revolut.d.cts",
+        "default": "./dist/payments/revolut.cjs"
+      }
+    },
+    "./payments/paypal": {
+      "import": {
+        "types": "./dist/payments/paypal.d.ts",
+        "default": "./dist/payments/paypal.js"
+      },
+      "require": {
+        "types": "./dist/payments/paypal.d.cts",
+        "default": "./dist/payments/paypal.cjs"
       }
     },
     "./package.json": "./package.json"

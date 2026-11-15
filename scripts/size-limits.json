@@ -1,9 +1,45 @@
 {
   "gzipKb": {
-    "tarca": 22,
-    "tarca/testing": 48
+    "tarca": 27,
+    "tarca/testing": 53,
+    "tarca/node": 3,
+    "tarca/batch": 21,
+    "tarca/observe": 8,
+    "tarca/storage": 14,
+    "tarca/storage/fs": 7,
+    "tarca/stores": 8,
+    "tarca/journal": 10,
+    "tarca/mcp": 55,
+    "tarca/payments": 31,
+    "tarca/payments/stripe": 13,
+    "tarca/payments/simplepay": 14,
+    "tarca/payments/barion": 11,
+    "tarca/payments/revolut": 13,
+    "tarca/payments/paypal": 13
   },
   "forbidden": {
-    "tarca": ["dist/testing/"]
+    "tarca": [
+      "dist/testing/",
+      "dist/node/",
+      "dist/batch/",
+      "dist/observe/",
+      "dist/storage/",
+      "dist/stores/",
+      "dist/journal/",
+      "dist/mcp/",
+      "dist/cli.",
+      "dist/payments/"
+    ],
+    "tarca/node": ["dist/client"],
+    "tarca/observe": ["dist/client"],
+    "tarca/stores": ["dist/client"],
+    "tarca/storage": ["dist/client"],
+    "tarca/journal": ["dist/client"],
+    "tarca/payments": ["dist/client", "dist/testing/"],
+    "tarca/payments/stripe": ["dist/client", "dist/testing/"],
+    "tarca/payments/simplepay": ["dist/client", "dist/testing/"],
+    "tarca/payments/barion": ["dist/client", "dist/testing/"],
+    "tarca/payments/revolut": ["dist/client", "dist/testing/"],
+    "tarca/payments/paypal": ["dist/client", "dist/testing/"]
   }
 }

@@ -47,6 +47,8 @@ Webshopban vagy webhookból a `createOnce()` hívást használd, a rendelés azo
 
 - **Mind {{operationsArticle}} {{operations}} művelet.** Számla, díjbekérő, előleg- és végszámla, nyugta, sztornó, módosító számla, befizetés, PDF, partnerek, termékek, készlet, számlatömbök, költségek és export. Ebből {{undocumentedOperations}} művelet (a számlatömb lekérése, módosítása és törlése) egyik specben sem szerepel, ezeket élőben mértük ki.
 - **Nincs dupla számla.** Írást a tárca soha nem küld újra magától. A `createOnce()` kiállítás előtt megkeresi a bizonylatot a `vendorId` alapján, bizonytalan hiba után pedig visszakeresi.
+- **Fizetésből bizonylat.** Stripe, SimplePay, Barion, Revolut és PayPal webhookból pontosan egyszer nyugta vagy számla, visszatérítéskor sztornó vagy módosító számla.
+- **Parancssor és MCP szerver.** Az `npx tarca doctor` 3 olvasó kéréssel ellenőrzi a kulcsot, a profilt, a NAV-kapcsolatot és a számlatömböket. Az MCP szerver az AI asszisztensnek csak előnézet és megerősítő kód után enged számlát kiállítani.
 - **0 futásidejű függőség.** Natív `fetch`, se axios, se node-fetch. A legtöbbet letöltött `@codingsans/billingo-client` úgy tölti be az axiost és a form-datát, hogy nem deklarálja őket, ezért tiszta telepítés után importáláskor hibát dob.
 - **Bárhol fut.** Node 22+, Bun, Deno és Cloudflare Workers alatt, ESM és CommonJS buildként. A CI a lefordított csomagot mind a négy környezetben lefuttatja.
 - **Típusok a hivatalos specből, a valósághoz igazítva.** A 3.0.14-es és a 3.0.15-ös OpenAPI specből generálva, camelCase mezőnevekkel. Ahol a Billingo mást küld, mint amit a spec ír (`null` értékek, eltérő státuszkódok és tartalomtípusok, más mezőnév), ott a típus az élő mérést követi.
@@ -55,7 +57,7 @@ Webshopban vagy webhookból a `createOnce()` hívást használd, a rendelés azo
 - **Hamis Billingo a tesztekhez.** A `tarca/testing` memóriában futó Billingót ad, a valódi sorszámozással, kerekítéssel és hibaüzenetekkel, így a saját kódod tesztje sem hívja az éles API-t.
 
 <details>
-<summary><b>Részletes összehasonlítás</b> · 6 csomag, 11 szempont</summary>
+<summary><b>Részletes összehasonlítás</b> · 6 csomag, 13 szempont</summary>
 
 |  | **tarca** | @codingsans/ billingo-client | @clientapi/ billingo | billingo_api_v3 | billingo-v3 | node-billingo |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -69,6 +71,8 @@ Webshopban vagy webhookból a `createOnce()` hívást használd, a rendelés azo
 | 429, `Retry-After` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Tesztek | ✓ | ✗ | ✗ | ✗ (generált vázak) | ✗ | ✓ |
 | Több fiók egy folyamatban | ✓ | ✗ | ✓ | – | – | – |
+| Webhookból bizonylat (Stripe, SimplePay, Barion, Revolut, PayPal) | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Parancssor és MCP szerver | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Utolsó kiadás | még nincs kiadva | 2022. július | 2023. október | 2024. január | 2024. február | 2017. július |
 
 <sub>Az adatok a 2026. november 15-i állapotot mutatják, az npm registry és a publikált csomagok kódja alapján. A tárca {{operations}} művelete a 3.0.14-es és a 3.0.15-ös spec összes műveletét és a nem dokumentált, élőben működő {{undocumentedOperations}} műveletet jelenti. Az Edge sort a függőségekből töltöttük ki (axios 0.27, form-data, node-fetch, superagent, request, <code>fs</code>), nem futtattuk. A „–” azt jelenti, hogy nem ellenőriztük. A Billingo saját <code>@billingo/billingo-mcp</code> csomagja MCP szerver AI asszisztenseknek, nem importálható könyvtár, ezért nem szerepel a táblázatban. Az n8n- és Activepieces-bővítmények ugyanezért maradtak ki.</sub>
@@ -79,12 +83,15 @@ A tárca független, nyílt forráskódú projekt: nem a Billingo fejleszti, és
 
 ## Tartalom
 
-| Kezdés | Bizonylatok | Törzsadatok | Megbízhatóság |
+| Kezdés | Bizonylatok | Törzsadatok | Megbízhatóság és kiegészítők |
 | --- | --- | --- | --- |
 | [Beállítás](#beállítás) | [Számlák](#számlák) | [Partnerek](#partnerek) | [Hibakezelés](#hibakezelés) |
 | [Típusok](#típusok) | [Nyugták](#nyugták) | [Termékek és készlet](#termékek-és-készlet) | [Tesztelés](#tesztelés) |
-| [Futtatókörnyezetek](#futtatókörnyezetek) | [Befizetések](#befizetések) | [Számlatömbök és bankszámlák](#számlatömbök-és-bankszámlák) | [Haladó beállítások](#haladó-beállítások) |
-| [AI-val kódolsz?](#ai-val-kódolsz) | [PDF, e-mail, NAV](#pdf-e-mail-nav) | [Költségek és export](#költségek-és-export) | [Szervezet és segédvégpontok](#szervezet-és-segédvégpontok) |
+| [Futtatókörnyezetek](#futtatókörnyezetek) | [Befizetések](#befizetések) | [Számlatömbök és bankszámlák](#számlatömbök-és-bankszámlák) | [Bizonylatnapló](#bizonylatnapló) |
+| [Serverless és edge](#serverless-és-edge) | [PDF, e-mail, NAV](#pdf-e-mail-nav) | [Költségek és export](#költségek-és-export) | [PDF mentése tárhelyre](#pdf-mentése-tárhelyre) |
+| [Node.js és Express](#nodejs-és-express) | [Fizetésből bizonylat](#fizetésből-bizonylat) | [Szervezet és segédvégpontok](#szervezet-és-segédvégpontok) | [Megfigyelhetőség](#megfigyelhetőség) |
+| [Haladó beállítások](#haladó-beállítások) | [Tömeges és ismétlődő számlázás](#tömeges-és-ismétlődő-számlázás) | | [Parancssor és MCP szerver](#parancssor-és-mcp-szerver) |
+| [AI-val kódolsz?](#ai-val-kódolsz) | | | |
 
 ## Beállítás
 
@@ -719,6 +726,239 @@ Csak a `not_found` hibát alakítja `null` értékké, minden más hibát továb
 
 > **Írást a tárca soha nem küld újra magától.** Újrapróbálás csak a lekérdezéseknél (GET) történik: 429-es válasz, szerverhiba, időtúllépés vagy hálózati hiba után, a `Retry-After` fejlécet betartva. Alapból egy lekérdezés összesen legfeljebb háromszor megy ki (az első kérés és két ismétlés). Ha a Billingo egy percnél hosszabb várakozást kér, a tárca nem vár, hanem `rate_limit` hibát ad.
 
+## Fizetésből bizonylat
+
+Stripe, SimplePay, Barion, Revolut vagy PayPal fizetésből nyugta vagy számla, a szolgáltató SDK-ja nélkül. A webhookkezelő ellenőrzi az aláírást, az `issueForPayment()` eldönti, hogy nyugta vagy számla jár, és pontosan egyszer kiállítja a Billingóban.
+
+<details>
+<summary><b>Stripe webhook</b> · <code>stripeWebhook()</code>, <code>issueForPayment()</code></summary>
+
+```ts
+import { issueForPayment } from 'tarca/payments'
+import { stripeWebhook } from 'tarca/payments/stripe'
+
+export const POST = stripeWebhook({
+  secret: process.env.STRIPE_WEBHOOK_SECRET!,
+  apiKey: process.env.STRIPE_SECRET_KEY,
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+- A bizonylat `vendorId`-ja a fizetés azonosítója (`STRIPE-pi_…`), ezért az újraküldött esemény, és az is, amelyet a Stripe ugyanarról a fizetésről másik eseményként küld, a meglévő bizonylatot adja vissza. A `dedupe: store` opcióval a már feldolgozott eseményt a Billingo hívása nélkül nyugtázza.
+- Az `apiKey` mellett a tárca lekéri a Checkout tételeit és a szállítási díjat; nélküle egy tétel lesz a fizetett összegre.
+- Hibás aláírásra 400 a válasz, és az `onPayment` nem fut. Ha az `onPayment` dob, 500, és a Stripe később újraküldi. A titok tömb is lehet, kulcscseréhez. A fejléc nem aláírt hibakereső bejegyzéseit (`secret`, `destination`, `payload`) a tárca figyelmen kívül hagyja.
+
+</details>
+
+<details>
+<summary><b>Nyugta vagy számla</b> · <code>chooseDocument()</code>, <code>partnerFromCustomer()</code></summary>
+
+```ts
+const eredmeny = await issueForPayment(tarca, payment, {
+  vatFor: (tetel) => (tetel.sku?.startsWith('KONYV') ? 5 : 27),
+  invoiceRequested: rendeles.szamlatKer,
+})
+
+eredmeny.kind
+```
+
+- Számla jár, ha a vevő adószámot adott meg, ha az összeg eléri a 900 000 Ft-ot, vagy ha a vevő számlát kér; egyébként nyugta. Pénztárgép-köteles tevékenységnél (`cashRegisterRequired`) validációs hibát kapsz. A `document: 'invoice'` vagy `'receipt'` felülírja a döntést.
+- Számlánál a vevőből partner lesz: magyar adószámmal `HAS_TAX_NUMBER`, EU-s vagy külföldi adószámmal `FOREIGN`, magánszemélyként `NO_TAX_NUMBER`, mert a NAV-nak ebből derül ki, hogy magánszemély a vevő. Saját partnert a `partner` opcióval adhatsz meg.
+- A számlát a tárca fizetettnek jelöli (`documents.payments.replace`, a Billingo által számolt bruttóval), így újrafuttatva is ugyanaz az állapot. A nyugta eleve fizetett.
+- Áfát a tárca nem talál ki: `vat`, `vatFor` vagy tételenkénti áfakulcs nélkül validációs hibát ad, kérés nélkül. A tételek bruttó összegének fillérre egyeznie kell a fizetett összeggel; az eltérés validációs hiba, hacsak nem adod meg az `allowAmountMismatch: true` opciót.
+- Devizás fizetésnél az árfolyam a `conversionRate` opcióból jön, vagy a Billingo árfolyama a teljesítés napjára (`eredmeny.conversion`).
+
+</details>
+
+<details>
+<summary><b>Visszatérítés</b> · sztornó, módosító számla, <code>createModificationOnce()</code></summary>
+
+```ts
+import { Redis } from '@upstash/redis'
+import { upstashRedisStore } from 'tarca/stores'
+
+const ledger = upstashRedisStore(Redis.fromEnv())
+
+await issueForPayment(tarca, payment, { vat: 27, ledger })
+```
+
+- Teljes visszatérítéskor a tárca egyszer sztornózza a bizonylatot. Azt, hogy a sztornó megtörtént-e, a bizonylat `cancelled` jelzője dönti el, bizonytalan hiba után is; második sztornót nem küld.
+- Részleges visszatérítéskor számlánál visszatérítésenként egy módosító számla készül, áfakulcsonként egy negatív sorral, a visszatérített összeget tételenként pontosan szétosztva. A Billingo módosító számlájának nincs `vendorId`-ja, és a bizonylatlista 15–30 másodpercet késik, ezért ehhez `setIfAbsent`-et ismerő tároló kell (`ledger`). Nélküle a tárca javaslatot ad (`refund-proposal`), bizonylatot nem állít ki.
+- Több áfakulcsnál alapból javaslat jön, a `refundItems` vagy a `partialRefund: 'proportional'` dönt. Nyugtánál mindig javaslat jön, mert nyugtához a Billingo nem ad módosító bizonylatot.
+- Módosított számlát a Billingo nem sztornóz (400), ezért a teljes visszatérítés ilyenkor a maradékra ad módosító számlát.
+
+</details>
+
+<details>
+<summary><b>SimplePay, Barion, Revolut, PayPal</b> · <code>simplePayWebhook()</code>, <code>barionWebhook()</code>, <code>revolutWebhook()</code>, <code>payPalWebhook()</code></summary>
+
+```ts
+import { simplePayWebhook } from 'tarca/payments/simplepay'
+
+export const POST = simplePayWebhook({
+  merchants: {
+    HUFKERESKEDO: process.env.SIMPLEPAY_SECRET_HUF!,
+    SZEPKERESKEDO: { secretKey: process.env.SIMPLEPAY_SECRET_SZEP!, method: 'szep_card' },
+  },
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+- SimplePay: HMAC-SHA384 aláírás, kereskedőnként saját kulccsal, a válasz az aláírt, `receiveDate`-tel kiegészített IPN. Az összeget és a visszatérítéseket a tárca a tranzakció lekérdezéséből veszi.
+- Barion: a callback csak a `paymentId`-t hozza, aláírás nélkül, ezért a tárca a `PaymentState` végpontból (`posKey`) olvassa ki a valódi állapotot.
+- Revolut: `Revolut-Signature` és ezredmásodperces időbélyeg, 5 perces ablakkal; a rendelést a titkos API-kulccsal kéri le.
+- PayPal: az aláírást a PayPal `verify-webhook-signature` végpontja ellenőrzi (`webhookId`, `clientId`, `clientSecret`).
+- Mind ugyanazt a `PaymentEvent` alakot adja. Az összeg `{ value, minor, currency }`, ahol a `minor` egész szám a pénznem váltóegységében, így minden összevetés kerekítés nélkül megy. A fizetési mód a Billingo kódja (`stripe`, `simple_pay`, `barion`, `revolut`, `paypal`, átutalásnál `wire_transfer`), a `method` opció felülírja.
+
+</details>
+
+## Bizonylatnapló
+
+A Billingo maga jelenti a bizonylatokat a NAV-nak, ezért a `tarca/journal` nem NAV-összesítő, hanem saját nyilvántartás: minden kiállított, sztornózott és módosított bizonylat egy bejegyzés, amelyet a tárca soha nem ír felül. Az egyeztetés megmutatja, ha a napló és a Billingo eltér.
+
+<details>
+<summary><b>Napló a hookból</b> · <code>createJournal()</code>, <code>kvJournal()</code>, <code>onDocument</code></summary>
+
+```ts
+import { Redis } from '@upstash/redis'
+import { createJournal, kvJournal } from 'tarca/journal'
+import { upstashRedisStore } from 'tarca/stores'
+
+const naplo = createJournal(kvJournal(upstashRedisStore(Redis.fromEnv())))
+const tarca = createTarca({
+  hooks: { onDocument: (esemeny) => naplo.record(esemeny), onDocumentError: 'throw' },
+})
+
+const bejegyzesek = await naplo.entries({ from: '2026-10-01', to: '2026-10-31' })
+```
+
+- Az `onDocument` hook minden új bizonylatnál lefut: kiállítás (`create`, `createRaw`, `createOnce`, nyugta is), piszkozat véglegesítése, díjbekérőből számla, másolat, sztornó és módosító számla. A befizetés nem bizonylat, arra nem fut. A `createOnce` csak akkor szól, ha új bizonylat készült.
+- A tárca kivárja a hookot. Alapból (`'warn'`) a hook hibája az `onWarning`-hoz megy, vagy ha az nincs, a konzolra. `'throw'` esetén a hívó `DocumentHookError`-t kap: a bizonylat ilyenkor is elkészült, az `error.document` és az `error.event` alapján pótold a naplót, de ne állítsd ki újra.
+- A bejegyzés: Billingo-azonosító, `vendorId`, sorszám, típus, esemény, kiállítási dátum, kapcsolódó bizonylatok, nettó és bruttó végösszeg, pénznem, fizetési állapot, a rögzítés budapesti ideje és forrása. Vevői adat (név, cím, e-mail) nincs benne.
+- A piszkozat nem kerül a naplóba, a díjbekérő igen. Ugyanaz a bizonylat kétszer sem kerül bele.
+- A `kvJournal` olyan tárolót kér, amely atomikusan tud számlálót növelni (Redis, Upstash, Durable Object). A bejegyzés alapból 400 napig marad meg. Saját adatbázishoz a `JournalStorage` felületet kell megírni.
+
+</details>
+
+<details>
+<summary><b>Leállás utáni pótlás</b> · <code>track()</code>, <code>settle()</code></summary>
+
+```ts
+const { document } = await naplo.track(`RENDELES-${rendeles.id}`, () =>
+  tarca.documents.createOnce({ ...szamla, vendorId: `RENDELES-${rendeles.id}` }),
+)
+
+const potlas = await naplo.settle(tarca)
+```
+
+- A `track()` a kiállítás előtt befejezetlen tételt rögzít a `vendorId`-ra, siker után bejegyzést ír. Ha a folyamat közben leáll, vagy a kimenet bizonytalan (hálózati hiba, időtúllépés, foglalt zár), a tétel befejezetlen marad, és a `settle()` később a `vendorId` alapján visszakeresi.
+- Biztos Billingo-hibánál (például 402 vagy validáció) a tétel nem marad befejezetlen. Más hívás foglalását a `track()` soha nem törli.
+- Ha a bizonylat elkészült, de a napló írása bukik, `JournalWriteError` jön a kiállítás eredményével (`error.result`). Ne állítsd ki újra: a `settle()` pótolja.
+
+</details>
+
+<details>
+<summary><b>Egyeztetés a Billingóval</b> · <code>reconcile()</code></summary>
+
+```ts
+const eredmeny = await naplo.reconcile(tarca, { from: '2026-10-01', to: '2026-10-31' })
+
+eredmeny.added
+eredmeny.missing
+eredmeny.mismatched
+eredmeny.changed
+```
+
+- `added`: a Billingóban megvan, a naplóban nem. A tárca felveszi (`dryRun: true` esetén csak jelzi).
+- `missing`: a naplóban megvan, a Billingo listájában nem. Kiállított bizonylat nem törölhető, ezért ez rossz API kulcsra vagy másik profilra utal. A Billingo listája 15–30 másodpercet késik, ezért az ennél frissebb bejegyzés nem számít hiányzónak (`graceSeconds`, alapból 120).
+- `mismatched`: eltér a sorszám, a típus, a bruttó végösszeg vagy a pénznem. `changed`: azóta kifizették vagy sztornózták; a bejegyzést a tárca ilyenkor sem írja át.
+- Egyszerre legfeljebb 366 napot kérdez le, 100-as lapokban.
+
+</details>
+
+## PDF mentése tárhelyre
+
+A kiállított bizonylat PDF-je egy hívással a saját tárhelyedre kerül. S3, Cloudflare R2, MinIO vagy Backblaze esetén nem kell az AWS SDK: a tárca maga írja alá a kérést.
+
+<details>
+<summary><b>S3 és Cloudflare R2</b> · <code>s3FetchStorage()</code>, <code>storeDocumentPdf()</code></summary>
+
+```ts
+import { s3FetchStorage, storeDocumentPdf } from 'tarca/storage'
+
+const tarhely = s3FetchStorage({
+  bucket: 'szamlak',
+  region: 'auto',
+  endpoint: 'https://<account-id>.r2.cloudflarestorage.com',
+  accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+})
+
+const { document } = await tarca.documents.createOnce(input)
+const fajl = await storeDocumentPdf(tarca, tarhely, document)
+
+fajl.key
+```
+
+- A kulcs a bizonylat típusából, kiállítási dátumából és sorszámából áll, például `szamlak/2026/09/TARCA-2026-000012.pdf`. Díjbekérő: `szamlak/dijbekero/…`, előlegszámla: `szamlak/elolegszamla/…`, módosító: `szamlak/modosito/…`, sztornó: `szamlak/sztorno/…`, nyugta: `nyugtak/2026/09/…`, nyugta sztornó: `nyugtak/sztorno/…`. Saját kulcs: `{ key }`, előtag: `documentPdfKey(document, { prefix: 'ceg-1' })`.
+- Piszkozatnak nincs sorszáma, ezért a tárca nem ment belőle PDF-et (`StorageError`). A sorszám ékezetei és perjelei kulcsbiztos karakterekre cserélődnek, így a kulcs nem mutathat a mappán kívülre.
+- A friss bizonylat PDF-je pár másodpercig még készül (202). A `storeDocumentPdf()` ezt kivárja, alapból legfeljebb 30 másodpercig (`maxWaitMs`). Webhookban érdemes a választ előbb elküldeni, és a mentést utána futtatni.
+- Ha csak az azonosító van meg, add át azt: `storeDocumentPdf(tarca, tarhely, 123)`. Ilyenkor a kulcshoz előbb lekéri a bizonylatot.
+- A tárhely hibája `StorageError` (`operation`, `key`, `status`). A tárca csak `%PDF` fejlécű tartalmat ment.
+
+</details>
+
+<details>
+<summary><b>Fájlrendszer (Node)</b> · <code>fsStorage()</code></summary>
+
+```ts
+import { fsStorage } from 'tarca/storage/fs'
+
+const tarhely = fsStorage({ directory: './szamlak' })
+```
+
+Atomikusan ír (ideiglenes fájl, majd átnevezés), és nem ír, olvas vagy töröl a megadott mappán kívül, szimbolikus linken át sem.
+
+</details>
+
+További adapterek: `s3Storage` (saját AWS SDK kliens), `r2BindingStorage` (Workers binding), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage`, `memoryStorage`. A `storePdf(tarhely, kulcs, bajtok)` bármilyen PDF-et elment, a `documents.pdf()` eredményét is.
+
+## Serverless és edge
+
+Több szerver vagy serverless példány között a `createOnce` zárja, a napló és a webhookok kettőzés elleni védelme közös tárolót kér. A `tarca/stores` adapterei a kassza tárolóival azonos felületet adnak.
+
+<details>
+<summary><b>Upstash és Vercel</b> · <code>upstashRedisStore()</code></summary>
+
+```ts
+import { Redis } from '@upstash/redis'
+import { upstashRedisStore } from 'tarca/stores'
+
+const tarca = createTarca({ createOnceLock: upstashRedisStore(Redis.fromEnv()) })
+```
+
+- A Vercel KV megszűnt: a tárolókat 2024 decemberében az Upstash Redisbe költöztették, a `@vercel/kv` csomag elavult. A Vercel Marketplace Redis az `upstashRedisStore()`-ral működik.
+- A zárhoz, a számlálóhoz és a feltételes törléshez Lua szkriptet futtat (`eval`), így a művelet atomikus.
+- A tároló hibáját a tárca továbbadja, a `createOnce` ilyenkor nem állít ki (`store_unavailable`). A `timeoutMs` a lassú tárolót adja fel, az `onError` minden hibát megkap; `resilient: true` mellett az olvasás, az írás és a törlés hibáját elnyeli.
+
+</details>
+
+<details>
+<summary><b>Cloudflare Workers</b> · <code>durableObjectStore()</code>, <code>cloudflareKvStore()</code></summary>
+
+```ts
+import { durableObjectStore } from 'tarca/stores'
+
+const tarolo = durableObjectStore(env.TARCA_STORE.get(env.TARCA_STORE.idFromName('tarca')))
+const tarca = createTarca({ apiKey: env.BILLINGO_API_KEY, createOnceLock: tarolo })
+```
+
+A Durable Object oldalán a `handleDurableObjectStoreRequest(this.ctx.storage, request)` válaszol. A Cloudflare KV nem tud atomikusan írni, és a legrövidebb lejárata 60 másodperc: a webhookok kettőzés elleni védelmére jó, a zárhoz, a naplóhoz és a visszatérítési főkönyvhöz nem.
+
+</details>
+
+Van még `ioredisStore`, `nodeRedisStore`, `customStore` és `memoryStore` is. A `diagnoseStore(tarolo)` egy ideiglenes kulccsal kipróbálja a tárolót, utána eltakarít, és megmondja, mire alkalmas: `createOnceLock`, `journal`, `webhookDedupe`, `refundLedger`.
+
 ## Tesztelés
 
 A `tarca/testing` egy memóriában futó Billingót ad. Mind {{operationsArticle}} {{operations}} műveletet ismeri, a valódi kliens fut fölötte, így a saját kódod tesztje ugyanazt a validációt, sorszámozást és kerekítést látja, mint élesben, csak kérés nem megy ki.
@@ -806,6 +1046,138 @@ await tarca.organization.get({ signal: AbortSignal.timeout(5_000) })
 
 </details>
 
+## Megfigyelhetőség
+
+A tárca nem küld haza semmit. A saját rendszeredben a `tarca/observe` ad strukturált naplót, OpenTelemetry-kompatibilis spanokat és Prometheus metrikákat, függőség nélkül. Az API kulcs, a vevő adatai és a hibaüzenetek szövege nem kerülnek bele.
+
+<details>
+<summary><b>Napló, tracing, metrikák</b> · <code>observe()</code>, <code>createMetricsRegistry()</code></summary>
+
+```ts
+import { trace } from '@opentelemetry/api'
+import { createTarca } from 'tarca'
+import { combineHooks, createMetricsRegistry, observe } from 'tarca/observe'
+
+const metrics = createMetricsRegistry()
+const tarca = createTarca({
+  hooks: combineHooks(
+    observe({ logger: console, tracer: trace.getTracer('tarca'), metrics }),
+    sajatHookok,
+  ),
+})
+
+app.get('/metrics', (_keres, valasz) => valasz.type('text/plain').send(metrics.renderPrometheus()))
+```
+
+- Próbálkozásonként egy `billingo <művelet>` span, például `billingo CreateDocument`: `billingo.operation`, `http.request.method`, `url.template` (például `/documents/vendor/{vendor_id}`, érték nélkül), `billingo.attempt`, `http.response.status_code`, hibánál `billingo.error.category` és `billingo.trace_id`. Megszakított kérésnél is lezárul.
+- Metrikák: `tarca_requests_total{operation,outcome}`, `tarca_request_duration_ms` (hisztogram), `tarca_retries_total`, `tarca_rate_limited_total`, `tarca_unexpected_response_total`, `tarca_lock_errors_total` (a `createOnce` zártárolójának hibái), `tarca_warnings_total{hook}` és `tarca_documents_total{type,action}`. A `metrics` opció bármilyen `{ counter, histogram }` objektumot elfogad, így saját Prometheus-kliens is beköthető.
+- A `redact` alapból be van kapcsolva. Hibánál csak a kategória, a HTTP-státusz, a `traceId`, az ismételhetőség és a hibás mezők neve kerül a naplóba, az üzenet nem, mert a tárca validációs üzenetei idézik a kapott értéket (nevet, e-mail címet). A `vendorId` sóval képzett `hmac:` hivatkozásként jelenik meg; azonos `refSalt` mellett több folyamat naplója is összevethető. `redact: false` mellett minden nyíltan látszik.
+- Ha a tracer, a logger vagy a metrika hibát dob, a kérés ettől nem bukik el.
+- A `combineHooks()` minden hookot láncol. Az `onDocument` kezelőket egymás után kivárja, és ha valamelyik hibát dob, a többi ettől még lefut, a hiba a végén jön.
+
+</details>
+
+## Tömeges és ismétlődő számlázás
+
+Havidíj, tagdíj, bérleti díj: a `tarca/batch` minden tételt `createOnce`-szal állít ki, a kulcsot használva `vendorId`-ként, tartja a Billingo percenkénti keretét, és a végén pénznemenként összesít. Egy megszakadt futás újraindítva nem állít ki duplát.
+
+<details>
+<summary><b>Havi számlázás</b> · <code>runBatch()</code>, <code>billingPeriodAt()</code></summary>
+
+```ts
+import { billingPeriodAt, runBatch } from 'tarca/batch'
+
+const idoszak = billingPeriodAt({ interval: 'month', anchor: '2026-01-31' }, new Date())
+
+const eredmeny = await runBatch(tarca, {
+  items: elofizetesek.map((elofizetes) => ({
+    key: `SUB-${elofizetes.id}-${idoszak.start}`,
+    document: () => ({ kind: 'invoice', input: szamlaElofizetesbol(elofizetes, idoszak) }),
+  })),
+})
+
+eredmeny.created
+eredmeny.existing
+eredmeny.grossTotals
+eredmeny.stopped?.reason
+```
+
+- A `key` lesz a bizonylat `vendorId`-ja, a tétel `documents.createOnce` vagy `receipts.createOnce` hívással megy ki (`kind: 'invoice'` vagy `'receipt'`). Újrafuttatáskor a már kiállított tétel `existing` lesz. Ha a bemenet saját `vendorId`-ja eltér a kulcstól, a tétel hibás; két azonos vagy üres kulcsnál a batch el sem indul.
+- A Billingo kulcsonként percenként 300 kérést enged, a lekérdezéseket is beleszámítva, és ezen a webhookok is osztoznak. Egy tétel 2–6 kérés (vendorId-keresés, partnerkeresés, új partner, a bizonylat), ezért alapból percenként 30 tétel indul (`ratePerMinute`, legfeljebb 60), egyszerre egy (`concurrency`, legfeljebb 4).
+- Megáll, és a hátralévő tételeket `skipped` állapottal adja vissza 429-nél, hibás vagy csak olvasásra jogosult kulcsnál, 402-nél (hiányzik az „API + Tömeges” kiegészítő, vagy elfogyott a havi írási keret), hibás beállításnál és elérhetetlen zártárolónál. Írást nem ismétel: később futtasd újra ugyanazokkal a kulcsokkal.
+- Ha ugyanaz az új vevő több tételben szerepel, a partnert egyszer hozza létre. A Billingo partnerkeresése 20–60 másodpercig nem látja az új partnert, ezért a batch a futás alatt megjegyzi a már feloldott partnert.
+- Egy tétel hibája (például validáció) csak azt a tételt bukja. Ha egy másik folyamat éppen ugyanazt a kulcsot állítja ki (`in_progress`), a tétel `skipped` lesz.
+- Ha a bizonylat elkészült, de utána az `onDocument` hook (`onDocumentError: 'throw'`) vagy a napló írása hibát dobott, a tétel `created` (vagy `existing`) marad, beszámít a `grossTotals`-ba, a hiba pedig az `error` mezőben van. Ilyenkor ne állítsd ki újra: a bizonylat létezik.
+- `grossTotals`: a Billingo által számolt bruttó végösszegek pénznemenként, például `{ HUF: 381000, EUR: 249.95 }`.
+- `signal`: megszakításkor új tétel nem indul, a már futó befejeződik. `onProgress`: minden tétel után hívódik. `once`: a `createOnce` zárbeállításai. `journal`: minden kiállítás a napló `track(vendorId, run)` metódusán át fut.
+
+</details>
+
+<details>
+<summary><b>Próbafuttatás</b> · <code>dryRun: true</code></summary>
+
+```ts
+const defaults = { blockId: 1234, dueInDays: 8 }
+const tarca = createTarca({ defaults })
+
+const proba = await runBatch(tarca, { items, dryRun: true, defaults })
+
+proba.validated
+proba.existing
+proba.failed
+proba.grossTotals
+```
+
+- A Billingónak nincs előnézeti végpontja. A próbafuttatás ezért helyben ellenőriz, ugyanazzal a validációval, mint a `createOnce`, tételenként egy GET-tel megnézi, létezik-e már a `vendorId`, és a Billingo kerekítésével becsli a végösszeget.
+- Semmit nem ír, piszkozatot sem, mert az is írás, és a havi keretbe számít.
+- A `defaults` ugyanaz legyen, mint a `createTarca()`-é: ebből tudja a próbafuttatás az alapértelmezett pénznemet, határidőt és fizetési módot.
+- Termékre hivatkozó tételnél, kedvezménynél és előlegszámla levonásánál a `grossTotal` `undefined`, mert ezt csak a Billingo tudja kiszámolni.
+
+</details>
+
+<details>
+<summary><b>Számlázási időszakok</b> · <code>billingPeriod()</code>, <code>billingPeriodsBetween()</code>, <code>todayPeriod()</code></summary>
+
+```ts
+import { billingPeriod, billingPeriodsBetween, todayPeriod } from 'tarca/batch'
+
+const havi = { interval: 'month', anchor: '2026-01-31', paymentDueInDays: 8 } as const
+
+billingPeriod(havi, 1)
+billingPeriodsBetween(havi, '2026-02-01', '2026-05-01')
+todayPeriod(havi)
+```
+
+- `billingPeriod(havi, 1)` eredménye `{ index: 1, interval: 'month', start: '2026-02-28', end: '2026-03-30', dueDate: '2026-03-08', key: 'month:2026-02-28' }`. A hónap végi kezdőnap nem csúszik el (márciusban újra 31.), szökőévben február 29. lesz.
+- Időszak: `week`, `month`, `quarter` vagy `year`. Minden dátum budapesti naptári nap (`YYYY-MM-DD`), a `Date` bemenet is.
+- A Billingo saját ismétlődő számláit (`recurringId`) az API v3 nem kezeli, ezért ez kliensoldali ütemezés: a futtatást a saját cronod indítja.
+
+</details>
+
+## Node.js és Express
+
+A tárca webhook- és MCP-kezelői Web-szabványos `(Request) => Response` függvények. Express, NestJS, Fastify és a sima `node:http` alá a `tarca/node` köti be őket. A nyers törzs bájtra pontosan megmarad, így az aláírás is ellenőrizhető.
+
+<details>
+<summary><b>Express</b> · <code>toNodeHandler()</code></summary>
+
+```ts
+import express from 'express'
+import { toNodeHandler } from 'tarca/node'
+import { stripeWebhook } from 'tarca/payments/stripe'
+
+const app = express()
+app.post('/webhooks/stripe', toNodeHandler(stripeWebhook({ secret, onPayment })))
+app.use(express.json())
+```
+
+- A webhook útvonala az `express.json()` elé kerüljön. Ha egy middleware már feldolgozta a törzset, a tárca `NodeBodyError`-t ad (Expressben a `next(error)`-ral), mert a feldolgozott törzsön az aláírás nem ellenőrizhető. Az `express.raw({ type: '*/*' })` Bufferét és a NestJS `rawBody: true` beállítását felismeri.
+- A `trustProxy: true` beállítással az `X-Forwarded-Proto` és az `X-Forwarded-Host` adja az URL-t. Alapból nem veszi figyelembe őket, mert a kliens bármit küldhet bennük.
+- A kezelő hibájára 500-at ad, a hibát az `onError` kapja meg; Expressben a `next()`-hez megy. `onError` nélkül a konzolra csak a hiba neve kerül (tárca-hibánál a kategóriája, a HTTP-státusza és a művelete is), az üzenete nem, mert az idézhet e-mail címet vagy `vendorId`-t.
+- A `toWebRequest()` és a `writeWebResponse()` külön is elérhető más keretrendszerhez.
+
+</details>
+
 ## Típusok
 
 A Billingo minden sémája TypeScript típusként is elérhető, a hivatalos OpenAPI specifikációból (3.0.14 és 3.0.15) generálva.
@@ -849,6 +1221,77 @@ Workers alatt nincs `process.env`, ezért a kulcsot az `apiKey` opcióval add á
 
 </details>
 
+## Parancssor és MCP szerver
+
+<details>
+<summary><b>Parancssor</b> · <code>npx tarca doctor</code>, <code>verify</code>, <code>document get</code></summary>
+
+```bash
+npx tarca doctor --tax-code 12345678-2-42 --defaults tarca.json
+npx tarca verify
+npx tarca document get --vendor ORDER-1001
+```
+
+A `doctor` három olvasó kéréssel ellenőrzi a Node.js-t, az időzónát, az API kulcsot (csak a hosszát írja ki), a gép óráját, azt, hogy teszt vagy éles profilon vagy, a NAV-kapcsolatot, az előfizetést, a számlatömböket és a bankszámlákat. A `--tax-code` adószámot összeveti, de nem írja ki, a `--defaults` a `TarcaDefaults` azonosítóit keresi meg a fiókban, a `--report` titokmentes Markdown jelentést ad hibajegyhez. Azt, hogy a kulcs csak olvasásra szól-e, vagy hogy az éles profilon megvan-e az „API + Tömeges” kiegészítő, olvasással nem lehet bizonyítani: a doctor ezt kimondja, nem találgat.
+
+A `document get` a bizonylatot JSON-ban írja ki azonosító vagy `--vendor` alapján. A `--help` bármelyik parancs után a súgót adja, kulcs és kérés nélkül. Kilépési kódok: 0 siker, 1 hiba, 2 használati hiba.
+
+</details>
+
+<details>
+<summary><b>MCP szerver</b> · <code>npx tarca mcp</code></summary>
+
+```json
+{
+  "mcpServers": {
+    "tarca": {
+      "command": "npx",
+      "args": ["-y", "tarca", "mcp"],
+      "env": { "BILLINGO_API_KEY": "..." }
+    }
+  }
+}
+```
+
+Claude, Cursor és más MCP kliensek számára, 21 eszközzel. Alapból csak olvas: profil, bizonylatok, partnerek, termékek, költségek, adószám, árfolyam, és öt előnézet. Az `--allow-write` kapcsolóval (vagy `TARCA_MCP_ALLOW_WRITE=1`) számlát és nyugtát állíthat ki, sztornózhat, befizetést rögzíthet és e-mailt küldhet, de minden íráshoz kell az előnézeti eszköz megerősítő kódja, pontosan ugyanarra a bemenetre, 15 percig és csak az előnézet napján. A kiállítás `createOnce`-szal megy, így egy ismételt hívás nem állít ki második számlát, a sztornó pedig előtte és bizonytalan hiba után is újraolvassa a bizonylatot.
+
+Próbához fejlesztői teszt profilt használj: éles profilon a kiállított számlát a Billingo jelenti a NAV-nak, és csak sztornózni lehet.
+
+</details>
+
+<details>
+<summary><b>MCP edge-en</b> · <code>createTarcaMcpHandler()</code> Cloudflare Workershez, Vercel Edge-hez</summary>
+
+```ts
+import { createTarcaMcpHandler, createTarcaMcpServer, type TarcaMcpHandler } from 'tarca/mcp'
+
+interface Env {
+  BILLINGO_API_KEY: string
+  MCP_SECRET: string
+  MCP_TOKEN: string
+}
+
+let handler: TarcaMcpHandler | undefined
+
+export default {
+  fetch(request: Request, env: Env) {
+    handler ??= createTarcaMcpHandler(
+      createTarcaMcpServer({ apiKey: env.BILLINGO_API_KEY, confirmationSecret: env.MCP_SECRET }),
+      {
+        authorize: (incoming) =>
+          Boolean(env.MCP_TOKEN) &&
+          incoming.headers.get('authorization') === `Bearer ${env.MCP_TOKEN}`,
+      },
+    )
+    return handler(request)
+  },
+}
+```
+
+Csak POST JSON-RPC kérést fogad, legfeljebb 1 MiB-os törzzsel, az `Origin` fejlécet az `allowedOrigins` listával veti össze. Az `authorize` kötelező, mert a szerveroldali Billingo kulccsal névtelen végponton bárki számlát állíthatna ki, és a `confirmationSecret` is, mert a megerősítő kódot egy másik példány is ellenőrzi. A titok legalább 16 bájt legyen (például `openssl rand -hex 32`). A `Boolean(env.MCP_TOKEN)` nélkül egy beállítatlan tokennél a `Bearer undefined` fejléc is átmenne. A szervert ne kérésenként hozd létre: a `send_document` a példány memóriájában jegyzi meg a felhasznált kódot, így kérésenkénti példánnyal ugyanaz a kód kétszer is küldhetne.
+
+</details>
+
 ## AI-val kódolsz?
 
 A csomagban van egy `agents/` mappa. Ebből a Claude Code, a Cursor, a Copilot és a többi asszisztens megtudja, hogyan kell jól használni a tárcát, és mik a buktatók. Szólj rá az AI-ra:
@@ -859,12 +1302,11 @@ Claude Code-hoz kész skill is van: másold a `node_modules/tarca/agents/skills/
 
 ## Tervben
 
-A Billingo API v3 minden művelete kész. Ami még hátravan:
+A Billingo API v3 minden művelete és a kassza összes Billingóra értelmezhető kiegészítője kész. Ami még hátravan:
 
-- **Parancssor és MCP szerver:** `npx tarca doctor` a kulcs, a profil és a számlatömbök ellenőrzésére, és MCP szerver AI asszisztenseknek, írás csak megerősítéssel.
 - **Dokumentáció és weboldal:** részletes leírás minden művelethez, receptek és sandbox a hamis Billingóval.
 
-Ha valamelyikre most lenne szükséged, [írd meg egy issue-ban]({{repo}}/issues/new?template=feature.yml).
+Ha valami most hiányzik, [írd meg egy issue-ban]({{repo}}/issues/new?template=feature.yml).
 
 ## Ki használja?
 

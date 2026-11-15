@@ -47,6 +47,16 @@
 - Several fields that the official spec marks non-nullable come back as `null` (pagination URLs at the first and last page, `Document.discount`, `recurringId`, item `entitlement`, `sku`, `ean`, `dataEraserCodes`, partner `customBillingSettings.dueDays` and `documentCurrency`, product `entitlement`, `connectProductId`, `purchasePrice`, spending `partner`). The `Billingo` types already say `| null` for these, so check with `!= null`, not `!== undefined`.
 - `checkTaxNumber` needs a live NAV connection. On a developer test profile it always fails with category `nav_unavailable` (HTTP 401), even with a valid key.
 
+## Webhooks, stores and AI tools
+
+- Payment webhooks verify the raw body. Mount them before `express.json()` (`toNodeHandler` from `tarca/node`), and never re-serialize the body before passing it on.
+- Let a webhook answer 500 when issuing fails: the provider redelivers and `createOnce` returns the existing document. Do not catch and swallow errors in `onPayment`, except for a `refund-proposal` or a `validation` error that needs a human.
+- A partial refund without a `ledger` that has `setIfAbsent` only gives a proposal. Billingo's modification invoice has no `vendorId`, so the ledger (or the comment marker search) is the only thing that prevents a second one; never delete a `tarca:refund:` key by hand while a refund is pending.
+- `DocumentHookError` and `JournalWriteError` arrive after the document exists. Record `error.document` / `error.result`; never issue again.
+- Cloudflare KV is eventually consistent and has no atomic write: it is fine for webhook dedupe, never for the `createOnce` lock, the journal or the refund ledger. `resilient: true` stores swallow errors and are unsuitable for the same three. Check a store with `diagnoseStore`.
+- The MCP server's write tools need `allowWrite` and a confirmation code from a preview of the same input. On the edge, `authorize` and a `confirmationSecret` of at least 16 bytes are required, and the server must be created once per isolate, not per request.
+- `toNodeHandler` without `onError` logs only an error summary; your own logs should not print BillingoError messages either, because a `validation` message can quote an e-mail address or a vendorId. `tarca/observe` redacts by default.
+
 ## Error categories
 
 | Category | HTTP | Meaning | Retryable |

@@ -1,5 +1,11 @@
 import { fromApiCase, toApiCase } from './case'
 import {
+  createDocumentEmitter,
+  type DocumentErrorMode,
+  type DocumentEvent,
+  type DocumentHook,
+} from './document-events'
+import {
   BillingoError,
   type BillingoErrorCategory,
   configurationError,
@@ -45,7 +51,7 @@ export interface CompleteEvent extends RequestEvent {
 }
 
 export interface HookWarning {
-  readonly hook: HookName | 'createOnceLock'
+  readonly hook: HookName | 'createOnceLock' | 'onDocument'
   readonly operation: OperationId
   readonly error: unknown
   readonly message?: string
@@ -57,6 +63,8 @@ export interface TarcaHooks {
   readonly onError?: ((event: ErrorEvent) => void) | undefined
   readonly onComplete?: ((event: CompleteEvent) => void) | undefined
   readonly onWarning?: ((warning: HookWarning) => void) | undefined
+  readonly onDocument?: DocumentHook | undefined
+  readonly onDocumentError?: DocumentErrorMode | undefined
 }
 
 type HookName = 'onRequest' | 'onResponse' | 'onError' | 'onComplete'
@@ -99,6 +107,7 @@ export interface TarcaContext {
   json<T>(request: ApiRequest): Promise<T>
   binary(request: ApiRequest): Promise<BinaryResponse>
   empty(request: ApiRequest): Promise<void>
+  emitDocument(event: DocumentEvent): Promise<void>
 }
 
 type Expect = 'json' | 'binary' | 'empty'
@@ -307,6 +316,11 @@ export function createContext(options: BillingoOptions = {}): TarcaContext {
   )
   const safeAttempts = resolveAttempts(options.maxAttempts)
   const hooks = options.hooks ?? {}
+  const onWarning = hooks.onWarning
+  const documentEvents = createDocumentEmitter(hooks.onDocument, {
+    mode: hooks.onDocumentError,
+    warn: onWarning && ((warning) => emitWarning(onWarning, warning)),
+  })
 
   async function send(
     request: ApiRequest,
@@ -469,5 +483,6 @@ export function createContext(options: BillingoOptions = {}): TarcaContext {
     empty: async (request: ApiRequest): Promise<void> => {
       await execute(request, 'empty')
     },
+    emitDocument: (event: DocumentEvent): Promise<void> => documentEvents.emit(event),
   }
 }
