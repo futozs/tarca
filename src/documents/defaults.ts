@@ -1,4 +1,4 @@
-import type { RequestOptions } from '../core/context'
+import { abortable, type RequestOptions } from '../core/context'
 import { BillingoError, configurationError } from '../core/errors'
 import type { DocumentBlocksApi } from '../document-blocks/document-blocks'
 import type {
@@ -123,6 +123,7 @@ export function createBlockResolver(
     async resolve(kind, options) {
       const configured = kind === 'invoice' ? defaults.blockId : defaults.receiptBlockId
       if (configured !== undefined) return configured
+      options?.signal?.throwIfAborted()
       let pending = cache.get(kind)
       if (!pending) {
         const started = lookup(kind)
@@ -132,9 +133,7 @@ export function createBlockResolver(
         })
         pending = started
       }
-      const id = await pending
-      options?.signal?.throwIfAborted()
-      return id
+      return abortable(pending, options?.signal)
     },
   }
 }

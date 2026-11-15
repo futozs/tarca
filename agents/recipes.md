@@ -133,7 +133,7 @@ const slip = await tarca.documents.posPdf(receipt.id ?? 0, { size: 80 })
 ```
 
 - Receipt prices are gross. `vat` is `5`, `18`, `27`, `'none'`, `'AAM'` or `'TAM'`. Without `partner` Billingo attaches its shared `Magánszemély` partner.
-- The receipt goes to the first `receipt` block (`defaults.receiptBlockId` overrides it), paid, with today as the due date. The payment method defaults to `cash`.
+- The receipt goes to the first `receipt` block (`defaults.receiptBlockId` overrides it), paid, with today as the due date. Without `paymentMethod` a receipt takes `defaults.paymentMethod` (with the shared client above that is `wire_transfer`), and `cash` only when no default is set, so pass the payment method on every receipt as this recipe does.
 - Cancel a receipt with `documents.cancel(receipt.id)`; the result is a `receipt_cancellation`.
 
 ## Download the PDF and store it
@@ -145,8 +145,8 @@ const pdf = await tarca.documents.pdf(invoiceId, { maxWaitMs: 30_000 })
 await writeFile(`invoices/${pdf.filename ?? `${invoiceId}.pdf`}`, pdf.bytes)
 ```
 
-- Right after issuing, Billingo may answer 202 while the PDF is generated; `pdf()` waits (1, 2, 4 … s) up to `maxWaitMs`, then throws `not_ready`. Call it again later.
-- `pdf.bytes` is a `Uint8Array` that starts with `%PDF`; it works with `Response`, S3/R2 SDKs and `fs` alike. In Workers return it directly: `new Response(pdf.bytes, { headers: { 'content-type': 'application/pdf' } })`.
+- Right after issuing, Billingo may answer 202 while the PDF is generated; `pdf()` waits (1, 2, 4 … s) until `maxWaitMs` has passed since the call started, then throws `not_ready`. Call it again later.
+- `pdf.bytes` is an ArrayBuffer-backed `Uint8Array<ArrayBuffer>` that starts with `%PDF`; it works with `Response`, S3/R2 SDKs and `fs` alike. In Workers return it directly: `new Response(pdf.bytes, { headers: { 'content-type': 'application/pdf' } })`.
 - `documents.publicUrl(id)` gives Billingo's public `document-access` link to the document.
 
 ## Monthly export for the accountant
@@ -220,4 +220,4 @@ const tarca = createTarca({
 })
 ```
 
-Hooks never receive the API key. A hook that throws does not break the request; the error goes to `onWarning`.
+Hooks never receive the API key. A hook that throws, or an async hook that rejects, does not break the request; the error goes to `onWarning`, and an error of `onWarning` itself is swallowed.

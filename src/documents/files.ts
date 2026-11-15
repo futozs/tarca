@@ -77,7 +77,7 @@ export function createDocumentFilesApi(context: TarcaContext): DocumentFilesApi 
   return {
     async pdf(id, options = {}) {
       const maxWaitMs = resolveMaxWait(options.maxWaitMs, DEFAULT_PDF_WAIT_MS)
-      let waited = 0
+      const deadline = Date.now() + maxWaitMs
       for (let attempt = 0; ; attempt++) {
         try {
           const file = await context.binary({
@@ -88,10 +88,9 @@ export function createDocumentFilesApi(context: TarcaContext): DocumentFilesApi 
           return checkedPdf('DownloadDocument', file)
         } catch (error) {
           if (!isBillingoError(error) || error.category !== 'not_ready') throw error
-          if (waited >= maxWaitMs) throw pdfNotReady(id, maxWaitMs, error)
-          const delay = Math.min(PDF_WAIT_BASE_MS * 2 ** attempt, maxWaitMs - waited)
-          await sleep(delay, options.signal)
-          waited += delay
+          const remaining = deadline - Date.now()
+          if (remaining <= 0) throw pdfNotReady(id, maxWaitMs, error)
+          await sleep(Math.min(PDF_WAIT_BASE_MS * 2 ** attempt, remaining), options.signal)
         }
       }
     },

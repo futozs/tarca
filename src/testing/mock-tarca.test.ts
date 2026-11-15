@@ -230,7 +230,7 @@ describe('createMockTarca', () => {
 
   test('a hamis Billingo hibái a valódi újrapróbálással együtt érvényesülnek', async () => {
     const tarca = createMockTarca()
-    tarca.billingo.fail('notReady', { operation: 'GetServerTime', times: 2 })
+    tarca.billingo.fail({ status: 503 }, { operation: 'GetServerTime', times: 2 })
     tarca.billingo.fail('network', { operation: 'DeleteBankAccount' })
     const created = await tarca.bankAccounts.create(ACCOUNT)
 

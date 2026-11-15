@@ -54,6 +54,18 @@ describe('documents.pdf', () => {
     })
   })
 
+  test('a bájtok ArrayBuffer-alapúak: a Response és a Blob közvetlenül megkapja őket', async () => {
+    const { files } = setup(1, pdf)
+
+    const file = await files.pdf(ID)
+    const response = new Response(file.bytes, { headers: { 'content-type': 'application/pdf' } })
+    const blob = new Blob([file.bytes], { type: 'application/pdf' })
+
+    expect(file.bytes.buffer).toBeInstanceOf(ArrayBuffer)
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(PDF_BYTES)
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(PDF_BYTES)
+  })
+
   test('a nem PDF-tel kezdődő választ unexpected_response hibával utasítja el', async () => {
     const html = new TextEncoder().encode('<html>hiba</html>')
     const { files } = setup(1, { status: 200, bytes: html, headers: PDF_HEADERS })
@@ -73,13 +85,6 @@ describe('documents.pdf', () => {
     const { files } = setup(1, { status: 200, bytes: new Uint8Array([0x25, 0x50, 0x44]) })
 
     await expect(files.pdf(ID)).rejects.toMatchObject({ category: 'unexpected_response' })
-  })
-
-  test('a GET-ismétlés a 202-t előbb maga kezeli: 202, 202, 200 saját várakozás nélkül', async () => {
-    const { mock, files } = setup(3, notReady, notReady, pdf)
-
-    expect((await files.pdf(ID)).filename).toBe('2026-1.pdf')
-    expect(mock.requests).toHaveLength(3)
   })
 
   test('nem not_ready hibánál nem vár és nem próbálja újra', async () => {
@@ -109,6 +114,65 @@ describe('documents.pdf: saját, korlátos várakozás a 202-re', () => {
   })
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  test('a 202-t csak a saját várakozás kezeli: 3 kísérletes kliensen is 1, majd 2 mp után kér újra', async () => {
+    const { mock, files } = setup(3, notReady, notReady, pdf)
+
+    const running = files.pdf(ID)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(mock.requests).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(mock.requests).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(mock.requests).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect((await running).filename).toBe('2026-1.pdf')
+    expect(mock.requests).toHaveLength(3)
+  })
+
+  test.each([
+    [undefined, DEFAULT_PDF_WAIT_MS, 6],
+    [5_000, 5_000, 4],
+    [0, 0, 1],
+  ] as const)(
+    'alapbeállítású kliensen (3 kísérlet, 1 mp visszalépés) a maxWaitMs: %s a teljes várakozás felső határa',
+    async (maxWaitMs, elapsed, requests) => {
+      const mock = mockBillingo(...Array.from({ length: 30 }, () => notReady))
+      const files = createDocumentFilesApi(
+        createContext({ apiKey: TEST_API_KEY, fetch: mock.fetch }),
+      )
+      const startedAt = Date.now()
+
+      const outcome = files
+        .pdf(ID, maxWaitMs === undefined ? {} : { maxWaitMs })
+        .catch((caught: unknown) => caught)
+      await vi.runAllTimersAsync()
+      const error = await outcome
+
+      expect(error).toMatchObject({ category: 'not_ready', status: 202 })
+      expect((error as BillingoError).message).toContain(`${elapsed} ms várakozás után`)
+      expect([Date.now() - startedAt, mock.requests.length]).toEqual([elapsed, requests])
+    },
+  )
+
+  test('a kérések ideje is beleszámít: 1 mp-es válaszidőnél a határ a maxWaitMs és az utolsó kérés', async () => {
+    const mock = mockBillingo(...Array.from({ length: 10 }, () => notReady))
+    const slow: typeof globalThis.fetch = async (input, init) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+      return mock.fetch(input, init)
+    }
+    const files = createDocumentFilesApi(
+      createContext({ apiKey: TEST_API_KEY, fetch: slow, maxAttempts: 1 }),
+    )
+    const startedAt = Date.now()
+
+    const outcome = files.pdf(ID).catch((caught: unknown) => caught)
+    await vi.runAllTimersAsync()
+
+    expect(await outcome).toMatchObject({ category: 'not_ready' })
+    expect([Date.now() - startedAt, mock.requests.length]).toEqual([DEFAULT_PDF_WAIT_MS + 1_000, 6])
   })
 
   test('1 mp várakozás után újra kéri, és a kész PDF-et adja', async () => {

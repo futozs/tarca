@@ -1,5 +1,6 @@
 import type { RequestOptions, TarcaContext } from '../core/context'
 import { type DateInput, toBillingoDate, toOptionalBillingoDate } from '../core/dates'
+import type { OperationId } from '../core/operations'
 import {
   assertPageQuery,
   iteratePages,
@@ -8,6 +9,7 @@ import {
   type RawPage,
   toPage,
 } from '../core/pagination'
+import { assertValid, createInputCheck } from '../documents/check'
 import type {
   Category,
   Currency,
@@ -54,13 +56,16 @@ export interface SpendingsApi {
   delete(id: number, options?: RequestOptions): Promise<void>
 }
 
-function toSpendingSave({
-  fulfillmentDate,
-  invoiceDate,
-  dueDate,
-  paidAt,
-  ...rest
-}: SpendingInput): SpendingSave {
+function toSpendingSave(
+  { fulfillmentDate, invoiceDate, dueDate, paidAt, ...rest }: SpendingInput,
+  operation: OperationId,
+): SpendingSave {
+  const check = createInputCheck()
+  check.convert('fulfillmentDate', () => toBillingoDate(fulfillmentDate))
+  check.convert('invoiceDate', () => toBillingoDate(invoiceDate))
+  check.convert('dueDate', () => toBillingoDate(dueDate))
+  if (paidAt !== undefined) check.convert('paidAt', () => toBillingoDate(paidAt))
+  assertValid(check, operation, 'költségadatok')
   return {
     ...rest,
     fulfillmentDate: toBillingoDate(fulfillmentDate),
@@ -96,7 +101,7 @@ export function createSpendingsApi(context: TarcaContext): SpendingsApi {
     async create(input, options) {
       return context.json<Spending>({
         operation: 'SpendingSave',
-        body: toSpendingSave(input),
+        body: toSpendingSave(input, 'SpendingSave'),
         signal: options?.signal,
       })
     },
@@ -104,7 +109,7 @@ export function createSpendingsApi(context: TarcaContext): SpendingsApi {
       return context.json<Spending>({
         operation: 'SpendingUpdate',
         pathParams: { id },
-        body: toSpendingSave(input),
+        body: toSpendingSave(input, 'SpendingUpdate'),
         signal: options?.signal,
       })
     },

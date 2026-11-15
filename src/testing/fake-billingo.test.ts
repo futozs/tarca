@@ -1447,14 +1447,20 @@ describe('hibainjektálás', () => {
     ])
   })
 
-  test('notReady: N egymás utáni 202, a GET kivárja', async () => {
+  test('notReady: N egymás utáni 202; a kliens nem ismétli, not_ready hibát ad (csak a pdf() vár)', async () => {
     const { call, tarca, billingo } = setup()
     billingo.fail('notReady', { operation: 'GetOrganizationData' })
 
     const raw = await call('GET', '/organization')
     billingo.fail('notReady', { operation: 'GetOrganizationData', times: 2 })
+    const first = await tarca.organization.get().catch((caught: unknown) => caught)
+    const second = await tarca.organization.get().catch((caught: unknown) => caught)
     const organization = await tarca.organization.get()
 
+    expect([first, second]).toMatchObject([
+      { category: 'not_ready', status: 202 },
+      { category: 'not_ready', status: 202 },
+    ])
     expect(raw).toEqual({
       status: 202,
       contentType: 'application/json',

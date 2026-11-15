@@ -1,5 +1,11 @@
 import { fromApiCase, toApiCase } from './case'
-import { BillingoError, configurationError, errorFromResponse, type RateLimitInfo } from './errors'
+import {
+  BillingoError,
+  type BillingoErrorCategory,
+  configurationError,
+  errorFromResponse,
+  type RateLimitInfo,
+} from './errors'
 import { type HttpMethod, type OperationId, operationInfo } from './operations'
 import { buildQuery, fillPath, joinUrl, type PathParams, type QueryParams } from './url'
 
@@ -8,6 +14,7 @@ export const DEFAULT_TIMEOUT_MS = 30_000
 export const MAX_ATTEMPTS = 5
 export const MAX_RETRY_AFTER_MS = 60_000
 export const RETRY_JITTER = 0.2
+export const MAX_TIMER_MS = 2_147_483_647
 const DEFAULT_ATTEMPTS = 3
 const DEFAULT_RETRY_DELAY_MS = 1_000
 
@@ -77,7 +84,7 @@ export interface ApiRequest {
 }
 
 export interface BinaryResponse {
-  readonly bytes: Uint8Array
+  readonly bytes: Uint8Array<ArrayBuffer>
   readonly contentType: string | undefined
   readonly filename: string | undefined
 }
@@ -99,8 +106,15 @@ type Expect = 'json' | 'binary' | 'empty'
 interface RawResponse {
   readonly status: number
   readonly headers: Headers
-  readonly bytes: Uint8Array
+  readonly bytes: Uint8Array<ArrayBuffer>
 }
+
+const TRANSPORT_RETRY_CATEGORIES: ReadonlySet<BillingoErrorCategory> = new Set([
+  'rate_limit',
+  'server',
+  'network',
+  'timeout',
+])
 
 function readEnv(name: string): string | undefined {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
@@ -125,6 +139,16 @@ function resolveAttempts(value: number | undefined): number {
     throw configurationError(`A maxAttempts értéke legalább 1 egész szám legyen, kapott: ${value}`)
   }
   return Math.min(value, MAX_ATTEMPTS)
+}
+
+function resolveTimeout(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_TIMEOUT_MS
+  if (!Number.isInteger(value) || value < 1 || value > MAX_TIMER_MS) {
+    throw configurationError(
+      `A timeoutMs értéke 1 és ${MAX_TIMER_MS} közötti egész szám (ezredmásodperc) legyen, kapott: ${value}`,
+    )
+  }
+  return value
 }
 
 function resolveNonNegative(name: string, value: number | undefined, fallback: number): number {
@@ -185,10 +209,13 @@ export function sleep(ms: number, signal: AbortSignal | undefined): Promise<void
       reject(signal.reason)
       return
     }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
+    const timer = setTimeout(
+      () => {
+        signal?.removeEventListener('abort', onAbort)
+        resolve()
+      },
+      Math.min(ms, MAX_TIMER_MS),
+    )
     const onAbort = (): void => {
       clearTimeout(timer)
       reject(signal?.reason)
@@ -197,17 +224,57 @@ export function sleep(ms: number, signal: AbortSignal | undefined): Promise<void
   })
 }
 
+export function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason)
+      return
+    }
+    const onAbort = (): void => {
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
 }
 
-function callHook<T extends RequestEvent>(hooks: TarcaHooks, name: HookName, event: T): void {
-  const hook = hooks[name] as ((event: T) => void) | undefined
-  if (!hook) return
+export function emitWarning(
+  warn: ((warning: HookWarning) => void) | undefined,
+  warning: HookWarning,
+): void {
   try {
-    hook(event)
+    const result: unknown = warn?.(warning)
+    if (result instanceof Promise) result.catch(() => undefined)
+  } catch {
+    return
+  }
+}
+
+function callHook<T extends RequestEvent>(hooks: TarcaHooks, name: HookName, event: T): void {
+  const hook = hooks[name] as ((event: T) => unknown) | undefined
+  if (!hook) return
+  const warn = (error: unknown): void => {
+    emitWarning(hooks.onWarning, { hook: name, operation: event.operation, error })
+  }
+  try {
+    const result = hook(event)
+    if (result instanceof Promise) result.catch(warn)
   } catch (error) {
-    hooks.onWarning?.({ hook: name, operation: event.operation, error })
+    warn(error)
   }
 }
 
@@ -232,7 +299,7 @@ export function createContext(options: BillingoOptions = {}): TarcaContext {
   if (typeof fetchImpl !== 'function') {
     throw configurationError('Nem található fetch implementáció. Add meg a fetch opciót.')
   }
-  const timeoutMs = resolveNonNegative('timeoutMs', options.timeoutMs, DEFAULT_TIMEOUT_MS)
+  const timeoutMs = resolveTimeout(options.timeoutMs)
   const retryDelayMs = resolveNonNegative(
     'retryDelayMs',
     options.retryDelayMs,
@@ -375,7 +442,7 @@ export function createContext(options: BillingoOptions = {}): TarcaContext {
           throw error
         }
         const willRetry =
-          error.retryable &&
+          TRANSPORT_RETRY_CATEGORIES.has(error.category) &&
           attempt < maxAttempts &&
           (error.retryAfterMs === undefined || error.retryAfterMs <= MAX_RETRY_AFTER_MS)
         callHook(hooks, 'onError', { ...base, error, willRetry })

@@ -108,13 +108,21 @@ export function fileResponse(file: FakeFile): FakeResponse {
   return { status: 200, file }
 }
 
-export function toFetchResponse(response: FakeResponse, includeBody = true): Response {
+export const FAKE_RATE_LIMIT_PER_MINUTE = 300
+
+export function toFetchResponse(
+  response: FakeResponse,
+  includeBody = true,
+  rateLimitRemaining: number = FAKE_RATE_LIMIT_PER_MINUTE,
+): Response {
   if (response.file) {
     return new Response(includeBody ? response.file.bytes : null, {
       status: response.status,
       headers: {
         'content-type': response.file.contentType,
         'content-disposition': response.file.disposition,
+        'x-ratelimit-limit': String(FAKE_RATE_LIMIT_PER_MINUTE),
+        'x-ratelimit-remaining': String(rateLimitRemaining),
       },
     })
   }

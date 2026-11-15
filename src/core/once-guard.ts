@@ -1,6 +1,8 @@
 import {
+  abortable,
   BILLINGO_API_URL,
   type BillingoOptions,
+  emitWarning,
   type HookWarning,
   resolveApiKey,
   sleep,
@@ -121,14 +123,6 @@ function lockUnavailableError(key: string, operation: OperationId, error: unknow
   )
 }
 
-function emitWarning(guard: OnceGuard, warning: HookWarning): void {
-  try {
-    guard.warn?.(warning)
-  } catch {
-    return
-  }
-}
-
 async function releaseLock(
   guard: OnceGuard,
   store: KeyValueStore,
@@ -143,7 +137,7 @@ async function releaseLock(
     }
     if ((await store.get(lockKey)) === token) await store.delete(lockKey)
   } catch (error) {
-    emitWarning(guard, {
+    emitWarning(guard.warn, {
       hook: 'createOnceLock',
       operation,
       error,
@@ -180,7 +174,7 @@ async function runLocked<T>(
       acquired = await setIfAbsent(lockKey, token, ttlSeconds)
     } catch (error) {
       if (failureMode === 'throw') throw lockUnavailableError(key, operation, error)
-      emitWarning(guard, {
+      emitWarning(guard.warn, {
         hook: 'createOnceLock',
         operation,
         error,
@@ -214,7 +208,7 @@ export async function guardOnce<T>(
     const pending = inflight.get(id) as Promise<T> | undefined
     if (!pending) break
     try {
-      return joined(await pending)
+      return joined(await abortable(pending, options.signal))
     } catch (error) {
       if (error instanceof BillingoError && !isUncertainOutcome(error)) throw error
     }

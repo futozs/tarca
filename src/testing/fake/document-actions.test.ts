@@ -96,8 +96,36 @@ describe('hamis Billingo: PDF, POS, nyilvános hivatkozás', () => {
     expect(raw.status).toBe(200)
     expect(raw.contentType).toBe('application/pdf')
     expect(raw.headers.get('content-disposition')).toBe('attachment; filename=2026-1.pdf')
+    expect(raw.headers.get('x-ratelimit-limit')).toBe('300')
+    expect(raw.headers.get('x-ratelimit-remaining')).toBe('297')
+    expect(raw.headers.get('x-ratelimit-reset')).toBeNull()
     expect(text(raw.bytes).startsWith('%PDF-1.4\n')).toBe(true)
     expect(file).toMatchObject({ contentType: 'application/pdf', filename: '2026-1.pdf' })
+  })
+
+  test('csak a bináris válaszok hoznak rate limit fejlécet, a perces ablak kéréseiből számolva (P:065, 069, 108)', async () => {
+    let now = NOW.getTime()
+    const harness = log.harness({ now: () => new Date(now) })
+    await harness.call('POST', '/partners', PARTNER)
+    const invoice = await harness.call('POST', '/documents', INVOICE)
+    const rateLimits: unknown[] = []
+    const tarca = createTarca({
+      apiKey: FAKE_KEY,
+      fetch: harness.billingo.fetch,
+      hooks: { onResponse: (event) => rateLimits.push(event.rateLimit) },
+    })
+
+    await tarca.documents.posPdf(1, { size: 80 })
+    now += 60_000
+    await tarca.documents.pdf(1)
+    await tarca.documents.get(1)
+
+    expect(invoice.headers.get('x-ratelimit-limit')).toBeNull()
+    expect(rateLimits).toEqual([
+      { limit: 300, remaining: 297, resetAt: undefined },
+      { limit: 300, remaining: 299, resetAt: undefined },
+      undefined,
+    ])
   })
 
   test('a szóközös, perjeles sorszám fájlneve idézőjelek között jön, a kliens kibontja', async () => {
@@ -310,7 +338,7 @@ describe('hamis Billingo: NAV állapot, emlékeztetők, küldés', () => {
 })
 
 describe('hamis Billingo: sztornó', () => {
-  test('a számla sztornója új sorszámú, negatív bizonylat, az eredeti cancelled lesz (P:117, 118)', async () => {
+  test('a számla sztornója új sorszámú, negatív bizonylat, az eredeti cancelled lesz, az értesítési állapota marad (P:117, 118, 130)', async () => {
     const harness = await issued()
 
     const storno = await harness.call('POST', '/documents/1/cancel', {
@@ -345,7 +373,7 @@ describe('hamis Billingo: sztornó', () => {
       cancelled: true,
       correction_type: 'canceled',
       payment_status: 'none',
-      notification_status: 'closed',
+      notification_status: 'none',
       online_szamla_status: 'no_online_szamla_settings',
     })
   })

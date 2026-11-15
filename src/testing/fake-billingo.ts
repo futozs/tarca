@@ -9,6 +9,7 @@ import {
 import {
   clientError,
   FAKE_BILLINGO_MESSAGES,
+  FAKE_RATE_LIMIT_PER_MINUTE,
   type FakeResponse,
   serverError,
   statusFaultResponse,
@@ -66,9 +67,18 @@ function isAuthenticated(config: FakeBillingoConfig, headers: Headers): boolean 
   return config.apiKeys === undefined || config.apiKeys.has(key)
 }
 
+const RATE_LIMIT_WINDOW_MS = 60_000
+
 export function createFakeBillingoFetch(options: FakeBillingoOptions = {}): FakeBillingo {
   let state: FakeBillingoState = createState(options)
   const requests: FakeBillingoRequestRecord[] = []
+  let keyedRequestTimes: number[] = []
+  const rateLimitRemaining = (): number => {
+    const now = state.config.now().getTime()
+    keyedRequestTimes = keyedRequestTimes.filter((time) => now - time < RATE_LIMIT_WINDOW_MS)
+    keyedRequestTimes.push(now)
+    return Math.max(0, FAKE_RATE_LIMIT_PER_MINUTE - keyedRequestTimes.length)
+  }
   const faults = createFaultQueue()
   const scheduleInitialFaults = (): void => {
     for (const scheduled of options.faults ?? []) faults.add(scheduled.fault, scheduled)
@@ -92,9 +102,9 @@ export function createFakeBillingoFetch(options: FakeBillingoOptions = {}): Fake
         faulted,
       })
     }
-    const respond = (response: FakeResponse, faulted = false): Response => {
+    const respond = (response: FakeResponse, faulted = false, remaining?: number): Response => {
       log(response.status, faulted)
-      return toFetchResponse(response, incoming.method !== 'HEAD')
+      return toFetchResponse(response, incoming.method !== 'HEAD', remaining)
     }
     const applyFault = (fault: ActiveFault): Response => {
       const { effect } = fault
@@ -119,6 +129,7 @@ export function createFakeBillingoFetch(options: FakeBillingoOptions = {}): Fake
     if (!isAuthenticated(state.config, incoming.headers)) {
       return respond(clientError(401, FAKE_BILLINGO_MESSAGES.unauthorized))
     }
+    const remaining = rateLimitRemaining()
     const fault = faults.take(route.operation)
     if (fault && !fault.afterSuccess) return applyFault(fault)
     const handler = FAKE_ROUTES[route.operation]
@@ -133,7 +144,7 @@ export function createFakeBillingoFetch(options: FakeBillingoOptions = {}): Fake
         })
       : serverError(501, notImplementedMessage(route.operation))
     if (fault && response.status < 400) return applyFault(fault)
-    return respond(response)
+    return respond(response, false, remaining)
   }
 
   return {
@@ -161,6 +172,7 @@ export function createFakeBillingoFetch(options: FakeBillingoOptions = {}): Fake
     reset() {
       state = createState(options)
       requests.length = 0
+      keyedRequestTimes = []
       faults.clear()
       scheduleInitialFaults()
     },

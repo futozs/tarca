@@ -315,6 +315,33 @@ describe('partners.findOrCreate', () => {
     expect([discounted.created, discounted.partner.id]).toEqual([true, 6])
   })
 
+  test('a megadott null is összevetendő érték: csak tárolt nullal egyezik, más értéknél létrehoz', async () => {
+    const billing = {
+      payment_method: null,
+      document_form: null,
+      due_days: 15,
+      document_currency: null,
+      template_language_code: null,
+      discount: null,
+      custom_label: null,
+    }
+    const reused = setup(page([storedPartner(1)]))
+    const differing = setup(page([storedPartner(1, { custom_billing_settings: billing })]), {
+      status: 201,
+      json: storedPartner(2),
+    })
+    const input: PartnerInput = { ...BUYER, customBillingSettings: { dueDays: null } }
+
+    const same = await reused.partners.findOrCreate(input)
+    const fresh = await differing.partners.findOrCreate(input)
+
+    expect([same.created, same.partner.id]).toEqual([false, 1])
+    expect([fresh.created, fresh.partner.id]).toEqual([true, 2])
+    expect(differing.mock.requests[1]?.body).toMatchObject({
+      custom_billing_settings: { due_days: null },
+    })
+  })
+
   test('a tárolt null beágyazott objektum nem egyezik a megadott beállítással, ilyenkor létrehoz', async () => {
     const { mock, partners } = setup(page([storedPartner(1, { partner_shipping: null })]), {
       status: 201,

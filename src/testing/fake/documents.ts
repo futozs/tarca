@@ -428,7 +428,7 @@ function parseDocument(
     })
   }
   let conversionRate = 1
-  if (currency !== undefined && currency !== 'HUF') {
+  if (currency !== 'HUF') {
     const rate = input.conversion_rate
     if (typeof rate === 'number' && Number.isFinite(rate) && rate > 0) conversionRate = rate
     else errors.push({ field: 'conversion_rate', message: CONVERSION_RATE_REQUIRED })
@@ -641,7 +641,7 @@ function storeDocument(
     dueDate: parsed.dueDate,
     paidDate: day,
     organization: organizationOf(state, parsed.bankAccountId),
-    partner,
+    partner: { ...partner, partnerShowType: null },
     documentPartner: documentPartnerOf(partner),
     electronic: parsed.electronic,
     comment: parsed.comment,

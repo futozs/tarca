@@ -287,7 +287,6 @@ function cancel(state: FakeBillingoState, request: FakeRequest, record: FakeDocu
       cancelled: true,
       correctionType: 'canceled',
       paymentStatus: 'none',
-      notificationStatus: 'closed',
       onlineSzamlaStatus: 'no_online_szamla_settings',
     },
   })

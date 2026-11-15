@@ -83,6 +83,11 @@ type ReceiptBody = Wire<Omit<ReceiptInsert, 'blockId' | 'partnerId' | 'items'>> 
   readonly items: readonly WireReceiptItem[]
 }
 
+type ReceiptRequestBody = ReceiptBody & {
+  readonly blockId: number
+  readonly partnerId: number | undefined
+}
+
 interface PreparedReceipt {
   readonly partner: number | PartnerInput | undefined
   readonly blockId: number | undefined
@@ -172,7 +177,10 @@ function prepareReceipt(
 }
 
 export function createReceiptsApi(context: TarcaContext, deps: ReceiptsApiDeps): ReceiptsApi {
-  const bodyOf = async (prepared: PreparedReceipt, options: RequestOptions | undefined) => {
+  const bodyOf = async (
+    prepared: PreparedReceipt,
+    options: RequestOptions | undefined,
+  ): Promise<ReceiptRequestBody> => {
     const blockId = prepared.blockId ?? (await deps.blocks.resolve('receipt', options))
     const partnerId =
       prepared.partner === undefined
@@ -180,15 +188,12 @@ export function createReceiptsApi(context: TarcaContext, deps: ReceiptsApiDeps):
         : await resolvePartnerId(deps.partners, prepared.partner, options)
     return { ...prepared.body, blockId, partnerId }
   }
-  const post = async (prepared: PreparedReceipt, options: RequestOptions | undefined) =>
-    context.json<Document>({
-      operation: 'CreateReceipt',
-      body: await bodyOf(prepared, options),
-      signal: options?.signal,
-    })
+  const post = (body: ReceiptRequestBody, options: RequestOptions | undefined) =>
+    context.json<Document>({ operation: 'CreateReceipt', body, signal: options?.signal })
   return {
     async create(input, options) {
-      return post(prepareReceipt(input, deps.defaults, 'CreateReceipt', false), options)
+      const prepared = prepareReceipt(input, deps.defaults, 'CreateReceipt', false)
+      return post(await bodyOf(prepared, options), options)
     },
     async createOnce(input, options = {}) {
       const prepared = prepareReceipt(input, deps.defaults, 'CreateReceipt', true)
@@ -199,7 +204,8 @@ export function createReceiptsApi(context: TarcaContext, deps: ReceiptsApiDeps):
           vendorId,
           operation: 'CreateReceipt',
           find: () => deps.query.findByVendorId(vendorId, options),
-          issue: () => post(prepared, options),
+          target: () => bodyOf(prepared, options),
+          issue: (body) => post(body, options),
         },
         options,
       )

@@ -158,7 +158,12 @@ describe('hamis Billingo: bizonylatok', () => {
       kobak_receipt_message: null,
       discount: null,
       recurring_id: null,
-      partner: { id: 1, name: PARTNER.name, emails: PARTNER.emails },
+      partner: {
+        id: 1,
+        name: PARTNER.name,
+        emails: PARTNER.emails,
+        partner_show_type: null,
+      },
       document_partner: { id: 1, name: PARTNER.name, address: PARTNER.address },
       organization: {
         tax_number: '00000000-0-00',
@@ -275,6 +280,26 @@ describe('hamis Billingo: bizonylatok', () => {
     })
   })
 
+  test('a tizedesvesszős áfakulcs (5,5%) is számol: 100 nettóra 5,5 áfa, 105,5 bruttó', async () => {
+    const { call } = await harnessWithPartner()
+
+    const created = await call('POST', '/documents', {
+      ...INVOICE,
+      items: [item('vesszős kulcs', 100, 1, '5,5%')],
+    })
+
+    expect(created).toMatchObject({
+      status: 201,
+      body: {
+        gross_total: 105.5,
+        items: [{ net_amount: 100, vat_amount: 5.5, gross_amount: 105.5, vat: '5,5%' }],
+        summary: {
+          vat_rate_summary: [{ vat_name: '5,5%', vat_percentage: 0.055, vat_rate_vat_amount: 5.5 }],
+        },
+      },
+    })
+  })
+
   test('a kerekítés fél fillérnél felfelé kerekít, negatív összegnél is, és nem ad -0-t', () => {
     expect([roundHalfUp(1.005, 2), roundHalfUp(-1.005, 2), roundHalfUp(2.5, 0)]).toEqual([
       1.01, -1.01, 3,
@@ -351,6 +376,24 @@ describe('hamis Billingo: bizonylatok', () => {
     expect(billingo.data.documents.get(1)?.vendorId).toBe('RENDELES-1')
   })
 
+  test('a piszkozat véglegesítése foglalt vendor_id-val 400 az élő üzenettel, a piszkozat változatlan', async () => {
+    const { call, billingo } = await harnessWithPartner()
+    await call('POST', '/documents', { ...INVOICE, vendor_id: 'V-1' })
+    await call('POST', '/documents', { ...INVOICE, type: 'draft' })
+
+    const finalized = await call('PUT', '/documents/2', { ...INVOICE, vendor_id: 'V-1' })
+
+    expect(finalized).toMatchObject({
+      status: 400,
+      body: { error: { message: 'Duplicate vendor id. (id:V-1)' } },
+    })
+    expect(billingo.data.documents.get(2)?.document.type).toBe('draft')
+    expect(billingo.data.documents.get(2)?.vendorId).toBeUndefined()
+    expect(
+      [...billingo.data.documents.values()].filter((record) => record.vendorId === 'V-1'),
+    ).toHaveLength(1)
+  })
+
   test('vendor_id szerint ismeretlenre 404 „Document is not found.”, id szerint 403, mint élőben', async () => {
     const { call } = await harnessWithPartner()
     await call('POST', '/documents', { ...INVOICE, vendor_id: 'A/B 1' })
@@ -388,11 +431,15 @@ describe('hamis Billingo: bizonylatok', () => {
         { field: 'payment_method', message: 'The payment method field is required.' },
         { field: 'language', message: 'The language field is required.' },
         { field: 'currency', message: 'The currency field is required.' },
+        { field: 'conversion_rate', message: CONVERSION_RATE_REQUIRED },
         { field: 'items', message: 'The items field is required.' },
       ],
     }
-    expect(empty).toMatchObject({ status: 422, body: expected })
-    expect(created).toMatchObject({ status: 422, body: expected })
+    expect(CONVERSION_RATE_REQUIRED).toBe(
+      'The conversion rate field is required unless currency is in HUF.',
+    )
+    expect(empty).toEqual(expect.objectContaining({ status: 422, body: expected }))
+    expect(created).toEqual(expect.objectContaining({ status: 422, body: expected }))
   })
 
   test('hibás értékek: ismeretlen hivatkozás, rossz enum és dátum, hiányzó árfolyam, tételhibák', async () => {

@@ -158,6 +158,48 @@ describe('guardOnce: folyamaton belüli singleflight', () => {
     expect(runs).toBe(1)
   })
 
+  test('a csatlakozó a saját megszakítására azonnal kilép, nem várja meg a vezetőt', async () => {
+    const guard: OnceGuard = { scope: 'fiók' }
+    let finish = (): void => {}
+    const held = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    let runs = 0
+    const run = async (): Promise<Result> => {
+      runs += 1
+      await held
+      return { created: true, run: runs }
+    }
+    const controller = new AbortController()
+    const reason = new Error('a csatlakozó megszakította')
+
+    const leader = guardOnce(guard, 'R-1', 'CreateDocument', {}, run, joined)
+    const follower = guardOnce(
+      guard,
+      'R-1',
+      'CreateDocument',
+      { signal: controller.signal },
+      run,
+      joined,
+    ).catch((caught: unknown) => caught)
+    const preAborted = guardOnce(
+      guard,
+      'R-1',
+      'CreateDocument',
+      { signal: AbortSignal.abort(reason) },
+      run,
+      joined,
+    ).catch((caught: unknown) => caught)
+    controller.abort(reason)
+
+    expect(await follower).toBe(reason)
+    expect(await preAborted).toBe(reason)
+    finish()
+    expect(await leader).toEqual({ created: true, run: 1 })
+    expect(runs).toBe(1)
+    expect(inflightOnceCount()).toBe(0)
+  })
+
   test('csak a network, timeout, server és unexpected_response bizonytalan', () => {
     const uncertain = (
       [
@@ -300,7 +342,7 @@ describe('guardOnce: folyamatok közötti zár', () => {
     expect(work.runs).toBe(0)
   })
 
-  test("lockFailure: 'proceed' zár nélkül fut, és figyelmeztet; a dobó figyelmeztető kezelő nem zavar", async () => {
+  test("lockFailure: 'proceed' zár nélkül fut, és figyelmeztet; a dobó vagy elutasító figyelmeztető kezelő nem zavar", async () => {
     const warnings: HookWarning[] = []
     const broken: KeyValueStore = {
       ...memoryLock(),
@@ -333,7 +375,31 @@ describe('guardOnce: folyamatok közötti zár', () => {
       joined,
     )
 
-    expect([result.created, quiet.created]).toEqual([true, true])
+    const reasons: unknown[] = []
+    const listener = (reason: unknown): void => {
+      reasons.push(reason)
+    }
+    process.on('unhandledRejection', listener)
+    const rejecting = await guardOnce(
+      {
+        scope: 's',
+        lock: broken,
+        warn: async () => {
+          await Promise.resolve()
+          throw new Error('aszinkron rossz kezelő')
+        },
+      },
+      'k3',
+      'CreateDocument',
+      { lockFailure: 'proceed' },
+      work.run,
+      joined,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    process.off('unhandledRejection', listener)
+
+    expect([result.created, quiet.created, rejecting.created]).toEqual([true, true, true])
+    expect(reasons).toEqual([])
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toMatchObject({ hook: 'createOnceLock', operation: 'CreateDocument' })
     expect(warnings[0]?.message).toContain('zár nélkül folytatja')

@@ -10,6 +10,23 @@ describe('URL építés', () => {
     expect(() => fillPath('/documents/{id}')).toThrow('id')
   })
 
+  test('a . és .. útvonal-paramétert elutasítja, mert a fetch URL-feldolgozója útvonal-lépésnek venné', () => {
+    expect(new URL('https://api.billingo.hu/v3/documents/vendor/..').pathname).toBe(
+      '/v3/documents/',
+    )
+    for (const vendorId of ['.', '..']) {
+      expect(() => fillPath('/documents/vendor/{vendor_id}', { vendor_id: vendorId })).toThrow(
+        RangeError,
+      )
+    }
+    expect(fillPath('/documents/vendor/{vendor_id}', { vendor_id: '...' })).toBe(
+      '/documents/vendor/...',
+    )
+    expect(fillPath('/documents/vendor/{vendor_id}', { vendor_id: '%2e%2e' })).toBe(
+      '/documents/vendor/%252e%252e',
+    )
+  })
+
   test('a query kulcsait snake_case-re alakítja, az undefined értéket kihagyja', () => {
     expect(
       buildQuery({ perPage: 25, paymentStatus: 'paid', blockId: undefined, archived: false }),

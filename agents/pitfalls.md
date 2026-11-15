@@ -7,6 +7,7 @@
 - Give every document a `vendorId` derived from your order or payment ID. It is unique per Billingo company; a duplicate is rejected with HTTP 400. After a `network`, `timeout`, `server` or `unexpected_response` error on a create, look the document up by `vendorId` before doing anything else.
 - Only drafts can be deleted. Partners, products, bank accounts and spendings can be deleted.
 - Use `documents.createOnce` / `receipts.createOnce` instead of hand-rolled lookups: they handle the lookup, the 400 `Duplicate vendor id.` race and the uncertain failures. A vendorId stays reserved after cancellation, so re-issuing a cancelled order needs a new vendorId.
+- A vendorId of `.` or `..` is rejected locally (`validation`, no request): the URL parser in `fetch` treats it as a path step, so `GET /documents/vendor/..` would become `GET /documents/` (the document list).
 - `documents.get` on a deleted or unknown id answers 403 (`forbidden`), not 404. `findByVendorId` does answer `null` for an unknown vendorId.
 - The document list is eventually consistent: a document issued a few seconds ago may be missing from `list()` for 15–30 seconds.
 - Cancel newest first: a final invoice before its advance invoice. After `createModification` neither the original invoice nor the modification can be cancelled (400 `Cannot cancel the document`); correct it with another modification document instead.
@@ -29,8 +30,8 @@
 
 ## Limits
 
-- 300 requests per minute with a key, 60 without. The `X-RateLimit-*` headers declared in the spec are not sent in practice; a 429 has category `rate_limit` and `retryAfterMs` when Billingo sends `Retry-After`.
-- A freshly created document's PDF may not be ready for a few seconds: the download answers 202, which tarca reports as category `not_ready` (retryable). `documents.pdf` waits for it up to `maxWaitMs` (30 s). Live it was usually ready within 2 seconds.
+- 300 requests per minute with a key, 60 without. Billingo sends `x-ratelimit-limit` and `x-ratelimit-remaining` only on binary responses (PDF, POS PDF, export download), never `x-ratelimit-reset`; JSON responses carry none of the `X-RateLimit-*` headers the spec declares. `rateLimit` on `onResponse` is therefore set only for those downloads. A 429 has category `rate_limit` and `retryAfterMs` when Billingo sends `Retry-After`.
+- A freshly created document's PDF may not be ready for a few seconds: the download answers 202, which tarca reports as category `not_ready` (retryable). `documents.pdf` waits for it up to `maxWaitMs` (30 s) in total; the transport itself does not retry a 202. Live it was usually ready within 2 seconds.
 - The POS PDF arrives as `application/octet-stream`; tarca checks the `%PDF` signature, not the content type.
 - `documents.navStatus` returns `null` for the first seconds after issuing: Billingo has no NAV record yet and answers 404 `NavOnlineSzamla is not found.`.
 - List endpoints return at most 100 items per page. Use `all()` to iterate every page.
@@ -57,7 +58,7 @@
 | `not_found` | 404 | No such resource | no |
 | `validation` | 400, 422 | Bad request; `fieldErrors` lists the fields for 422 | no |
 | `rate_limit` | 429 | Too many requests | yes (GET) |
-| `not_ready` | 202 | PDF not generated yet | yes (GET) |
+| `not_ready` | 202 | PDF not generated yet | yes (`documents.pdf` waits for it) |
 | `server` | 5xx | Billingo error | yes (GET) |
 | `network`, `timeout` | none | No answer; for writes, look the document up before retrying | yes (GET) |
 | `configuration` | none | Missing key, invalid option | no |

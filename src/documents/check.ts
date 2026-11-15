@@ -1,5 +1,6 @@
 import { BillingoError, type FieldError } from '../core/errors'
 import type { OperationId } from '../core/operations'
+import { isDotSegment } from '../core/url'
 import type { PartnerInput } from '../partners/partners'
 import { CURRENCIES, isOneOf } from './enums'
 
@@ -97,6 +98,13 @@ export function createInputCheck(): InputCheck {
     },
     vendorId(value, required) {
       if (value === undefined && !required) return
+      if (typeof value === 'string' && isDotSegment(value.trim())) {
+        fail(
+          'vendorId',
+          `A vendorId nem lehet „${value.trim()}”: a Billingo útvonalában a fetch útvonal-lépésnek venné, így a bizonylat vendorId alapján nem lenne visszakereshető.`,
+        )
+        return
+      }
       if (typeof value === 'string' && value.trim() !== '') return
       fail(
         'vendorId',

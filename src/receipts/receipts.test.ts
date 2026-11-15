@@ -274,6 +274,44 @@ describe('receipts', () => {
     expect(mock.requests[2]?.body).toMatchObject({ vendor_id: 'NY-2', block_id: 8 })
   })
 
+  test('createOnce: a kiállítás előtti lépés (partner) hibája után nem keres vissza, created: true sincs', async () => {
+    const { mock, receipts } = setup(
+      { defaults: { receiptBlockId: 8 }, maxAttempts: 1 },
+      NOT_FOUND,
+      new TypeError('fetch failed'),
+      { status: 200, json: receiptJson(9) },
+    )
+
+    const error = await receipts
+      .createOnce(
+        {
+          ...INPUT,
+          vendorId: 'NY-9',
+          partner: { name: 'Vevő Béla', address: { postCode: '1', city: 'B', address: 'F' } },
+        },
+        { recoveryDelayMs: 0 },
+      )
+      .catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({ category: 'network', operation: 'ListPartner' })
+    expect(mock.requests.map((request) => request.operation)).toEqual([
+      'GetDocumentByVendorId',
+      'ListPartner',
+    ])
+  })
+
+  test('createOnce a . és .. vendorId-ra kérés nélkül validation hiba, nyugta nélkül', async () => {
+    const { mock, receipts } = setup({ defaults: { receiptBlockId: 8 } })
+
+    const error = await receipts
+      .createOnce({ ...INPUT, vendorId: ' .. ' }, { recoveryDelayMs: 0 })
+      .catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({ category: 'validation', operation: 'CreateReceipt' })
+    expect((error as BillingoError).fieldErrors.map((item) => item.field)).toEqual(['vendorId'])
+    expect(mock.requests).toEqual([])
+  })
+
   test('finalizeDraft: PUT a nyugta végpontra a teljes törzzsel; piszkozat típusra validation hiba', async () => {
     const { mock, receipts } = setup(
       { defaults: { receiptBlockId: 8 } },

@@ -217,6 +217,36 @@ describe('documents: a számlatömb keresése', () => {
     ).toHaveLength(1)
   })
 
+  test('a hívó megszakítása a közös tömbkeresés alatt azonnal érvényesül, a keresés a többieknek fut tovább', async () => {
+    const mock = mockBillingo(page([INVOICE_BLOCK]), created(1))
+    let releaseBlocks = (): void => {}
+    const blocksHeld = new Promise<void>((resolve) => {
+      releaseBlocks = resolve
+    })
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      if (String(input).includes('/document-blocks')) await blocksHeld
+      return mock.fetch(input, init)
+    }
+    const tarca = createTarca({ apiKey: TEST_API_KEY, fetch, retryDelayMs: 0 })
+    const controller = new AbortController()
+    const reason = new Error('a hívó megszakította')
+
+    const aborted = tarca.documents
+      .create(INPUT, { signal: controller.signal })
+      .catch((caught: unknown) => caught)
+    const other = tarca.documents.create(INPUT)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    controller.abort(reason)
+
+    expect(await aborted).toBe(reason)
+    releaseBlocks()
+    expect((await other).id).toBe(1)
+    expect(mock.requests.map((request) => request.operation)).toEqual([
+      'ListDocumentBlock',
+      'CreateDocument',
+    ])
+  })
+
   test('számlatömb nélküli fióknál configuration hiba tippel, kiállítás nélkül', async () => {
     const { mock, documents } = setup({}, page([]))
 
@@ -701,6 +731,82 @@ describe('documents: createOnce', () => {
     })
   })
 
+  test('a . és .. vendorId kérés nélkül validation hiba: a lista lenne belőle, nem a bizonylat', async () => {
+    const { mock, documents } = setup({ defaults: { blockId: 3 } })
+
+    const errors = await Promise.all(
+      ['..', ' . ', '.'].map((vendorId) =>
+        documents.createOnce({ ...INPUT, vendorId }, OPTIONS).catch((caught: unknown) => caught),
+      ),
+    )
+    const plain = await documents
+      .create({ ...INPUT, vendorId: '..' })
+      .catch((caught: unknown) => caught)
+
+    for (const error of [...errors, plain]) {
+      expect(error).toMatchObject({ category: 'validation', operation: 'CreateDocument' })
+      expect((error as BillingoError).fieldErrors.map((item) => item.field)).toEqual(['vendorId'])
+    }
+    expect(mock.requests).toEqual([])
+  })
+
+  test.each([
+    ['503', { status: 503, json: { error: { message: 'Service Unavailable' } } }, 'server', true],
+    ['401', { status: 401, json: { error: { message: 'Unauthorized' } } }, 'auth', false],
+  ] as const)(
+    'a duplikált vendorId-nál, ha a visszakeresés %s hibát ad, a keresés hibája megy tovább: a bizonylat létezik',
+    async (_, failure, category, retryable) => {
+      const duplicate: Reply = {
+        status: 400,
+        json: { error: { message: 'Duplicate vendor id. (id:ORDER 1001)' } },
+      }
+      const { mock, documents } = setup(
+        { defaults: { blockId: 3 }, maxAttempts: 1 },
+        NOT_FOUND,
+        duplicate,
+        failure,
+        failure,
+      )
+
+      const error = await documents.createOnce(ONCE, OPTIONS).catch((caught: unknown) => caught)
+
+      expect(error).toBeInstanceOf(BillingoError)
+      expect(error).toMatchObject({
+        category,
+        retryable,
+        status: failure.status,
+        operation: 'GetDocumentByVendorId',
+      })
+      expect((error as BillingoError).message).toContain('ORDER 1001')
+      expect((error as BillingoError).message).toContain('Duplicate vendor id.')
+      expect((error as BillingoError).hint).toContain('createOnce')
+      expect((error as BillingoError).cause).toMatchObject({
+        category,
+        operation: 'GetDocumentByVendorId',
+      })
+      expect(mock.requests.map((request) => request.operation)).toEqual([
+        'GetDocumentByVendorId',
+        'CreateDocument',
+        ...Array.from({ length: retryable ? 2 : 1 }, () => 'GetDocumentByVendorId'),
+      ])
+    },
+  )
+
+  test('a kiállítás előtti lépés (számlatömb) hibája után nem keres vissza, és nem mond created: true-t', async () => {
+    const down: Reply = { status: 503, json: { error: { message: 'Service Unavailable' } } }
+    const { mock, documents } = setup({}, NOT_FOUND, down, down, down, found(77))
+
+    const error = await documents.createOnce(ONCE, OPTIONS).catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({ category: 'server', operation: 'ListDocumentBlock' })
+    expect(mock.requests.map((request) => request.operation)).toEqual([
+      'GetDocumentByVendorId',
+      'ListDocumentBlock',
+      'ListDocumentBlock',
+      'ListDocumentBlock',
+    ])
+  })
+
   test('vendorId nélkül és rossz recoveryDelayMs-sel kérés nélkül hibázik', async () => {
     const { mock, documents } = setup({ defaults: { blockId: 3 } })
 
@@ -829,6 +935,14 @@ describe('documents: createOnce', () => {
 })
 
 describe('documents: lekérdezés', () => {
+  test('getByVendorId és findByVendorId a . és .. vendorId-ra kérés nélkül RangeError', async () => {
+    const { mock, documents } = setup({})
+
+    await expect(documents.getByVendorId('..')).rejects.toThrow(RangeError)
+    await expect(documents.findByVendorId(' . ')).rejects.toThrow(RangeError)
+    expect(mock.requests).toEqual([])
+  })
+
   test('get, getByVendorId (kódolt útvonal) és findByVendorId (404-re null, másra hiba)', async () => {
     const { mock, documents } = setup(
       {},

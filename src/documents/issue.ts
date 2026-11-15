@@ -68,13 +68,12 @@ export function createDocumentIssuingApi(deps: IssuingDeps): DocumentIssuingApi 
   const { context } = deps
   const post = (body: DocumentBody & ResolvedTarget, options?: RequestOptions) =>
     context.json<Document>({ operation: 'CreateDocument', body, signal: options?.signal })
-  const issue = async (prepared: PreparedDocument, options?: RequestOptions) => {
-    const target = await resolveTarget(deps, 'invoice', prepared.blockId, prepared.partner, options)
-    return post({ ...prepared.body, ...target }, options)
-  }
+  const targetOf = (prepared: PreparedDocument, options?: RequestOptions) =>
+    resolveTarget(deps, 'invoice', prepared.blockId, prepared.partner, options)
   return {
     async create(input, options) {
-      return issue(prepareDocument(input, deps.defaults, 'CreateDocument'), options)
+      const prepared = prepareDocument(input, deps.defaults, 'CreateDocument')
+      return post({ ...prepared.body, ...(await targetOf(prepared, options)) }, options)
     },
     createRaw: (insert, options) =>
       context.json<Document>({
@@ -93,20 +92,15 @@ export function createDocumentIssuingApi(deps: IssuingDeps): DocumentIssuingApi 
           vendorId,
           operation: 'CreateDocument',
           find: () => deps.query.findByVendorId(vendorId, options),
-          issue: () => issue(prepared, options),
+          target: () => targetOf(prepared, options),
+          issue: (target) => post({ ...prepared.body, ...target }, options),
         },
         options,
       )
     },
     async finalizeDraft(id, input, options) {
       const prepared = prepareDocument(input, deps.defaults, 'CreateDocumentFromDraft')
-      const target = await resolveTarget(
-        deps,
-        'invoice',
-        prepared.blockId,
-        prepared.partner,
-        options,
-      )
+      const target = await targetOf(prepared, options)
       return context.json<Document>({
         operation: 'CreateDocumentFromDraft',
         pathParams: { id },

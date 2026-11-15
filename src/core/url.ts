@@ -6,13 +6,25 @@ export type QueryParams = Readonly<Record<string, QueryValue>>
 
 export type PathParams = Readonly<Record<string, string | number>>
 
+const DOT_SEGMENTS: ReadonlySet<string> = new Set(['.', '..'])
+
+export function isDotSegment(value: string): boolean {
+  return DOT_SEGMENTS.has(value)
+}
+
 export function fillPath(template: string, params: PathParams = {}): string {
   return template.replace(/\{(\w+)\}/g, (_, name: string) => {
     const value = params[name]
     if (value === undefined || value === '') {
       throw new RangeError(`Hiányzik az útvonal paramétere: ${name} (${template})`)
     }
-    return encodeURIComponent(String(value))
+    const encoded = encodeURIComponent(String(value))
+    if (isDotSegment(encoded)) {
+      throw new RangeError(
+        `Az útvonal paramétere (${name}) nem lehet „${encoded}”, mert a fetch ezt útvonal-lépésnek venné, és más végpontra menne a kérés (${template})`,
+      )
+    }
+    return encoded
   })
 }
 

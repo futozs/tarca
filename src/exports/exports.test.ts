@@ -69,10 +69,29 @@ describe('exports: create, poll, download', () => {
     })
   })
 
-  test('create: hibás dátumra kérés nélkül RangeError', async () => {
+  test('create és run: hibás dátumra kérés nélkül validation hiba mezőnként', async () => {
     const { mock, exports } = setup()
 
-    await expect(exports.create({ ...INPUT, endDate: '2026-13-01' })).rejects.toThrow(RangeError)
+    const created = await exports
+      .create({ ...INPUT, startDate: '2026-11-31', endDate: '2026-13-01' })
+      .catch((caught: unknown) => caught)
+    const run = await exports
+      .run({ ...INPUT, startDate: '2026.11.01' })
+      .catch((caught: unknown) => caught)
+
+    expect(created).toBeInstanceOf(BillingoError)
+    expect(created).toMatchObject({
+      category: 'validation',
+      operation: 'Create',
+      fieldErrors: [
+        { field: 'startDate', message: 'Nem létező naptári dátum: 2026-11-31' },
+        { field: 'endDate', message: 'Nem létező naptári dátum: 2026-13-01' },
+      ],
+    })
+    expect(run).toMatchObject({
+      category: 'validation',
+      fieldErrors: [{ field: 'startDate', message: expect.stringContaining('2026.11.01') }],
+    })
     expect(mock.requests).toEqual([])
   })
 

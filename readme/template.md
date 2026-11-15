@@ -121,7 +121,7 @@ export const tarca = createTarca({
 ```
 
 - A `blockId` nélkül a tárca az első `invoice` típusú számlatömböt használja (egyszer kérdezi le, utána megjegyzi), nyugtához az első `receipt` típusút, vagy a `receiptBlockId`-t.
-- Nyugtánál a fizetési mód alapból `cash`, ha a `paymentMethod` nincs megadva.
+- Nyugtánál is a `defaults.paymentMethod` érvényes, ha a nyugta nem ad meg fizetési módot. Ha egyik sincs megadva, a nyugta `cash`, a számla `wire_transfer`. Ha a számláid átutalásosak, a nyugtáidon pedig készpénz vagy kártya szerepel, add meg minden nyugtán a `paymentMethod`-ot.
 - A `dueInDays` a mai budapesti naptól számít. A `sendEmail` a bizonylat `settings.shouldSendEmail` beállítása.
 - Hibás érték esetén a `createTarca()` azonnal `configuration` hibát dob, nem az első számlánál.
 
@@ -208,7 +208,9 @@ const { document, created } = await tarca.documents.createOnce({
 
 - Kiállítás előtt megkeresi a bizonylatot a `vendorId` alapján. Ha már van, a meglévőt adja vissza `created: false` értékkel.
 - Hálózati hiba, időtúllépés, szerverhiba vagy értelmezhetetlen válasz után kétszer visszakeresi. Ha a számla mégis elkészült, megkapod (`created: true`), ha nem, az eredeti hiba megy tovább.
-- Ha egy másik folyamat közben kiállította ugyanazt (a Billingo 400 `Duplicate vendor id.` hibát ad), a meglévőt adja vissza.
+- Ha egy másik folyamat közben kiállította ugyanazt (a Billingo 400 `Duplicate vendor id.` hibát ad), a meglévőt adja vissza. Ha ilyenkor a visszakeresés is hibát ad, a keresés hibája megy tovább (például `server`) azzal a tippel, hogy a bizonylat már létezik: ne állítsd ki újra, később hívd meg ugyanígy a `createOnce`-t.
+- Ha a kiállítás előtti lépés (a számlatömb vagy a partner keresése) hibázik, a tárca a hibát változatlanul továbbadja: számla nem ment ki, a hívás megismételhető.
+- A `vendorId` nem lehet `.` vagy `..`: a `fetch` ezt útvonal-lépésnek venné, és a kérés más végpontra menne. A tárca ilyenkor kérés nélkül `validation` hibát ad.
 - Egy folyamaton belül az azonos `vendorId`-ra egyszerre érkező hívások egyetlen kérést küldenek. Több szerver vagy serverless példány között a `createOnceLock` közös tároló zárja véd; a tároló felülete ugyanaz, mint a kasszáé:
 
 ```ts
@@ -401,7 +403,7 @@ const blokk = await tarca.documents.posPdf(4321, { size: 80 })
 const link = await tarca.documents.publicUrl(4321)
 ```
 
-- Kiállítás után a PDF néhány másodpercig készülhet (a Billingo ilyenkor 202-t ad). A `pdf()` kivárja, alapból legfeljebb 30 másodpercig (`maxWaitMs`).
+- Kiállítás után a PDF néhány másodpercig készülhet (a Billingo ilyenkor 202-t ad). A `pdf()` kivárja, alapból legfeljebb 30 másodpercig (`maxWaitMs`). Ebbe a hívás kezdetétől minden várakozás beleszámít, a `maxWaitMs: 0` egyetlen kérés.
 - A `posPdf()` 58 vagy 80 mm széles blokknyomtatóra készít PDF-et.
 - A tárca a PDF-et a tartalma alapján ellenőrzi, nem a tartalomtípus alapján, mert a Billingo a POS PDF-et `application/octet-stream` típussal küldi.
 
@@ -715,7 +717,7 @@ Csak a `not_found` hibát alakítja `null` értékké, minden más hibát továb
 
 </details>
 
-> **Írást a tárca soha nem küld újra magától.** Újrapróbálás csak a lekérdezéseknél (GET) történik: 429-es válasz, szerverhiba, időtúllépés vagy hálózati hiba után, a `Retry-After` fejlécet betartva, alapból legfeljebb háromszor. Ha a Billingo egy percnél hosszabb várakozást kér, a tárca nem vár, hanem `rate_limit` hibát ad.
+> **Írást a tárca soha nem küld újra magától.** Újrapróbálás csak a lekérdezéseknél (GET) történik: 429-es válasz, szerverhiba, időtúllépés vagy hálózati hiba után, a `Retry-After` fejlécet betartva. Alapból egy lekérdezés összesen legfeljebb háromszor megy ki (az első kérés és két ismétlés). Ha a Billingo egy percnél hosszabb várakozást kér, a tárca nem vár, hanem `rate_limit` hibát ad.
 
 ## Tesztelés
 
@@ -796,9 +798,9 @@ const tarca = createTarca({
 await tarca.organization.get({ signal: AbortSignal.timeout(5_000) })
 ```
 
-- Az alapértelmezett időkorlát 30 másodperc.
+- Az alapértelmezett időkorlát (`timeoutMs`) kísérletenként 30 másodperc. Értéke 1 és 2147483647 ms közötti egész szám lehet, a 0 vagy a nagyobb érték `configuration` hiba.
 - A `maxAttempts` csak a lekérdezésekre vonatkozik: alapból 3, legfeljebb 5.
-- A hookok (`onRequest`, `onResponse`, `onError`, `onComplete`) soha nem kapják meg az API kulcsot. Ha egy hook hibát dob, a kérés ettől nem bukik el, a hibát az `onWarning` kapja meg.
+- A hookok (`onRequest`, `onResponse`, `onError`, `onComplete`) soha nem kapják meg az API kulcsot. Ha egy hook hibát dob, vagy az aszinkron hook elutasított Promise-t ad, a kérés ettől nem bukik el, a hibát az `onWarning` kapja meg. Az `onWarning` saját hibáját a tárca elnyeli.
 - Minden metódus utolsó paramétere `{ signal }`, amellyel a kérés és a várakozás (PDF, export, `createOnce`) megszakítható.
 - A `fetch` opcióval saját `fetch` adható meg, a `baseUrl` opcióval pedig más API-cím.
 

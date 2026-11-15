@@ -1,16 +1,50 @@
-import { describe, expect, test } from 'vitest'
-import { createTestContext, mockBillingo, TEST_API_KEY } from '../../tests/helpers'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import {
+  createTestContext,
+  mockBillingo,
+  mockBillingoWithoutContract,
+  TEST_API_KEY,
+} from '../../tests/helpers'
 import {
   createContext,
   filenameFromContentDisposition,
+  type HookWarning,
+  MAX_ATTEMPTS,
   MAX_RETRY_AFTER_MS,
+  MAX_TIMER_MS,
   parseRateLimit,
   parseRetryAfter,
   type RequestEvent,
   resolveApiKey,
   retryDelay,
+  sleep,
 } from './context'
 import { BillingoError } from './errors'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+async function unhandledRejectionsOf(run: () => Promise<unknown>): Promise<unknown[]> {
+  const reasons: unknown[] = []
+  const listener = (reason: unknown): void => {
+    reasons.push(reason)
+  }
+  process.on('unhandledRejection', listener)
+  try {
+    await run()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  } finally {
+    process.off('unhandledRejection', listener)
+  }
+  return reasons
+}
+
+const BANK_ACCOUNT = { name: 'Fő', accountNumber: '11773016-11111018', currency: 'HUF' }
+const SAVED_BANK_ACCOUNT = {
+  status: 201,
+  json: { id: 5, name: 'Fő', account_number: '11773016-11111018', currency: 'HUF' },
+}
 
 describe('createContext', () => {
   test('X-API-KEY fejléccel, snake_case törzzsel küld, és camelCase választ ad', async () => {
@@ -154,6 +188,40 @@ describe('createContext', () => {
     expect((error as BillingoError).message).toContain('name: required')
   })
 
+  test('a 422 minden mezőhibáját megtartja, nem csak az elsőt (P:083)', async () => {
+    const errors = [
+      { field: 'partner_id', message: 'The partner id field is required.' },
+      { field: 'block_id', message: 'The block id field is required.' },
+      { field: 'type', message: 'The type field is required.' },
+      { field: 'fulfillment_date', message: 'The fulfillment date field is required.' },
+      { field: 'due_date', message: 'The due date field is required.' },
+      { field: 'payment_method', message: 'The payment method field is required.' },
+      { field: 'language', message: 'The language field is required.' },
+      { field: 'currency', message: 'The currency field is required.' },
+      {
+        field: 'conversion_rate',
+        message: 'The conversion rate field is required unless currency is in HUF.',
+      },
+      { field: 'items', message: 'The items field is required.' },
+    ]
+    const mock = mockBillingoWithoutContract(
+      'a P:083 élő próbája szándékosan üres törzset küldött',
+      { status: 422, json: { message: 'Validation Failed', errors } },
+    )
+    const context = createTestContext(mock)
+
+    const error = await context
+      .json({ operation: 'CreateDocumentFromDraft', pathParams: { id: 141703701 }, body: {} })
+      .catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({ category: 'validation', status: 422, fieldErrors: errors })
+    expect((error as BillingoError).message).toBe(
+      `A Billingo elutasította a küldött adatokat. ${errors
+        .map((item) => `${item.field}: ${item.message}`)
+        .join('; ')}`,
+    )
+  })
+
   test('írást soha nem próbál újra, még szerverhibánál sem', async () => {
     const mock = mockBillingo({ status: 500, json: { error: { message: 'boom' } } })
     const context = createTestContext(mock)
@@ -179,7 +247,7 @@ describe('createContext', () => {
     expect(mock.requests).toHaveLength(1)
   })
 
-  test('olvasást újrapróbál 429 és 5xx után, a Retry-After figyelembevételével', async () => {
+  test('olvasást újrapróbál 429 és 5xx után, ugyanazzal a requestId-val', async () => {
     const mock = mockBillingo(
       {
         status: 429,
@@ -195,6 +263,57 @@ describe('createContext', () => {
     await expect(context.json({ operation: 'GetServerTime' })).resolves.toEqual({ epoch: 1 })
     expect(events.map((event) => event.attempt)).toEqual([1, 2, 3])
     expect(new Set(events.map((event) => event.requestId)).size).toBe(1)
+  })
+
+  test('a 429 Retry-After fejlécét kivárja, akkor is, ha a retryDelayMs 0', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const mock = mockBillingo(
+      {
+        status: 429,
+        json: { error: { message: 'Too many requests' } },
+        headers: { 'retry-after': '2' },
+      },
+      { status: 200, json: { epoch: 1 } },
+    )
+    const context = createTestContext(mock)
+
+    const result = context.json({ operation: 'GetServerTime' })
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(mock.requests).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(result).resolves.toEqual({ epoch: 1 })
+    expect(mock.requests).toHaveLength(2)
+  })
+
+  test('a maxAttempts felső korlátja 5: nagyobb értékkel is legfeljebb öt kérés megy ki', async () => {
+    const down = { status: 503, json: { error: { message: 'down' } } }
+    const mock = mockBillingo(...Array.from({ length: 10 }, () => down))
+    const context = createContext({
+      apiKey: TEST_API_KEY,
+      fetch: mock.fetch,
+      retryDelayMs: 0,
+      maxAttempts: 10,
+    })
+
+    await expect(context.json({ operation: 'GetServerTime' })).rejects.toMatchObject({
+      category: 'server',
+    })
+    expect(MAX_ATTEMPTS).toBe(5)
+    expect(mock.requests).toHaveLength(5)
+  })
+
+  test('a 202-t (a fájl még készül) nem ismétli: arra a documents.pdf maxWaitMs-es várakozása való', async () => {
+    const mock = mockBillingo(
+      { status: 202, json: { error: { message: 'Document PDF has not generated yet.' } } },
+      { status: 200, bytes: new TextEncoder().encode('%PDF-1.4') },
+    )
+    const context = createTestContext(mock)
+
+    await expect(
+      context.binary({ operation: 'DownloadDocument', pathParams: { id: 1 } }),
+    ).rejects.toMatchObject({ category: 'not_ready', status: 202, retryable: true })
+    expect(mock.requests).toHaveLength(1)
   })
 
   test('a maxAttempts után feladja, és túl hosszú Retry-After esetén nem vár', async () => {
@@ -254,6 +373,30 @@ describe('createContext', () => {
       context.json({ operation: 'GetServerTime', signal: controller.signal }),
     ).rejects.toThrow('mégsem')
     expect(mock.requests).toHaveLength(0)
+  })
+
+  test('a kérés közbeni megszakítást is változatlanul továbbdobja, nem időtúllépésként', async () => {
+    const controller = new AbortController()
+    let started = 0
+    const fetch = ((_: RequestInfo | URL, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        started += 1
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+      })) as typeof globalThis.fetch
+    const context = createContext({ apiKey: TEST_API_KEY, fetch })
+
+    const pending = context
+      .json({ operation: 'CreateBankAccount', body: BANK_ACCOUNT, signal: controller.signal })
+      .catch((caught: unknown) => caught)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(started).toBe(1)
+    controller.abort()
+    const error = await pending
+
+    expect(error).toBe(controller.signal.reason)
+    expect(error).not.toBeInstanceOf(BillingoError)
+    expect((error as DOMException).name).toBe('AbortError')
+    expect(started).toBe(1)
   })
 
   test('a nem JSON sikeres válasz unexpected_response hiba', async () => {
@@ -333,6 +476,64 @@ describe('createContext', () => {
     expect(warnings).toEqual(['onResponse:GetServerTime'])
   })
 
+  test('az aszinkron hook elutasítása is onWarning lesz, nem kezeletlen elutasítás', async () => {
+    const mock = mockBillingo(SAVED_BANK_ACCOUNT)
+    const warnings: HookWarning[] = []
+    const context = createTestContext(mock, {
+      onResponse: async () => {
+        await Promise.resolve()
+        throw new Error('a naplózó nem érhető el')
+      },
+      onWarning: (warning) => warnings.push(warning),
+    })
+    let saved: unknown
+
+    const unhandled = await unhandledRejectionsOf(async () => {
+      saved = await context.json({ operation: 'CreateBankAccount', body: BANK_ACCOUNT })
+    })
+
+    expect(saved).toMatchObject({ id: 5 })
+    expect(unhandled).toEqual([])
+    expect(warnings).toMatchObject([
+      {
+        hook: 'onResponse',
+        operation: 'CreateBankAccount',
+        error: new Error('a naplózó nem érhető el'),
+      },
+    ])
+  })
+
+  test('a dobó vagy elutasító onWarning sem töri meg a már sikeres írást', async () => {
+    const failingHook = () => {
+      throw new Error('hook hiba')
+    }
+    const throwing = createTestContext(mockBillingo(SAVED_BANK_ACCOUNT), {
+      onResponse: failingHook,
+      onWarning: () => {
+        throw new Error('a figyelmeztetések naplója sem érhető el')
+      },
+    })
+    const rejecting = createTestContext(mockBillingo(SAVED_BANK_ACCOUNT), {
+      onRequest: async () => {
+        await Promise.resolve()
+        throw new Error('hook hiba')
+      },
+      onWarning: async () => {
+        await Promise.resolve()
+        throw new Error('a figyelmeztetések naplója sem érhető el')
+      },
+    })
+    const results: unknown[] = []
+
+    const unhandled = await unhandledRejectionsOf(async () => {
+      results.push(await throwing.json({ operation: 'CreateBankAccount', body: BANK_ACCOUNT }))
+      results.push(await rejecting.json({ operation: 'CreateBankAccount', body: BANK_ACCOUNT }))
+    })
+
+    expect(results).toMatchObject([{ id: 5 }, { id: 5 }])
+    expect(unhandled).toEqual([])
+  })
+
   test('a nem BillingoError hibát újrapróbálás nélkül továbbadja', async () => {
     const mock = mockBillingo({ status: 200, json: {} })
     const outcomes: string[] = []
@@ -369,6 +570,37 @@ describe('beállítások', () => {
     expect(() =>
       createContext({ apiKey: 'k', fetch: 'nem fetch' as unknown as typeof fetch }),
     ).toThrow('fetch')
+  })
+
+  test('a timeoutMs 1 és 2147483647 közötti egész: a 0 és a túl nagy érték configuration hiba', () => {
+    const rejected = [0, 0.5, MAX_TIMER_MS + 1, 2 ** 32, Number.MAX_SAFE_INTEGER, Infinity].map(
+      (timeoutMs) => {
+        try {
+          createContext({ apiKey: 'k', timeoutMs })
+          return 'elfogadva'
+        } catch (error) {
+          return error instanceof BillingoError ? error.category : String(error)
+        }
+      },
+    )
+
+    expect(MAX_TIMER_MS).toBe(2_147_483_647)
+    expect(rejected).toEqual(Array.from({ length: 6 }, () => 'configuration'))
+    expect(() => createContext({ apiKey: 'k', timeoutMs: 1 })).not.toThrow()
+    expect(() => createContext({ apiKey: 'k', timeoutMs: MAX_TIMER_MS })).not.toThrow()
+  })
+
+  test('a sleep a 2147483647 ms-nál hosszabb várakozást sem rövidíti 1 ms-ra', async () => {
+    const controller = new AbortController()
+
+    const waiting = sleep(MAX_TIMER_MS + 1, controller.signal).then(
+      () => 'lejárt',
+      () => 'megszakítva',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    controller.abort()
+
+    expect(await waiting).toBe('megszakítva')
   })
 })
 

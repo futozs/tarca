@@ -7,6 +7,7 @@ import {
 } from '../core/context'
 import { type DateInput, toBillingoDate } from '../core/dates'
 import { BillingoError } from '../core/errors'
+import { assertValid, createInputCheck } from '../documents/check'
 import type {
   CreateDocumentExport,
   DocumentExportId,
@@ -78,6 +79,10 @@ function missingExportId(): BillingoError {
 
 export function createExportsApi(context: TarcaContext): ExportsApi {
   const create = async (input: ExportInput, options?: RequestOptions): Promise<ExportJob> => {
+    const check = createInputCheck()
+    check.convert('startDate', () => toBillingoDate(input.startDate))
+    check.convert('endDate', () => toBillingoDate(input.endDate))
+    assertValid(check, 'Create', 'exportadatok')
     const response = await context.json<DocumentExportId>({
       operation: 'Create',
       body: {

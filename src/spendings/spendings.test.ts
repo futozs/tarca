@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { createTestContext, mockBillingo } from '../../tests/helpers'
 import { parameterErrors, requestErrors, SPEC_AVAILABLE } from '../../tests/openapi'
+import { BillingoError } from '../core/errors'
 import { createSpendingsApi, type SpendingInput } from './spendings'
 
 const LIVE_SPENDING = {
@@ -149,15 +150,31 @@ describe('spendings', () => {
     })
   })
 
-  test('hibás dátumra kérés nélkül elutasított Promise, nem szinkron kivétel', async () => {
+  test('hibás dátumra kérés nélkül elutasított Promise: a törzsben validation hiba mezőnként, a szűrőben RangeError', async () => {
     const { mock, spendings } = setup()
 
-    const create = spendings.create({ ...INPUT, invoiceDate: '2026-02-30' })
-    const update = spendings.update(1, { ...INPUT, paidAt: '2026.11.15' })
+    const create = spendings
+      .create({ ...INPUT, invoiceDate: '2026-02-30', dueDate: '2026-13-01' })
+      .catch((caught: unknown) => caught)
+    const update = spendings
+      .update(1, { ...INPUT, paidAt: '2026.11.15' })
+      .catch((caught: unknown) => caught)
     const list = spendings.list({ startDate: '15/11/2026' })
 
-    await expect(create).rejects.toThrow('Nem létező naptári dátum: 2026-02-30')
-    await expect(update).rejects.toThrow(RangeError)
+    expect(await create).toBeInstanceOf(BillingoError)
+    expect(await create).toMatchObject({
+      category: 'validation',
+      operation: 'SpendingSave',
+      fieldErrors: [
+        { field: 'invoiceDate', message: 'Nem létező naptári dátum: 2026-02-30' },
+        { field: 'dueDate', message: 'Nem létező naptári dátum: 2026-13-01' },
+      ],
+    })
+    expect(await update).toMatchObject({
+      category: 'validation',
+      operation: 'SpendingUpdate',
+      fieldErrors: [{ field: 'paidAt', message: expect.stringContaining('2026.11.15') }],
+    })
     await expect(list).rejects.toThrow(RangeError)
     expect(mock.requests).toEqual([])
   })
