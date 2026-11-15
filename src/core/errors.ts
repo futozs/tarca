@@ -2,6 +2,7 @@ import type { OperationId } from './operations'
 
 export type BillingoErrorCategory =
   | 'auth'
+  | 'nav_unavailable'
   | 'subscription'
   | 'forbidden'
   | 'not_found'
@@ -118,6 +119,17 @@ const STATUS_INFO: Readonly<Record<number, StatusInfo>> = {
   },
 }
 
+const NAV_UNAVAILABLE: StatusInfo = {
+  category: 'nav_unavailable',
+  message: 'A funkcióhoz élő NAV kapcsolat kell, ennek a Billingo profilnak nincs.',
+  hint: 'Ez nem kulcshiba, az API kulcs érvényes. A Billingo fejlesztői teszt profilján (sandbox) nincs NAV kapcsolat, ott ez a funkció nem érhető el. Éles profilon a NAV Online Számla összekötést a Billingo felületén kell beállítani (technikai felhasználóval).',
+}
+
+function mentionsNavConnection(apiMessage: string | undefined): boolean {
+  if (apiMessage === undefined) return false
+  return /\bNAV\b/i.test(apiMessage) && /\b(connection|sandbox|kapcsolat)/i.test(apiMessage)
+}
+
 export function statusInfo(status: number): StatusInfo {
   const known = STATUS_INFO[status]
   if (known) return known
@@ -168,8 +180,11 @@ export interface ResponseErrorInput {
 }
 
 export function errorFromResponse(input: ResponseErrorInput): BillingoError {
-  const info = statusInfo(input.status)
   const { apiMessage, traceId, fieldErrors } = parseErrorBody(input.body)
+  const info =
+    (input.status === 401 || input.status === 403) && mentionsNavConnection(apiMessage)
+      ? NAV_UNAVAILABLE
+      : statusInfo(input.status)
   const details = fieldErrors.map((item) => `${item.field}: ${item.message}`).join('; ')
   const suffix = details ? ` ${details}` : apiMessage ? ` (${apiMessage})` : ''
   return new BillingoError(`${info.message}${suffix}`, {

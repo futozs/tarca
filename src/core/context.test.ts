@@ -18,7 +18,7 @@ describe('createContext', () => {
 
     const result = await context.json<{ id: number; accountNumber: string }>({
       operation: 'CreateBankAccount',
-      body: { name: 'Fő', accountNumber: '1177', needQr: true },
+      body: { name: 'Fő', accountNumber: '1177', currency: 'HUF', needQr: true },
     })
 
     expect(result).toEqual({ id: 7, accountNumber: '1177' })
@@ -27,7 +27,12 @@ describe('createContext', () => {
     expect(request?.url.href).toBe('https://api.billingo.hu/v3/bank-accounts')
     expect(request?.headers.get('x-api-key')).toBe(TEST_API_KEY)
     expect(request?.headers.get('content-type')).toBe('application/json')
-    expect(request?.body).toEqual({ name: 'Fő', account_number: '1177', need_qr: true })
+    expect(request?.body).toEqual({
+      name: 'Fő',
+      account_number: '1177',
+      currency: 'HUF',
+      need_qr: true,
+    })
   })
 
   test('kitölti az útvonal paramétereit és a query stringet', async () => {
@@ -97,7 +102,21 @@ describe('createContext', () => {
     const mock = mockBillingo({ status: 500, json: { error: { message: 'boom' } } })
     const context = createTestContext(mock)
 
-    await expect(context.json({ operation: 'CreateDocument', body: {} })).rejects.toMatchObject({
+    const invoice = {
+      partnerId: 1,
+      blockId: 2,
+      type: 'invoice',
+      fulfillmentDate: '2026-11-15',
+      dueDate: '2026-11-23',
+      paymentMethod: 'wire_transfer',
+      language: 'hu',
+      currency: 'HUF',
+      items: [{ productId: 3, quantity: 1 }],
+    }
+
+    await expect(
+      context.json({ operation: 'CreateDocument', body: invoice }),
+    ).rejects.toMatchObject({
       category: 'server',
       retryable: true,
     })

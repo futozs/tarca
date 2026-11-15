@@ -73,4 +73,51 @@ describe('Billingo hibák', () => {
     expect(error.fieldErrors).toEqual([])
     expect(error.name).toBe('BillingoError')
   })
+
+  test('a NAV kapcsolat hiányát jelző 401 és 403 nem kulcshiba, hanem nav_unavailable', () => {
+    const fromStatus = (status: number, message: string) =>
+      errorFromResponse({
+        status,
+        body: { error: { message } },
+        operation: 'CheckTaxNumber',
+        requestId: 'r1',
+        retryAfterMs: undefined,
+        rateLimit: undefined,
+      })
+    const sandbox =
+      'To use this feature, please ensure you have a live connection to NAV (not available in sandbox mode)'
+
+    const error = fromStatus(401, sandbox)
+    expect(error).toMatchObject({
+      category: 'nav_unavailable',
+      status: 401,
+      retryable: false,
+      apiMessage: sandbox,
+    })
+    expect(error.message).toBe(
+      `A funkcióhoz élő NAV kapcsolat kell, ennek a Billingo profilnak nincs. (${sandbox})`,
+    )
+    expect(error.hint).toContain('nem kulcshiba')
+    expect(error.hint).toContain('teszt profil')
+    expect(fromStatus(403, 'Missing NAV connection').category).toBe('nav_unavailable')
+    expect(fromStatus(401, 'Nincs NAV kapcsolat').category).toBe('nav_unavailable')
+    expect(
+      fromStatus(401, 'Authorization information (Header: X-API-KEY) is missing or invalid.')
+        .category,
+    ).toBe('auth')
+    expect(fromStatus(401, 'NAV error').category).toBe('auth')
+    expect(fromStatus(401, 'navigation connection lost').category).toBe('auth')
+    expect(
+      errorFromResponse({
+        status: 401,
+        body: undefined,
+        operation: 'GetOrganizationData',
+        requestId: 'r2',
+        retryAfterMs: undefined,
+        rateLimit: undefined,
+      }).category,
+    ).toBe('auth')
+    expect(fromStatus(500, sandbox).category).toBe('server')
+    expect(fromStatus(422, sandbox).category).toBe('validation')
+  })
 })
