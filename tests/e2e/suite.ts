@@ -19,7 +19,7 @@ export const E2E_OPERATIONS: readonly OperationId[] = [
 
 export const E2E_EXCLUDED: Readonly<Partial<Record<OperationId, string>>> = {
   CheckTaxNumber:
-    'A teszt profilnak nincs NAV kapcsolata, a hivatalos MCP mérése szerint itt 401-et ad. Előbb élőben ellenőrizni kell a pontos választ.',
+    'A teszt profilnak nincs NAV kapcsolata: érvényes adószámra 401-et ad („live connection to NAV … not available in sandbox mode”), 2026-11-15-én élőben ellenőrizve.',
   GetId: 'A teszt profilban nincs régi (v2) azonosító, amit át lehetne váltani.',
 }
 
