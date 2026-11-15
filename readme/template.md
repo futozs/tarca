@@ -73,7 +73,7 @@ Webshopban vagy webhookból a `createOnce()` hívást használd, a rendelés azo
 | Több fiók egy folyamatban | ✓ | ✗ | ✓ | – | – | – |
 | Webhookból bizonylat (Stripe, SimplePay, Barion, Revolut, PayPal) | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Parancssor és MCP szerver | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Utolsó kiadás | még nincs kiadva | 2022. július | 2023. október | 2024. január | 2024. február | 2017. július |
+| Utolsó kiadás | 2026. november | 2022. július | 2023. október | 2024. január | 2024. február | 2017. július |
 
 <sub>Az adatok a 2026. november 15-i állapotot mutatják, az npm registry és a publikált csomagok kódja alapján. A tárca {{operations}} művelete a 3.0.14-es és a 3.0.15-ös spec összes műveletét és a nem dokumentált, élőben működő {{undocumentedOperations}} műveletet jelenti. Az Edge sort a függőségekből töltöttük ki (axios 0.27, form-data, node-fetch, superagent, request, <code>fs</code>), nem futtattuk. A „–” azt jelenti, hogy nem ellenőriztük. A Billingo saját <code>@billingo/billingo-mcp</code> csomagja MCP szerver AI asszisztenseknek, nem importálható könyvtár, ezért nem szerepel a táblázatban. Az n8n- és Activepieces-bővítmények ugyanezért maradtak ki.</sub>
 
