@@ -242,17 +242,20 @@ if (!skipChecks) {
   if (!run('npm', ['run', 'ci'])) fail('A CI elbukott, nem adom ki a csomagot.')
 }
 
+const originalChangelog = existsSync(changelogPath)
+  ? readFileSync(changelogPath, 'utf8')
+  : undefined
+
 const restore = () => {
   const current = JSON.parse(readFileSync(packagePath, 'utf8'))
   if (current.version === version) {
     writeFileSync(packagePath, `${JSON.stringify({ ...current, version: pkg.version }, null, 2)}\n`)
   }
-  if (!existsSync(changelogPath)) return
-  const changelog = readFileSync(changelogPath, 'utf8')
-  if (!changelog.includes(entry)) return
-  const withoutEntry = changelog.replace(`${entry}\n`, '')
-  if (withoutEntry.trim() === '# Változásnapló') unlinkSync(changelogPath)
-  else writeFileSync(changelogPath, withoutEntry)
+  if (originalChangelog === undefined) {
+    if (existsSync(changelogPath)) unlinkSync(changelogPath)
+  } else {
+    writeFileSync(changelogPath, originalChangelog)
+  }
 }
 
 const abort = () => {
