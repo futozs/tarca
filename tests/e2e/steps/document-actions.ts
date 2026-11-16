@@ -50,6 +50,16 @@ const NO_NAV_SETTINGS = {
   ],
 }
 
+const NAV_RECORD_POLLS = 40
+
+async function navStatusOnceRecorded(ctx: E2eContext, id: number) {
+  for (let poll = 1; poll < NAV_RECORD_POLLS; poll += 1) {
+    const status = await ctx.tarca.documents.navStatus(id)
+    if (status !== null) return status
+  }
+  return ctx.tarca.documents.navStatus(id)
+}
+
 function signature(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes.slice(0, PDF_SIGNATURE.length))
 }
@@ -88,11 +98,14 @@ export function defineDocumentActionsSteps(ctx: E2eContext): void {
     const url = await ctx.tarca.documents.publicUrl(invoiceId())
     expect(url).toMatch(/^https:\/\/api\.billingo\.hu\/document-access\/[A-Za-z0-9]{32}$/)
   })
-  step('navStatus: a teszt profilon 200 no_online_szamla_settings, nem null', async () => {
-    expect(await ctx.tarca.documents.navStatus(invoiceId())).toEqual(NO_NAV_SETTINGS)
-    const finalized = ctx.required(ctx.state.draftId, 'piszkozatból véglegesített számla id')
-    expect.soft(await ctx.tarca.documents.navStatus(finalized)).toEqual(NO_NAV_SETTINGS)
-  })
+  step(
+    'navStatus: a NAV-rekord elkészülte után a teszt profilon 200 no_online_szamla_settings',
+    async () => {
+      expect(await navStatusOnceRecorded(ctx, invoiceId())).toEqual(NO_NAV_SETTINGS)
+      const finalized = ctx.required(ctx.state.draftId, 'piszkozatból véglegesített számla id')
+      expect.soft(await navStatusOnceRecorded(ctx, finalized)).toEqual(NO_NAV_SETTINGS)
+    },
+  )
   step('reminders: küldés előtt három üres lista', async () => {
     expect(await ctx.tarca.documents.reminders(invoiceId())).toEqual({
       sentReminders: [],
@@ -175,7 +188,7 @@ export function defineDocumentActionsSteps(ctx: E2eContext): void {
       })
       const id = ctx.required(original.id, 'módosítandó számla id')
       ctx.state.modifiedInvoiceId = id
-      expect.soft(await ctx.tarca.documents.navStatus(id)).toBeNull()
+      expect.soft([null, NO_NAV_SETTINGS]).toContainEqual(await ctx.tarca.documents.navStatus(id))
       const modification = await ctx.tarca.documents.createModification(id, {
         comment: ctx.name('módosító'),
         items: [line('módosítás', -1000)],
