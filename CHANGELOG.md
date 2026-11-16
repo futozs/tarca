@@ -1,5 +1,11 @@
 # Változásnapló
 
+## 0.2.0 (2026-11-16)
+
+### Újdonságok
+
+- **web:** tarcajs.hu website, sibling of the kassza site (eaa5319)
+
 ## 0.1.2 (2026-11-16)
 
 ### Javítások
