@@ -1,0 +1,17 @@
+{
+  "title": "Kiegészítők",
+  "pages": [
+    "parancssor",
+    "mcp-szerver",
+    "mcp-http",
+    "ai-asszisztensek",
+    "pdf-tarhely",
+    "tarolok",
+    "bizonylatnaplo",
+    "tomeges-szamlazas",
+    "ismetlodo-idoszakok",
+    "megfigyelhetoseg",
+    "node-express",
+    "serverless-es-edge"
+  ]
+}

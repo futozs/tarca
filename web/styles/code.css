@@ -1,0 +1,464 @@
+.codeblock {
+  position: relative;
+  margin: 0 0 1.5rem;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--code-background);
+  color: var(--code-foreground);
+  font-size: 0.875rem;
+  box-shadow: 0 24px 48px -24px oklch(from var(--shadow-color) l c h / 0.2);
+}
+
+.codeblock-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--editor-rule);
+  background: var(--editor-chrome);
+  color: var(--code-token-function);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.codeblock-title svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+  color: var(--code-token-punctuation);
+}
+
+.codeblock-viewport {
+  position: relative;
+}
+
+@media (max-width: 40rem) {
+  .codeblock {
+    font-size: 0.8125rem;
+  }
+}
+
+.codeblock pre {
+  margin: 0;
+  padding: 1rem 0;
+  overflow-x: auto;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: inherit;
+  line-height: 1.7;
+  tab-size: 2;
+  scrollbar-width: thin;
+  scrollbar-color: var(--editor-rule) transparent;
+}
+
+.codeblock pre:focus-visible {
+  outline-offset: -2px;
+}
+
+.codeblock pre code {
+  display: inline-block;
+  min-width: 100%;
+  font-feature-settings:
+    "liga" 0,
+    "calt" 0;
+}
+
+.codeblock .line {
+  display: inline-block;
+  min-width: 100%;
+  min-height: 1.7em;
+  padding: 0 1rem;
+  vertical-align: top;
+}
+
+.shiki span {
+  color: var(--shiki-light);
+  font-style: var(--shiki-light-font-style);
+  font-weight: var(--shiki-light-font-weight);
+  text-decoration: var(--shiki-light-text-decoration);
+}
+
+.codeblock .line.highlighted {
+  background: var(--code-line-highlight);
+  box-shadow: inset 2px 0 0 var(--blue-mid);
+}
+
+.codeblock .highlighted-word {
+  padding: 0.05rem 0.2rem;
+  margin: -0.05rem -0.2rem;
+  border-radius: 0.2rem;
+  background: var(--code-line-highlight);
+  box-shadow: 0 0 0 1px oklch(from var(--blue-mid) l c h / 0.5);
+}
+
+.codeblock .line.diff.add {
+  background: var(--code-line-inserted);
+}
+
+.codeblock .line.diff.remove {
+  background: var(--code-line-deleted);
+  opacity: 0.78;
+}
+
+.codeblock .line.diff::before {
+  display: inline-block;
+  width: 1ch;
+  margin-left: -0.7rem;
+  margin-right: -0.3ch;
+  color: var(--code-line-number);
+}
+
+.codeblock .line.diff.add::before {
+  content: "+";
+  color: oklch(78% 0.12 150);
+}
+
+.codeblock .line.diff.remove::before {
+  content: "−";
+  color: oklch(74% 0.13 25);
+}
+
+.codeblock pre.has-focused .line:not(.focused) {
+  opacity: 0.45;
+  filter: blur(0.6px);
+  transition:
+    opacity var(--dur-short) var(--ease-out),
+    filter var(--dur-short) var(--ease-out);
+}
+
+.codeblock:hover pre.has-focused .line:not(.focused) {
+  opacity: 1;
+  filter: none;
+}
+
+.codeblock pre[data-line-numbers] code {
+  counter-reset: line calc(var(--line-start, 1) - 1);
+}
+
+.codeblock pre[data-line-numbers] .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 2.2ch;
+  margin-right: 1.2rem;
+  color: var(--code-line-number);
+  text-align: right;
+}
+
+.codeblock-copy {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: var(--z-raised);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--editor-rule);
+  border-radius: var(--radius-md);
+  background: var(--editor-chrome);
+  color: var(--code-token-punctuation);
+  opacity: 0;
+  transition:
+    opacity var(--dur-short) var(--ease-out),
+    color var(--dur-micro) ease,
+    background-color var(--dur-micro) ease,
+    transform var(--dur-press) ease;
+}
+
+.codeblock:hover .codeblock-copy,
+.codeblock:focus-within .codeblock-copy,
+.codeblock-copy[data-copied="true"] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .codeblock-copy {
+    opacity: 1;
+  }
+}
+
+.codeblock-copy:hover {
+  background: var(--editor-rule);
+  color: var(--code-foreground);
+}
+
+.codeblock-copy:active {
+  transform: scale(0.94);
+}
+
+.codeblock-copy:focus-visible {
+  outline-color: var(--blue-mid);
+}
+
+.codeblock-copy[data-copied="true"] {
+  color: oklch(80% 0.12 150);
+}
+
+.codeblock-copy svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.codeblock-tabs {
+  margin: 0 0 1.5rem;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--code-background);
+  box-shadow: 0 24px 48px -24px oklch(from var(--shadow-color) l c h / 0.2);
+}
+
+.codeblock-tabs .codeblock {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.codeblock-tabs .codeblock + .codeblock {
+  border-top: 1px solid var(--editor-rule);
+}
+
+.codeblock-tabs-list {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+  border-bottom: 1px solid var(--editor-rule);
+  background: var(--editor-chrome);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.codeblock-tabs-trigger {
+  position: relative;
+  padding: 0.65rem 0.6rem;
+  color: var(--code-token-punctuation);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color var(--dur-micro) ease;
+}
+
+.codeblock-tabs-trigger:hover {
+  color: var(--code-foreground);
+}
+
+.codeblock-tabs-trigger:focus-visible {
+  outline-color: var(--blue-mid);
+  outline-offset: -2px;
+}
+
+.codeblock-tabs-trigger[data-active],
+.codeblock-tabs-trigger[aria-selected="true"] {
+  color: var(--code-foreground);
+}
+
+.codeblock-tabs-trigger[data-active]::after,
+.codeblock-tabs-trigger[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 0.5rem;
+  bottom: -1px;
+  left: 0.5rem;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--blue-mid);
+}
+
+.twoslash .twoslash-hover {
+  all: unset;
+  position: relative;
+  border-bottom: 1px dotted transparent;
+  transition: border-color var(--dur-short) var(--ease-out);
+}
+
+.twoslash:hover .twoslash-hover {
+  border-bottom-color: oklch(from var(--code-token-punctuation) l c h / 0.8);
+}
+
+.twoslash .twoslash-hover:focus-visible {
+  outline: 2px solid var(--blue-mid);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+.fd-twoslash-popover-positioner {
+  z-index: var(--z-tooltip);
+}
+
+.fd-twoslash-popover {
+  --code-foreground: var(--ink);
+  --code-token-keyword: oklch(45% 0.2 305);
+  --code-token-string: oklch(47% 0.12 70);
+  --code-token-string-expression: oklch(47% 0.12 70);
+  --code-token-constant: oklch(50% 0.16 40);
+  --code-token-function: var(--blue-ink);
+  --code-token-parameter: var(--ink-2);
+  --code-token-punctuation: var(--muted);
+  --code-token-comment: var(--muted);
+  --code-token-link: var(--blue-ink);
+
+  min-width: 15rem;
+  max-width: min(30rem, 94vw);
+  max-height: 25rem;
+  overflow: auto;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  box-shadow:
+    0 24px 64px -24px oklch(from var(--shadow-color) l c h / 0.4),
+    0 2px 6px oklch(from var(--shadow-color) l c h / 0.08);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--dur-short) var(--ease-out),
+    transform var(--dur-short) var(--ease-out);
+}
+
+.fd-twoslash-popover[data-starting-style],
+.fd-twoslash-popover[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.fd-twoslash-popover:focus-visible {
+  outline: none;
+}
+
+.twoslash-popup-code {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.twoslash-popup-code .line {
+  padding: 0;
+}
+
+.twoslash-popup-docs,
+.twoslash-popup-docs-tags {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: 0.82rem;
+}
+
+.twoslash-popup-docs-tag {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5em;
+}
+
+.twoslash-popup-docs-tag-name {
+  font-weight: 600;
+}
+
+.twoslash .twoslash-error-line {
+  margin: 0.2em 0;
+  padding: 0.35rem 1rem;
+  background: oklch(30% 0.06 25 / 0.7);
+  color: oklch(88% 0.06 25);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  white-space: normal;
+}
+
+.twoslash .twoslash-error {
+  padding-bottom: 2px;
+  text-decoration: wavy underline oklch(72% 0.15 25);
+}
+
+.twoslash .twoslash-tag-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  margin: 0.2em 0;
+  padding: 0.35rem 1rem;
+  background: var(--code-line-highlight);
+  color: var(--on-blue-2);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+}
+
+.twoslash .twoslash-tag-line .twoslash-tag-icon {
+  width: 1.1em;
+}
+
+.twoslash .twoslash-tag-line.twoslash-tag-warn-line {
+  background: oklch(32% 0.06 80 / 0.7);
+  color: oklch(90% 0.08 85);
+}
+
+.twoslash .twoslash-tag-line.twoslash-tag-error-line {
+  background: oklch(30% 0.06 25 / 0.7);
+  color: oklch(88% 0.06 25);
+}
+
+.twoslash .twoslash-tag-line.twoslash-tag-annotate-line {
+  background: var(--code-line-inserted);
+  color: oklch(90% 0.07 150);
+}
+
+.twoslash-completion-cursor {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.twoslash-completion-cursor::before {
+  content: " ";
+  width: 1px;
+  height: 1.4em;
+  background: var(--code-foreground);
+}
+
+.twoslash-completion-list {
+  position: relative;
+  z-index: var(--z-raised);
+  display: inline-flex;
+  flex-direction: column;
+  width: 18rem;
+  margin-top: 0.5rem;
+  margin-right: -18rem;
+  padding: 0.4rem;
+  border: 1px solid var(--editor-rule);
+  border-radius: var(--radius-md);
+  background: var(--editor-chrome);
+  user-select: none;
+  white-space: normal;
+}
+
+.twoslash-completion-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.twoslash-completion-list .twoslash-completions-unmatched {
+  color: var(--code-token-punctuation);
+}
+
+.twoslash-completion-list .twoslash-completions-icon {
+  width: 1em;
+  flex: none;
+  color: var(--code-token-punctuation);
+}
+
+.twoslash-meta-line {
+  display: flex;
+}

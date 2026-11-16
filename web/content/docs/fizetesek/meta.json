@@ -1,0 +1,17 @@
+{
+  "title": "Fizetésből bizonylat",
+  "pages": [
+    "bizonylat-fizetesbol",
+    "stripe",
+    "simplepay",
+    "barion",
+    "revolut",
+    "paypal",
+    "webhook-beallitasok",
+    "osszegek",
+    "vevo-adatai",
+    "nyugta-vagy-szamla",
+    "visszaterites",
+    "reszleges-visszaterites"
+  ]
+}

@@ -1,0 +1,43 @@
+---
+title: Költségek és export
+description: Bejövő számlák rögzítése költségként, és a kiállított bizonylatok exportja CSV-be a tárcával. Az export elindítása, kivárása és letöltése egy hívásban.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentExport/Create
+---
+
+## Export
+
+<Example slug="export" />
+
+- Az `exports.run()` elindítja az exportot, megvárja, amíg elkészül (alapból legfeljebb 60 másodpercig), és letölti. Ha addig nem készül el, `not_ready` hibát ad az export azonosítójával, és később a `poll()` és a `download()` folytatja.
+- A `simple_csv` UTF-8 BOM-mal kezdődik, a mezőket pontosvessző választja el.
+
+<OperationTable pathPrefix="/document-export" />
+
+## Költségek
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const koltseg = await tarca.spendings.create({
+  category: 'service',
+  currency: 'HUF',
+  conversionRate: 1,
+  totalGross: 12_700,
+  totalGrossHuf: 12_700,
+  totalVatAmount: 2_700,
+  totalVatAmountHuf: 2_700,
+  invoiceNumber: 'SZLA-2026-42',
+  invoiceDate: '2026-11-10',
+  fulfillmentDate: '2026-11-10',
+  dueDate: '2026-11-18',
+  paymentMethod: 'wire_transfer',
+})
+
+const fizetetlen = await tarca.spendings.list({ paymentStatus: 'unpaid' })
+```
+
+A spec szerint opcionális `conversionRate`, `invoiceNumber`, `invoiceDate` és `dueDate` mezőt a Billingo megköveteli (forintnál az árfolyam `1`), ezért a tárca típusa is kötelezőnek írja. A forintos összegeket úgy tárolja, ahogy küldöd.
+
+<OperationTable pathPrefix="/spendings" />

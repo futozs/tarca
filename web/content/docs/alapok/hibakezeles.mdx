@@ -1,0 +1,64 @@
+---
+title: Hibakezelés
+description: Minden hiba BillingoError, magyar üzenettel, kategóriával, mezőhibákkal, a Billingo nyomkövetési azonosítójával és javítási tippel. Mikor ismétel a tárca, és mikor nem.
+---
+
+A tárca minden hibát `BillingoError`-ként dob. Ugyanazt kapod, akár a tárca utasította el a bemenetet a kérés előtt, akár a Billingo válaszolt hibával, akár a hálózat szakadt meg.
+
+<Example slug="hibakezeles" />
+
+## A hiba mezői
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+declare const szamla: Parameters<typeof tarca.documents.create>[0]
+
+try {
+  await tarca.documents.create(szamla)
+} catch (error) {
+  if (!isBillingoError(error)) throw error
+
+  for (const { field, message } of error.fieldErrors) console.error(field, message)
+  console.error(error.category, error.hint, error.traceId)
+  throw error
+}
+```
+
+- `error.fieldErrors`: a mezőnkénti hibák, a Billingo 422-es válaszából vagy a tárca saját ellenőrzéséből (például `items.0.vat`).
+- `error.hint`: magyar javítási tipp, ha van.
+- `error.traceId`: a Billingo nyomkövetési azonosítója, hibabejelentéshez hasznos.
+- `error.retryable`: igaz, ha a hiba átmeneti (`rate_limit`, `server`, `not_ready`, `network`, `timeout`).
+- `error.status`, `error.operation`, `error.apiMessage`, `error.retryAfterMs`, `error.rateLimit`: a válasz további részletei.
+
+## Kategóriák
+
+<ErrorCategoryTable />
+
+## Újrapróbálás
+
+<Callout type="warning" title="Írást a tárca soha nem küld újra magától">
+  Újrapróbálás csak a lekérdezéseknél (GET) történik: 429-es válasz, szerverhiba, időtúllépés vagy
+  hálózati hiba után, a `Retry-After` fejlécet betartva. Egy lekérdezés összesen legfeljebb háromszor
+  megy ki (az első kérés és két ismétlés). Ha a Billingo egy percnél hosszabb várakozást kér, a tárca
+  nem vár, hanem `rate_limit` hibát ad.
+</Callout>
+
+Egy POST, PUT vagy DELETE kérés hálózati hibája után nem tudhatod, hogy a Billingo megkapta-e. Számlánál ezért a `createOnce()`-t használd: bizonytalan hiba után visszakeresi a bizonylatot, és csak akkor adja tovább a hibát, ha tényleg nem készült el. Lásd [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
+
+A Billingo kulccsal percenként 300 kérést enged. A `rate_limit` hibában a `retryAfterMs` a `Retry-After` fejlécből jön, ha a Billingo küldi.
+
+## Ha nincs ilyen erőforrás
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+const partner = await nullIfNotFound(tarca.partners.get(1234))
+
+if (partner === null) console.log('Nincs ilyen partner.')
+```
+
+A `nullIfNotFound()` csak a `not_found` hibát alakítja `null` értékké, minden más hibát továbbdob. A Billingo törölt vagy ismeretlen bizonylatra és számlatömbre 403-at ad, ezt a `nullIfNotFound()` nem nyeli el. Bizonylathoz a `findByVendorId()` való.

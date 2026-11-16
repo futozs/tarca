@@ -1,0 +1,76 @@
+---
+title: MCP és parancssor
+description: A tarcajs parancssor ellenőrzi a Billingo beállítást, az MCP szerver pedig előnézettel és megerősítő kóddal enged számlát kiállítani Claude, Cursor és más AI asszisztensek számára.
+---
+
+## Parancssor
+
+```bash title="Terminál"
+npx tarcajs doctor --tax-code 12345678-2-42 --defaults tarca.json
+npx tarcajs verify
+npx tarcajs document get --vendor ORDER-1001
+```
+
+A `doctor` három olvasó kéréssel ellenőrzi a Node.js-t, az időzónát, az API kulcsot (csak a hosszát írja ki), a gép óráját, azt, hogy teszt vagy éles profilon vagy, a NAV-kapcsolatot, az előfizetést, a számlatömböket és a bankszámlákat.
+
+- A `--tax-code` adószámot összeveti, de nem írja ki.
+- A `--defaults` a `TarcaDefaults` azonosítóit keresi meg a fiókban.
+- A `--report` titokmentes Markdown jelentést ad hibajegyhez.
+
+Azt, hogy a kulcs csak olvasásra szól-e, vagy hogy az éles profilon megvan-e az „API + Tömeges” kiegészítő, olvasással nem lehet bizonyítani: a doctor ezt kimondja, nem találgat.
+
+A `document get` a bizonylatot JSON-ban írja ki azonosító vagy `--vendor` alapján. A `--help` bármelyik parancs után a súgót adja, kulcs és kérés nélkül. Kilépési kódok: 0 siker, 1 hiba, 2 használati hiba.
+
+## MCP szerver
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "tarcajs": {
+      "command": "npx",
+      "args": ["-y", "tarcajs", "mcp"],
+      "env": { "BILLINGO_API_KEY": "..." }
+    }
+  }
+}
+```
+
+Claude, Cursor és más MCP kliensek számára, 21 eszközzel. Alapból csak olvas: profil, bizonylatok, partnerek, termékek, költségek, adószám, árfolyam, és öt előnézet.
+
+Az `--allow-write` kapcsolóval (vagy `TARCA_MCP_ALLOW_WRITE=1`) számlát és nyugtát állíthat ki, sztornózhat, befizetést rögzíthet és e-mailt küldhet. Minden íráshoz kell az előnézeti eszköz megerősítő kódja, pontosan ugyanarra a bemenetre, 15 percig és csak az előnézet budapesti napján. A kiállítás `createOnce`-szal megy, így egy ismételt hívás nem állít ki második számlát.
+
+<Callout type="warning" title="Próbához teszt profilt használj">
+  Éles profilon a kiállított számlát a Billingo jelenti a NAV-nak, és csak sztornózni lehet.
+</Callout>
+
+## MCP edge-en
+
+A `createTarcaMcpHandler()` Cloudflare Workers és Vercel Edge alá ad `Request → Response` kezelőt. Az `authorize` kötelező, mert a szerveroldali Billingo kulccsal névtelen végponton bárki számlát állíthatna ki, és a `confirmationSecret` is, mert a megerősítő kódot egy másik példány is ellenőrzi.
+
+```ts twoslash
+import { createTarcaMcpHandler, createTarcaMcpServer, type TarcaMcpHandler } from 'tarcajs/mcp'
+
+interface Env {
+  BILLINGO_API_KEY: string
+  MCP_SECRET: string
+  MCP_TOKEN: string
+}
+
+let handler: TarcaMcpHandler | undefined
+
+export default {
+  fetch(request: Request, env: Env) {
+    handler ??= createTarcaMcpHandler(
+      createTarcaMcpServer({ apiKey: env.BILLINGO_API_KEY, confirmationSecret: env.MCP_SECRET }),
+      {
+        authorize: (incoming) =>
+          Boolean(env.MCP_TOKEN) &&
+          incoming.headers.get('authorization') === `Bearer ${env.MCP_TOKEN}`,
+      },
+    )
+    return handler(request)
+  },
+}
+```
+
+A titok legalább 16 bájt legyen (például `openssl rand -hex 32`). A szervert ne kérésenként hozd létre: a felhasznált megerősítő kódot a példány memóriája jegyzi meg.

@@ -1,0 +1,151 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+@import "../styles/site.css" layer(components);
+@import "../styles/landing.css" layer(components);
+@import "../styles/prose.css" layer(components);
+@import "../styles/code.css" layer(components);
+
+@theme {
+  --font-display: var(--ff-display), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--ff-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--ff-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-leaf: var(--leaf);
+  --color-leaf-2: var(--leaf-2);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-blue: var(--blue);
+  --color-blue-hover: var(--blue-hover);
+  --color-blue-press: var(--blue-press);
+  --color-blue-ink: var(--blue-ink);
+  --color-blue-soft: var(--blue-soft);
+  --color-blue-mid: var(--blue-mid);
+  --color-on-blue: var(--on-blue);
+  --color-on-blue-2: var(--on-blue-2);
+  --color-on-blue-rule: var(--on-blue-rule);
+  --color-on-blue-deep: var(--on-blue-deep);
+  --color-editor: var(--editor);
+  --color-editor-chrome: var(--editor-chrome);
+  --color-editor-rule: var(--editor-rule);
+  --color-focus: var(--focus);
+  --color-overlay: var(--overlay);
+  --color-note-bg: var(--note-bg);
+  --color-note-border: var(--note-border);
+  --color-note-ink: var(--note-ink);
+  --color-info-bg: var(--info-bg);
+  --color-info-border: var(--info-border);
+  --color-info-ink: var(--info-ink);
+  --color-success-bg: var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-success-ink: var(--success-ink);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-warning-ink: var(--warning-ink);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-danger-ink: var(--danger-ink);
+
+  --shadow-panel: 0 24px 48px -24px oklch(from var(--shadow-color) l c h / 0.2);
+  --shadow-leaf: 0 18px 40px -18px oklch(from var(--shadow-color) l c h / 0.22);
+  --shadow-overlay:
+    0 24px 64px -24px oklch(from var(--shadow-color) l c h / 0.4),
+    0 2px 6px oklch(from var(--shadow-color) l c h / 0.08);
+}
+
+@layer base {
+  html {
+    overflow-x: clip;
+    scroll-padding-top: calc(var(--navbar-height) + var(--s5));
+    scrollbar-color: var(--rule-strong) var(--paper);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    overflow-x: clip;
+    min-height: 100dvh;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-md);
+    line-height: 1.6;
+    caret-color: var(--blue);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-synthesis: none;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  a {
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+
+  ::selection {
+    background: var(--blue-soft);
+    color: var(--ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@utility container {
+  width: 100%;
+  max-width: calc(var(--container) + 2 * var(--gutter));
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+@layer utilities {
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule-strong) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
+    transition-duration: 1ms;
+    scroll-behavior: auto;
+  }
+}

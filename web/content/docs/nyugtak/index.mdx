@@ -1,0 +1,38 @@
+---
+title: Nyugták
+description: Nyugta kiállítása partnerrel vagy partner nélkül, bruttó árakkal, a nyugtatömbbe. Pontosan egyszeri kiállítás, piszkozat és sztornó a tárcával.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceipt
+---
+
+<Operation id="CreateReceipt" methods={['receipts.create', 'receipts.createOnce']} />
+
+<Example slug="nyugta" />
+
+- A nyugta a `defaults.receiptBlockId` vagy az első `receipt` típusú tömbbe kerül, fizetettként, a határidő a kiállítás napja.
+- A nyugta árai bruttók. Az áfa `5`, `18`, `27` vagy `'none'`, `'AAM'`, `'TAM'` lehet. A mennyiség alapból 1, az egység `db`.
+- Partner nélkül a Billingo a közös „Magánszemély” partnert teszi rá.
+- Fizetési mód nélkül a `defaults.paymentMethod` érvényes, ha az sincs, `cash`. Ha a számláid átutalásosak, a nyugtáidon pedig kártya szerepel, add meg minden nyugtán a `paymentMethod`-ot.
+
+## Pontosan egyszer, piszkozat, sztornó
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { document, created } = await tarca.receipts.createOnce({
+  vendorId: 'KASSZA-2026-0042',
+  items: [{ name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 }],
+  paymentMethod: 'bankcard',
+})
+
+if (document.id !== undefined) await tarca.documents.cancel(document.id)
+```
+
+- A `receipts.createOnce()` ugyanúgy működik, mint a számláé: [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
+- Nyugta piszkozatból: `receipts.create({ type: 'draft', ... })`, majd `receipts.finalizeDraft(id, ...)`.
+- A nyugta sztornója a `documents.cancel()`, a sztornó típusa `receipt_cancellation`.
+
+## Nyugta vagy számla?
+
+Fizetési webhookból a tárca dönt helyetted: számla jár, ha a vevő adószámot adott meg, ha az összeg eléri a 900 000 Ft-ot, vagy ha a vevő számlát kér; egyébként nyugta. Lásd [Fizetésből bizonylat](/docs/fizetesek).

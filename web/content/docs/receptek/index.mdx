@@ -1,0 +1,20 @@
+---
+title: Receptek
+description: Bemásolható integrációs minták a tárcához. Stripe webhook Next.js útvonalként, és a kiállított számla PDF-jének mentése tárhelyre.
+---
+
+A receptek teljes, működő fájlok, nem kódrészletek. Next.js App Router projektre készültek, de a tárca hívásai bármilyen szerveren ugyanígy működnek. Mindegyik ugyanazt a mintát követi: a bizonylaton a rendelés vagy a fizetés azonosítója a `vendorId`, és írást semmi nem küld újra ciklusban.
+
+<Callout type="info" title="Mit kell magadnak megírnod?">
+  A receptek a `@/lib/tarca` modulból importálják a klienst, ez a [Telepítés](/docs/alapok/telepites)
+  oldal `lib/tarca.ts` fájlja. A titkokat környezeti változóból olvassák.
+</Callout>
+
+<Cards>
+  <Card title="Stripe webhook" href="/docs/receptek/stripe-webhook">
+    Fizetett Checkoutból nyugta vagy számla, visszatérítéskor sztornó, egy Next.js útvonalban.
+  </Card>
+  <Card title="PDF mentése tárhelyre" href="/docs/receptek/pdf-mentese">
+    A kiállított számla PDF-je dátum szerinti kulccsal S3-ra, Cloudflare R2-re vagy a lemezre.
+  </Card>
+</Cards>

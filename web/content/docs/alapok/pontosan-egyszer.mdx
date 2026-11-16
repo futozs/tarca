@@ -1,0 +1,48 @@
+---
+title: Pontosan egyszer
+description: Számla webshopból és webhookból dupla kiállítás nélkül. A createOnce a vendorId alapján keres, bizonytalan hiba után visszakeres, és több szerver között zárral is véd.
+---
+
+Egy webshop rendelése vagy egy fizetési webhook többször is megérkezhet: a szolgáltató újraküldi, a felhasználó kétszer kattint, a szerver újraindul a kérés közben. A `createOnce()` arra való, hogy ugyanabból a rendelésből akkor is egy számla legyen.
+
+<Example slug="pontosan-egyszer" />
+
+## Hogyan dönt
+
+A `vendorId` a te azonosítód a bizonylaton, például `RENDELES-1001`. A Billingo eltárolja, és kereshető vele.
+
+1. Kiállítás előtt a tárca megkeresi a bizonylatot a `vendorId` alapján (`GET /documents/vendor/{vendor_id}`). Ha már van, a meglévőt adja vissza `created: false` értékkel.
+2. Ha nincs, kiállítja.
+3. Hálózati hiba, időtúllépés, szerverhiba vagy értelmezhetetlen válasz után kétszer visszakeresi. Ha a számla mégis elkészült, megkapod (`created: true`), ha nem, az eredeti hiba megy tovább.
+4. Ha egy másik folyamat közben kiállította ugyanazt (a Billingo 400 `Duplicate vendor id.` hibát ad), a meglévőt adja vissza.
+
+Ha a kiállítás előtti lépés (a számlatömb vagy a partner keresése) hibázik, a tárca a hibát változatlanul továbbadja: számla nem ment ki, a hívás megismételhető.
+
+## Elveszett válasz
+
+A legrosszabb eset: a Billingo kiállította a számlát, de a válasz elveszett útközben. A sandbox hamis Billingója ezt is tudja szimulálni:
+
+<Example slug="elveszett-valasz" />
+
+## Több szerver között
+
+Egy folyamaton belül az azonos `vendorId`-ra egyszerre érkező hívások egyetlen kérést küldenek. Több szerver vagy serverless példány között a `createOnceLock` közös tároló zárja véd:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { upstashRedisStore } from 'tarcajs/stores'
+
+declare const redis: Parameters<typeof upstashRedisStore>[0]
+
+const tarca = createTarca({ createOnceLock: upstashRedisStore(redis) })
+```
+
+- Ha a zárat egy másik folyamat tartja, a hívás `in_progress` hibát ad. Később hívd meg ugyanígy.
+- Ha a tároló nem érhető el, `store_unavailable` hibát kapsz, és semmi nem készült el.
+- A Cloudflare KV erre nem alkalmas: csak később konzisztens, és nincs atomi írása.
+
+## Amire figyelj
+
+- A `vendorId` sztornó után is foglalt marad. A sztornózott rendelés újbóli számlázásához új `vendorId` kell.
+- A `vendorId` nem lehet `.` vagy `..`: a tárca ilyenkor kérés nélkül `validation` hibát ad.
+- Nyugtához ugyanez: `receipts.createOnce({ vendorId, ... })`.

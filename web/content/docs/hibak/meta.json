@@ -1,0 +1,20 @@
+{
+  "title": "Hibakategóriák",
+  "pages": [
+    "auth",
+    "nav-unavailable",
+    "subscription",
+    "forbidden",
+    "not-found",
+    "validation",
+    "rate-limit",
+    "server",
+    "not-ready",
+    "network",
+    "timeout",
+    "configuration",
+    "unexpected-response",
+    "in-progress",
+    "store-unavailable"
+  ]
+}

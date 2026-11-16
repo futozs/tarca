@@ -1,0 +1,40 @@
+---
+title: Stripe webhook
+description: Next.js útvonal, amely a Stripe Checkout fizetéséből pontosan egyszer állít ki nyugtát vagy számlát a Billingóban, visszatérítéskor pedig sztornóz.
+---
+
+## Az útvonal
+
+```ts twoslash title="app/api/stripe/route.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+// @filename: route.ts
+// ---cut---
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+import { tarca } from '@/lib/tarca'
+
+export const POST = stripeWebhook({
+  secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+  apiKey: process.env.STRIPE_SECRET_KEY,
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+## Beállítás a Stripe-ban
+
+1. A Stripe Dashboardon vegyél fel egy webhook végpontot a `https://<a-te-domained>/api/stripe` címre.
+2. Iratkozz fel a `checkout.session.completed`, a `checkout.session.async_payment_succeeded`, a `charge.refunded` és a `charge.refund.updated` eseményre.
+3. A végpont aláíró titkát tedd a `STRIPE_WEBHOOK_SECRET` változóba, a Stripe titkos kulcsát a `STRIPE_SECRET_KEY`-be.
+
+Az `apiKey` mellett a tárca lekéri a Checkout tételeit és a szállítási díjat, így a bizonylaton a valódi tételek szerepelnek. Nélküle egy tétel lesz a fizetett összegre.
+
+## Mi történik
+
+<Example slug="stripe-webhook" />
+
+- Hibás aláírásra 400 a válasz, és az `onPayment` nem fut.
+- Ha az `onPayment` dob (például a Billingo nem érhető el), 500 a válasz, és a Stripe később újraküldi. A bizonylat `vendorId`-ja a fizetés azonosítója (`STRIPE-pi_…`), ezért az újraküldés a meglévő bizonylatot adja vissza.
+- Visszatérítéskor a tárca sztornózza a bizonylatot. Részleges visszatérítéshez `ledger` kell: [Fizetésből bizonylat](/docs/fizetesek#visszatérítés).

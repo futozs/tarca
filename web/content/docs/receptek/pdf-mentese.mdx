@@ -1,0 +1,53 @@
+---
+title: PDF mentése tárhelyre
+description: A kiállított számla PDF-jének mentése dátum szerinti kulccsal S3-ra, Cloudflare R2-re vagy a lemezre a tarcajs/storage csomagrésszel, AWS SDK nélkül.
+---
+
+A Billingo a PDF-et a kiállítás után néhány másodpercig még készíti. A `storeDocumentPdf()` kivárja (alapból legfeljebb 30 másodpercig), letölti, és egy dátum szerinti kulccsal a tárhelyre írja.
+
+<Example slug="pdf-tarhely" />
+
+## S3 és Cloudflare R2
+
+S3, Cloudflare R2, MinIO vagy Backblaze esetén nem kell az AWS SDK: a tárca maga írja alá a kérést.
+
+```ts twoslash title="lib/szamla-pdf.ts"
+import { createTarca } from 'tarcajs'
+import { s3FetchStorage, storeDocumentPdf } from 'tarcajs/storage'
+
+const tarca = createTarca()
+
+const tarhely = s3FetchStorage({
+  bucket: 'szamlak',
+  region: 'auto',
+  endpoint: 'https://<account-id>.r2.cloudflarestorage.com',
+  accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
+})
+
+export async function mentsdAPdfet(bizonylatId: number) {
+  const fajl = await storeDocumentPdf(tarca, tarhely, bizonylatId)
+  return fajl.key
+}
+```
+
+- A kulcs a bizonylat típusából, kiállítási dátumából és sorszámából áll, például `szamlak/2026/11/2026-1.pdf`. Díjbekérő: `szamlak/dijbekero/…`, sztornó: `szamlak/sztorno/…`, nyugta: `nyugtak/2026/11/…`.
+- Ha csak az azonosító van meg, a tárca a kulcshoz előbb lekéri a bizonylatot.
+- Piszkozatnak nincs sorszáma, ezért a tárca nem ment belőle PDF-et (`StorageError`).
+- A tárhely hibája `StorageError` (`operation`, `key`, `status`).
+
+## Lemezre, Node.js alatt
+
+```ts twoslash
+import { fsStorage } from 'tarcajs/storage/fs'
+
+const tarhely = fsStorage({ directory: './szamlak' })
+```
+
+Atomikusan ír (ideiglenes fájl, majd átnevezés), és nem ír a megadott mappán kívülre, szimbolikus linken át sem.
+
+További adapterek: `s3Storage` (saját AWS SDK kliens), `r2BindingStorage` (Workers binding), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage` és `memoryStorage`.
+
+## Webhook után
+
+Webhookban előbb küldd el a választ, és a mentést utána futtasd. A számla ekkor már kész, a mentés hibája nem ok arra, hogy a fizetési szolgáltató újraküldje az eseményt. Ha a mentés elbukik, a bizonylat azonosítójával később is megismételheted.

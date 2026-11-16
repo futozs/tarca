@@ -1,0 +1,36 @@
+---
+title: Tesztelés
+description: A tarcajs/testing memóriában futó, hamis Billingót ad a Billingo összes műveletével. A saját kódod tesztje ugyanazt a validációt, sorszámozást és kerekítést látja, mint élesben, kérés nélkül.
+---
+
+A `tarcajs/testing` egy memóriában futó Billingót ad. A valódi kliens fut fölötte, így a saját kódod tesztje ugyanazt a validációt, sorszámozást és kerekítést látja, mint élesben, csak kérés nem megy ki. Ezen fut a [sandbox](/sandbox) is.
+
+## Mock kliens
+
+<Example slug="mock-kliens" />
+
+- A `createMockTarca()` a valódi `Tarca` kliens egy friss hamis Billingón, plusz `calls` (a hívásnapló), `billingo` (a hamis Billingo), `failNext()` és `reset()`.
+- A `failNext(metódus)` a következő hívást egyszer hibára futtatja, alapból hálózati hibával. Az `afterSuccess` esetén a művelet a hamis Billingóban lefut, a hívó mégis hibát kap: így tesztelheted az elveszett választ.
+- A `createMockTarca()` a `createTarca()` `defaults` beállítását is elfogadja, így ugyanazzal a konfigurációval tesztelhetsz, mint élesben.
+
+## Hamis Billingo a saját kliensed alatt
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
+
+const billingo = createFakeBillingoFetch({ hufRates: { EUR: 390 } })
+const tarca = createTarca({ apiKey: 'teszt-kulcs', fetch: billingo.fetch, retryDelayMs: 0 })
+
+billingo.fail('network', { operation: 'CreateDocument', afterSuccess: true })
+
+const { created } = await tarca.documents.createOnce({
+  vendorId: 'WEB-1',
+  partner: { name: 'Vevő Kft.', address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' } },
+  items: [{ name: 'Webfejlesztés', quantity: 1, netUnitPrice: 15_000, vat: 27 }],
+})
+
+console.log(created, billingo.data.documents.size)
+```
+
+A hamis Billingo a valódi drótformátumot beszéli: snake_case JSON, Laravel lapozás, a Billingo hibaüzenetei, sorszámozás tömbönként, és a mért kerekítés. Hálózati hibát, időtúllépést, 202-t és tetszőleges státuszt is tud szimulálni. Az elküldött kéréseket a `billingo.requests` tartalmazza.

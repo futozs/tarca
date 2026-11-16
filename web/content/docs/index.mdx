@@ -1,0 +1,73 @@
+---
+title: Bevezetés
+description: A tárca dokumentációja. Nulla függőségű TypeScript kliens a Billingo API v3-hoz, futtatható példákkal, a ténylegesen elküldött kérésekkel és a Billingo válaszaival.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+**A tárca a Billingo API v3 TypeScript kliense. Számlát, díjbekérőt, előleg- és végszámlát, nyugtát állít ki, sztornóz, befizetést rögzít, letölti a PDF-et, kezeli a partnereket, a termékeket, a költségeket és az exportot. Nincs futásidejű függősége, így Node.js 22+, Bun, Deno és Cloudflare Workers alatt is ugyanúgy fut.**
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { document, created } = await tarca.documents.createOnce({
+  vendorId: 'WEB-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+})
+
+console.log(document.invoiceNumber, document.grossTotal, created)
+```
+
+A `vendorId` a rendelésed azonosítója. Ha ugyanezt a hívást még egyszer lefuttatod, a tárca nem állít ki új számlát, hanem visszaadja a meglévőt `created: false` értékkel. Hogy miért fontos ez, a [Pontosan egyszer](/docs/alapok/pontosan-egyszer) oldal mutatja meg.
+
+A Billingo műveletein túl is segít: fizetési webhookból pontosan egyszer állít ki nyugtát vagy számlát, a teszteidhez memóriában futó, hamis Billingót ad, és parancssorral meg MCP szerverrel érkezik.
+
+A tárca független, nyílt forráskódú projekt: nem a Billingo fejleszti, és nem áll kapcsolatban vele. A testvére a [kassza](https://kasszajs.hu), ugyanez a Számlázz.hu-hoz. Ha kérdésed van, vagy hibát találtál, [nyiss egy issue-t a GitHubon](https://github.com/futozs/tarca/issues).
+
+## Egy számla útja
+
+A Billingo REST API, ezért egy számla kiállítása több kérés. A tárca egyetlen `documents.create()` hívásból küldi el őket, a megfelelő sorrendben:
+
+<FlowDiagram />
+
+## Hogyan olvasd a dokumentációt?
+
+A Billingo műveleteit erőforrás szerint csoportosítottuk: bizonylatok, nyugták, partnerek, termékek, számlatömbök, bankszámlák, költségek, export és árfolyam. Egy művelet általában három oldalból áll:
+
+- A **Kérés** azt írja le, mit adsz át a tárcának, és abból milyen JSON megy a Billingónak.
+- A **Válasz** a visszakapott mezőket és a lehetséges hibákat sorolja fel.
+- A **Minta** futtatható kód. Mellette látod a ténylegesen elküldött kéréseket és a Billingo válaszát, amelyet a hamis Billingo ad, ugyanazokkal a szabályokkal, mint az élő API.
+
+Ahol a Billingo másképp viselkedik, mint ahogy a spec írja, azt az oldal külön jelzi. Ezeket a fejlesztői teszt profilon mértük ki, a teljes listát az [Élő eltérések](/docs/alapok/eles-elteresek) oldalon találod.
+
+## Hol kezdjem?
+
+<Cards>
+  <Card title="Telepítés és az első számla" href="/docs/alapok/telepites">
+    Telepítés, API kulcs, fejlesztői teszt profil, és egy működő számla néhány sorból.
+  </Card>
+  <Card title="Pontosan egyszer" href="/docs/alapok/pontosan-egyszer">
+    Webshopból és webhookból dupla számla nélkül, a `vendorId` alapján.
+  </Card>
+  <Card title="Hibakezelés" href="/docs/alapok/hibakezeles">
+    Egy hibatípus, magyar üzenettel, kategóriával, mezőhibákkal és javítási tippel.
+  </Card>
+  <Card title="Bizonylatok" href="/docs/bizonylatok">
+    Számla, díjbekérő, előleg, deviza, sztornó, befizetés és PDF.
+  </Card>
+  <Card title="Fizetésből bizonylat" href="/docs/fizetesek">
+    Stripe, SimplePay, Barion, Revolut és PayPal webhookból nyugta vagy számla.
+  </Card>
+  <Card title="Sandbox" href="/sandbox">
+    Futtasd a példákat a böngészőben API kulcs nélkül, és nézd meg az elküldött kéréseket.
+  </Card>
+</Cards>
+
+## Minden művelet
+
+A tárca a Billingo API v3 összes műveletét ismeri. A teljes lista a hozzájuk tartozó HTTP kérésekkel és azzal, hogy melyik spec írja le őket: [Műveletek](/docs/alapok/muveletek).

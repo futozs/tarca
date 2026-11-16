@@ -52,6 +52,11 @@ Ennyi. A partnert a tárca megkeresi, vagy ha még nincs, létrehozza. A számla
 
 Webshopban vagy webhookból a `createOnce()` hívást használd, a rendelés azonosítójával: ha ugyanaz a rendelés kétszer érkezik, a második hívás a meglévő számlát adja vissza, újat nem állít ki ([Pontosan egyszer](#számlák)).
 
+<p>
+  <a href="https://tarcajs.hu/docs/alapok/telepites"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: Telepítés és az első számla" height="44"></picture></a>
+  <a href="https://tarcajs.hu/sandbox?pelda=szamla"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: Számla kiállítása" height="44"></picture></a>
+</p>
+
 > **A tárca 0.x.** A Billingo API v3 mind az 57 művelete megvan, és mindegyiket élő e2e teszt futtatja a Billingo fejlesztői teszt profilján. A 0.x verziókban az API még változhat.
 
 ## Miért tárca?
@@ -100,13 +105,50 @@ A tárca független, nyílt forráskódú projekt: nem a Billingo fejleszti, és
 
 | Kezdés | Bizonylatok | Törzsadatok | Megbízhatóság és kiegészítők |
 | --- | --- | --- | --- |
-| [Beállítás](#beállítás) | [Számlák](#számlák) | [Partnerek](#partnerek) | [Hibakezelés](#hibakezelés) |
-| [Típusok](#típusok) | [Nyugták](#nyugták) | [Termékek és készlet](#termékek-és-készlet) | [Tesztelés](#tesztelés) |
-| [Futtatókörnyezetek](#futtatókörnyezetek) | [Befizetések](#befizetések) | [Számlatömbök és bankszámlák](#számlatömbök-és-bankszámlák) | [Bizonylatnapló](#bizonylatnapló) |
-| [Serverless és edge](#serverless-és-edge) | [PDF, e-mail, NAV](#pdf-e-mail-nav) | [Költségek és export](#költségek-és-export) | [PDF mentése tárhelyre](#pdf-mentése-tárhelyre) |
-| [Node.js és Express](#nodejs-és-express) | [Fizetésből bizonylat](#fizetésből-bizonylat) | [Szervezet és segédvégpontok](#szervezet-és-segédvégpontok) | [Megfigyelhetőség](#megfigyelhetőség) |
-| [Haladó beállítások](#haladó-beállítások) | [Tömeges és ismétlődő számlázás](#tömeges-és-ismétlődő-számlázás) | | [Parancssor és MCP szerver](#parancssor-és-mcp-szerver) |
+| [Weboldal, sandbox és receptek](#weboldal-sandbox-és-receptek) | [Számlák](#számlák) | [Partnerek](#partnerek) | [Hibakezelés](#hibakezelés) |
+| [Beállítás](#beállítás) | [Nyugták](#nyugták) | [Termékek és készlet](#termékek-és-készlet) | [Tesztelés](#tesztelés) |
+| [Típusok](#típusok) | [Befizetések](#befizetések) | [Számlatömbök és bankszámlák](#számlatömbök-és-bankszámlák) | [Bizonylatnapló](#bizonylatnapló) |
+| [Futtatókörnyezetek](#futtatókörnyezetek) | [PDF, e-mail, NAV](#pdf-e-mail-nav) | [Költségek és export](#költségek-és-export) | [PDF mentése tárhelyre](#pdf-mentése-tárhelyre) |
+| [Serverless és edge](#serverless-és-edge) | [Fizetésből bizonylat](#fizetésből-bizonylat) | [Szervezet és segédvégpontok](#szervezet-és-segédvégpontok) | [Megfigyelhetőség](#megfigyelhetőség) |
+| [Node.js és Express](#nodejs-és-express) | [Tömeges és ismétlődő számlázás](#tömeges-és-ismétlődő-számlázás) | | [Parancssor és MCP szerver](#parancssor-és-mcp-szerver) |
+| [Haladó beállítások](#haladó-beállítások) | | | |
 | [AI-val kódolsz?](#ai-val-kódolsz) | | | |
+
+## Weboldal, sandbox és receptek
+
+A magyar dokumentáció, a sandbox és a receptek a **[tarcajs.hu](https://tarcajs.hu)** oldalon vannak.
+
+- 📖 **[Dokumentáció](https://tarcajs.hu/docs)**: 15 oldal magyarul: telepítés, pontosan egyszeri kiállítás, hibakezelés, bizonylatok, nyugták, partnerek, export, fizetések, tesztelés, parancssor és MCP, és az 57 művelet táblázata.
+- ▶️ **[Sandbox](https://tarcajs.hu/sandbox)**: 18 példa, amit a böngészőben futtathatsz API kulcs nélkül, a hamis Billingo ellen, a ténylegesen elküldött kérésekkel és a Billingo válaszaival. A saját kódodat linkként meg is oszthatod.
+- 🍳 **[Receptek](https://tarcajs.hu/docs/receptek)**: 2 teljes, bemásolható integráció.
+- 🤖 **[llms.txt](https://tarcajs.hu/llms.txt)**: a dokumentáció tartalomjegyzéke AI asszisztenseknek, a teljes szöveg egy fájlban: [llms-full.txt](https://tarcajs.hu/llms-full.txt).
+- 📦 **[npm csomag](https://www.npmjs.com/package/tarcajs)** · 📘 **[Hivatalos Billingo API v3 leírás](https://developers.billingo.hu/post/api-v3)**
+
+<details>
+<summary>🍳 <b>Mind a 2 recept</b></summary>
+
+- **[Stripe webhook](https://tarcajs.hu/docs/receptek/stripe-webhook)**: Next.js útvonal, amely a Stripe Checkout fizetéséből pontosan egyszer állít ki nyugtát vagy számlát a Billingóban, visszatérítéskor pedig sztornóz.
+- **[PDF mentése tárhelyre](https://tarcajs.hu/docs/receptek/pdf-mentese)**: A kiállított számla PDF-jének mentése dátum szerinti kulccsal S3-ra, Cloudflare R2-re vagy a lemezre a tarcajs/storage csomagrésszel, AWS SDK nélkül.
+
+</details>
+
+<details>
+<summary>▶️ <b>Mind a 18 sandbox példa</b></summary>
+
+**Számlák:** [Számla kiállítása](https://tarcajs.hu/sandbox?pelda=szamla) · [Pontosan egyszer](https://tarcajs.hu/sandbox?pelda=pontosan-egyszer) · [Díjbekérő, majd számla](https://tarcajs.hu/sandbox?pelda=dijbekero-szamla) · [Előleg- és végszámla](https://tarcajs.hu/sandbox?pelda=eloleg-vegszamla) · [Devizás számla angolul](https://tarcajs.hu/sandbox?pelda=devizas-szamla) · [Számla sztornózása](https://tarcajs.hu/sandbox?pelda=sztorno) · [Befizetés rögzítése](https://tarcajs.hu/sandbox?pelda=befizetes) · [PDF és blokknyomtatás](https://tarcajs.hu/sandbox?pelda=pdf)
+
+**Nyugták:** [Nyugta kiállítása](https://tarcajs.hu/sandbox?pelda=nyugta)
+
+**Fizetésből bizonylat:** [Fizetésből nyugta](https://tarcajs.hu/sandbox?pelda=fizetesbol-bizonylat) · [Stripe webhook](https://tarcajs.hu/sandbox?pelda=stripe-webhook) · [Visszatérítés, sztornó](https://tarcajs.hu/sandbox?pelda=visszaterites)
+
+**Partnerek és export:** [Partner keresése vagy létrehozása](https://tarcajs.hu/sandbox?pelda=partner) · [Export CSV-be](https://tarcajs.hu/sandbox?pelda=export)
+
+**Hibakezelés:** [Hibák magyarul](https://tarcajs.hu/sandbox?pelda=hibakezeles) · [Elveszett válasz után](https://tarcajs.hu/sandbox?pelda=elveszett-valasz)
+
+**Tesztelés és tárhely:** [Mock kliens tesztekhez](https://tarcajs.hu/sandbox?pelda=mock-kliens) · [PDF mentése tárhelyre](https://tarcajs.hu/sandbox?pelda=pdf-tarhely)
+
+</details>
+
 
 ## Beállítás
 
@@ -241,6 +283,8 @@ const tarca = createTarca({ createOnceLock: store })
 
 - A `vendorId` sztornó után is foglalt marad: a sztornózott rendelés újbóli számlázásához új `vendorId` kell.
 
+**Dokumentáció:** [Pontosan egyszer](https://tarcajs.hu/docs/alapok/pontosan-egyszer) &nbsp;·&nbsp; **Sandbox:** [Pontosan egyszer](https://tarcajs.hu/sandbox?pelda=pontosan-egyszer)
+
 </details>
 
 <details>
@@ -363,6 +407,12 @@ for await (const bizonylat of tarca.documents.all({ partnerId: 1234 })) {
 
 </details>
 
+<p>
+  <a href="https://tarcajs.hu/docs/bizonylatok"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: Bizonylatok" height="44"></picture></a>
+  <a href="https://tarcajs.hu/sandbox?pelda=szamla"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: Számla kiállítása" height="44"></picture></a>
+</p>
+
+
 ## Nyugták
 
 Nyugta partnerrel vagy partner nélkül, bruttó árakkal, a nyugtatömbbe.
@@ -387,6 +437,12 @@ const nyugta = await tarca.receipts.create({
 
 </details>
 
+<p>
+  <a href="https://tarcajs.hu/docs/nyugtak"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: Nyugták" height="44"></picture></a>
+  <a href="https://tarcajs.hu/sandbox?pelda=nyugta"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: Nyugta kiállítása" height="44"></picture></a>
+</p>
+
+
 ## Befizetések
 
 <details>
@@ -408,6 +464,9 @@ await tarca.documents.payments.clear(4321)
 - A Billingo a befizetéseket csak egyben tudja cserélni. A `replace()` a teljes listát írja felül, az `add()` előbb lekéri a meglévőket, és a végükre fűzi az újat. Egy számla befizetéseit egyszerre csak egy folyamat írja, különben elveszhet egy befizetés.
 
 </details>
+
+**Dokumentáció:** [Bizonylatok](https://tarcajs.hu/docs/bizonylatok) &nbsp;·&nbsp; **Sandbox:** [Befizetés rögzítése](https://tarcajs.hu/sandbox?pelda=befizetes)
+
 
 ## PDF, e-mail, NAV
 
@@ -504,6 +563,12 @@ await tarca.partners.delete(partner.id ?? 0)
 - A `guess()` nem keresés: pontos névegyezésen kívül mindig új partnert hoz létre. Kereséshez a `list()` és a `findOrCreate()` való.
 
 </details>
+
+<p>
+  <a href="https://tarcajs.hu/docs/partnerek"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: Partnerek" height="44"></picture></a>
+  <a href="https://tarcajs.hu/sandbox?pelda=partner"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: Partner keresése vagy létrehozása" height="44"></picture></a>
+</p>
+
 
 ## Termékek és készlet
 
@@ -623,6 +688,12 @@ await writeFile(exportfajl.filename ?? 'export.csv', exportfajl.bytes)
 
 </details>
 
+<p>
+  <a href="https://tarcajs.hu/docs/export"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: Költségek és export" height="44"></picture></a>
+  <a href="https://tarcajs.hu/sandbox?pelda=export"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: Export CSV-be" height="44"></picture></a>
+</p>
+
+
 ## Szervezet és segédvégpontok
 
 <details>
@@ -741,6 +812,12 @@ Csak a `not_found` hibát alakítja `null` értékké, minden más hibát továb
 
 > **Írást a tárca soha nem küld újra magától.** Újrapróbálás csak a lekérdezéseknél (GET) történik: 429-es válasz, szerverhiba, időtúllépés vagy hálózati hiba után, a `Retry-After` fejlécet betartva. Alapból egy lekérdezés összesen legfeljebb háromszor megy ki (az első kérés és két ismétlés). Ha a Billingo egy percnél hosszabb várakozást kér, a tárca nem vár, hanem `rate_limit` hibát ad.
 
+<p>
+  <a href="https://tarcajs.hu/docs/alapok/hibakezeles"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: Hibakezelés" height="44"></picture></a>
+  <a href="https://tarcajs.hu/sandbox?pelda=hibakezeles"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: Hibák magyarul" height="44"></picture></a>
+</p>
+
+
 ## Fizetésből bizonylat
 
 Stripe, SimplePay, Barion, Revolut vagy PayPal fizetésből nyugta vagy számla, a szolgáltató SDK-ja nélkül. A webhookkezelő ellenőrzi az aláírást, az `issueForPayment()` eldönti, hogy nyugta vagy számla jár, és pontosan egyszer kiállítja a Billingóban.
@@ -829,6 +906,13 @@ export const POST = simplePayWebhook({
 - Mind ugyanazt a `PaymentEvent` alakot adja. Az összeg `{ value, minor, currency }`, ahol a `minor` egész szám a pénznem váltóegységében, így minden összevetés kerekítés nélkül megy. A fizetési mód a Billingo kódja (`stripe`, `simple_pay`, `barion`, `revolut`, `paypal`, átutalásnál `wire_transfer`), a `method` opció felülírja.
 
 </details>
+
+<p>
+  <a href="https://tarcajs.hu/docs/fizetesek"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: Fizetésből bizonylat" height="44"></picture></a>
+  <a href="https://tarcajs.hu/sandbox?pelda=fizetesbol-bizonylat"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: Fizetésből nyugta" height="44"></picture></a>
+  <a href="https://tarcajs.hu/docs/receptek/stripe-webhook"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-recipe-stripe-webhook-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-recipe-stripe-webhook-light.svg" alt="Recept: Stripe webhook" height="44"></picture></a>
+</p>
+
 
 ## Bizonylatnapló
 
@@ -941,6 +1025,12 @@ Atomikusan ír (ideiglenes fájl, majd átnevezés), és nem ír, olvas vagy tö
 
 További adapterek: `s3Storage` (saját AWS SDK kliens), `r2BindingStorage` (Workers binding), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage`, `memoryStorage`. A `storePdf(tarhely, kulcs, bajtok)` bármilyen PDF-et elment, a `documents.pdf()` eredményét is.
 
+<p>
+  <a href="https://tarcajs.hu/sandbox?pelda=pdf-tarhely"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: PDF mentése tárhelyre" height="44"></picture></a>
+  <a href="https://tarcajs.hu/docs/receptek/pdf-mentese"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-recipe-pdf-mentese-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-recipe-pdf-mentese-light.svg" alt="Recept: PDF mentése tárhelyre" height="44"></picture></a>
+</p>
+
+
 ## Serverless és edge
 
 Több szerver vagy serverless példány között a `createOnce` zárja, a napló és a webhookok kettőzés elleni védelme közös tárolót kér. A `tarcajs/stores` adapterei a kassza tárolóival azonos felületet adnak.
@@ -1034,6 +1124,12 @@ billingo.data.documents.size
 A hamis Billingo a valódi drótformátumot beszéli: snake_case JSON, Laravel lapozás, a Billingo hibaüzenetei, sorszámozás tömbönként, és a mért kerekítés. Hálózati hibát, időtúllépést, 202-t és tetszőleges státuszt is tud szimulálni.
 
 </details>
+
+<p>
+  <a href="https://tarcajs.hu/docs/tesztek"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: Tesztelés" height="44"></picture></a>
+  <a href="https://tarcajs.hu/sandbox?pelda=mock-kliens"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-sandbox-light.svg" alt="Futtasd a sandboxban: Mock kliens tesztekhez" height="44"></picture></a>
+</p>
+
 
 ## Haladó beállítások
 
@@ -1310,6 +1406,11 @@ Csak POST JSON-RPC kérést fogad, legfeljebb 1 MiB-os törzzsel, az `Origin` fe
 
 </details>
 
+<p>
+  <a href="https://tarcajs.hu/docs/kiegeszitok/mcp-szerver"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/futozs/tarca/main/readme/assets/button-docs-light.svg" alt="Dokumentáció: MCP és parancssor" height="44"></picture></a>
+</p>
+
+
 ## AI-val kódolsz?
 
 A csomagban van egy `agents/` mappa. Ebből a Claude Code, a Cursor, a Copilot és a többi asszisztens megtudja, hogyan kell jól használni a tárcát, és mik a buktatók. Szólj rá az AI-ra:
@@ -1322,7 +1423,7 @@ Claude Code-hoz kész skill is van: másold a `node_modules/tarcajs/agents/skill
 
 A Billingo API v3 minden művelete és a kassza összes Billingóra értelmezhető kiegészítője kész. Ami még hátravan:
 
-- **Dokumentáció és weboldal:** részletes leírás minden művelethez, receptek és sandbox a hamis Billingóval.
+- **Részletes dokumentáció:** minden művelet saját oldala kéréssel, válasszal és futtatható példával, és több recept. Az első oldalak, a sandbox és a receptek már a [tarcajs.hu](https://tarcajs.hu) oldalon vannak.
 
 Ha valami most hiányzik, [írd meg egy issue-ban](https://github.com/futozs/tarca/issues/new?template=feature.yml).
 

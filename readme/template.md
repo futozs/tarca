@@ -37,6 +37,8 @@ Ennyi. A partnert a tárca megkeresi, vagy ha még nincs, létrehozza. A számla
 
 Webshopban vagy webhookból a `createOnce()` hívást használd, a rendelés azonosítójával: ha ugyanaz a rendelés kétszer érkezik, a második hívás a meglévő számlát adja vissza, újat nem állít ki ([Pontosan egyszer](#számlák)).
 
+{{links:alapok/telepites|szamla}}
+
 > **A tárca 0.x.** A Billingo API v3 mind {{operationsArticle}} {{operations}} művelete megvan, és mindegyiket élő e2e teszt futtatja a Billingo fejlesztői teszt profilján. A 0.x verziókban az API még változhat.
 
 ## Miért tárca?
@@ -85,13 +87,39 @@ A tárca független, nyílt forráskódú projekt: nem a Billingo fejleszti, és
 
 | Kezdés | Bizonylatok | Törzsadatok | Megbízhatóság és kiegészítők |
 | --- | --- | --- | --- |
-| [Beállítás](#beállítás) | [Számlák](#számlák) | [Partnerek](#partnerek) | [Hibakezelés](#hibakezelés) |
-| [Típusok](#típusok) | [Nyugták](#nyugták) | [Termékek és készlet](#termékek-és-készlet) | [Tesztelés](#tesztelés) |
-| [Futtatókörnyezetek](#futtatókörnyezetek) | [Befizetések](#befizetések) | [Számlatömbök és bankszámlák](#számlatömbök-és-bankszámlák) | [Bizonylatnapló](#bizonylatnapló) |
-| [Serverless és edge](#serverless-és-edge) | [PDF, e-mail, NAV](#pdf-e-mail-nav) | [Költségek és export](#költségek-és-export) | [PDF mentése tárhelyre](#pdf-mentése-tárhelyre) |
-| [Node.js és Express](#nodejs-és-express) | [Fizetésből bizonylat](#fizetésből-bizonylat) | [Szervezet és segédvégpontok](#szervezet-és-segédvégpontok) | [Megfigyelhetőség](#megfigyelhetőség) |
-| [Haladó beállítások](#haladó-beállítások) | [Tömeges és ismétlődő számlázás](#tömeges-és-ismétlődő-számlázás) | | [Parancssor és MCP szerver](#parancssor-és-mcp-szerver) |
+| [Weboldal, sandbox és receptek](#weboldal-sandbox-és-receptek) | [Számlák](#számlák) | [Partnerek](#partnerek) | [Hibakezelés](#hibakezelés) |
+| [Beállítás](#beállítás) | [Nyugták](#nyugták) | [Termékek és készlet](#termékek-és-készlet) | [Tesztelés](#tesztelés) |
+| [Típusok](#típusok) | [Befizetések](#befizetések) | [Számlatömbök és bankszámlák](#számlatömbök-és-bankszámlák) | [Bizonylatnapló](#bizonylatnapló) |
+| [Futtatókörnyezetek](#futtatókörnyezetek) | [PDF, e-mail, NAV](#pdf-e-mail-nav) | [Költségek és export](#költségek-és-export) | [PDF mentése tárhelyre](#pdf-mentése-tárhelyre) |
+| [Serverless és edge](#serverless-és-edge) | [Fizetésből bizonylat](#fizetésből-bizonylat) | [Szervezet és segédvégpontok](#szervezet-és-segédvégpontok) | [Megfigyelhetőség](#megfigyelhetőség) |
+| [Node.js és Express](#nodejs-és-express) | [Tömeges és ismétlődő számlázás](#tömeges-és-ismétlődő-számlázás) | | [Parancssor és MCP szerver](#parancssor-és-mcp-szerver) |
+| [Haladó beállítások](#haladó-beállítások) | | | |
 | [AI-val kódolsz?](#ai-val-kódolsz) | | | |
+
+## Weboldal, sandbox és receptek
+
+A magyar dokumentáció, a sandbox és a receptek a **[{{host}}]({{web}})** oldalon vannak.
+
+- 📖 **[Dokumentáció]({{docs}})**: {{pages}} oldal magyarul: telepítés, pontosan egyszeri kiállítás, hibakezelés, bizonylatok, nyugták, partnerek, export, fizetések, tesztelés, parancssor és MCP, és {{operationsArticle}} {{operations}} művelet táblázata.
+- ▶️ **[Sandbox]({{sandbox}})**: {{examples}} példa, amit a böngészőben futtathatsz API kulcs nélkül, a hamis Billingo ellen, a ténylegesen elküldött kérésekkel és a Billingo válaszaival. A saját kódodat linkként meg is oszthatod.
+- 🍳 **[Receptek]({{recipes}})**: {{recipeCount}} teljes, bemásolható integráció.
+- 🤖 **[llms.txt]({{llms}})**: a dokumentáció tartalomjegyzéke AI asszisztenseknek, a teljes szöveg egy fájlban: [llms-full.txt]({{llmsFull}}).
+- 📦 **[npm csomag]({{npm}})** · 📘 **[Hivatalos Billingo API v3 leírás]({{officialDocs}})**
+
+<details>
+<summary>🍳 <b>Mind a {{recipeCount}} recept</b></summary>
+
+{{recipe-list}}
+
+</details>
+
+<details>
+<summary>▶️ <b>Mind a {{examples}} sandbox példa</b></summary>
+
+{{example-list}}
+
+</details>
+
 
 ## Beállítás
 
@@ -226,6 +254,8 @@ const tarca = createTarca({ createOnceLock: store })
 
 - A `vendorId` sztornó után is foglalt marad: a sztornózott rendelés újbóli számlázásához új `vendorId` kell.
 
+{{more:alapok/pontosan-egyszer|pontosan-egyszer}}
+
 </details>
 
 <details>
@@ -348,6 +378,9 @@ for await (const bizonylat of tarca.documents.all({ partnerId: 1234 })) {
 
 </details>
 
+{{links:bizonylatok|szamla}}
+
+
 ## Nyugták
 
 Nyugta partnerrel vagy partner nélkül, bruttó árakkal, a nyugtatömbbe.
@@ -372,6 +405,9 @@ const nyugta = await tarca.receipts.create({
 
 </details>
 
+{{links:nyugtak|nyugta}}
+
+
 ## Befizetések
 
 <details>
@@ -393,6 +429,9 @@ await tarca.documents.payments.clear(4321)
 - A Billingo a befizetéseket csak egyben tudja cserélni. A `replace()` a teljes listát írja felül, az `add()` előbb lekéri a meglévőket, és a végükre fűzi az újat. Egy számla befizetéseit egyszerre csak egy folyamat írja, különben elveszhet egy befizetés.
 
 </details>
+
+{{more:bizonylatok|befizetes}}
+
 
 ## PDF, e-mail, NAV
 
@@ -489,6 +528,9 @@ await tarca.partners.delete(partner.id ?? 0)
 - A `guess()` nem keresés: pontos névegyezésen kívül mindig új partnert hoz létre. Kereséshez a `list()` és a `findOrCreate()` való.
 
 </details>
+
+{{links:partnerek|partner}}
+
 
 ## Termékek és készlet
 
@@ -608,6 +650,9 @@ await writeFile(exportfajl.filename ?? 'export.csv', exportfajl.bytes)
 
 </details>
 
+{{links:export|export}}
+
+
 ## Szervezet és segédvégpontok
 
 <details>
@@ -726,6 +771,9 @@ Csak a `not_found` hibát alakítja `null` értékké, minden más hibát továb
 
 > **Írást a tárca soha nem küld újra magától.** Újrapróbálás csak a lekérdezéseknél (GET) történik: 429-es válasz, szerverhiba, időtúllépés vagy hálózati hiba után, a `Retry-After` fejlécet betartva. Alapból egy lekérdezés összesen legfeljebb háromszor megy ki (az első kérés és két ismétlés). Ha a Billingo egy percnél hosszabb várakozást kér, a tárca nem vár, hanem `rate_limit` hibát ad.
 
+{{links:alapok/hibakezeles|hibakezeles}}
+
+
 ## Fizetésből bizonylat
 
 Stripe, SimplePay, Barion, Revolut vagy PayPal fizetésből nyugta vagy számla, a szolgáltató SDK-ja nélkül. A webhookkezelő ellenőrzi az aláírást, az `issueForPayment()` eldönti, hogy nyugta vagy számla jár, és pontosan egyszer kiállítja a Billingóban.
@@ -814,6 +862,9 @@ export const POST = simplePayWebhook({
 - Mind ugyanazt a `PaymentEvent` alakot adja. Az összeg `{ value, minor, currency }`, ahol a `minor` egész szám a pénznem váltóegységében, így minden összevetés kerekítés nélkül megy. A fizetési mód a Billingo kódja (`stripe`, `simple_pay`, `barion`, `revolut`, `paypal`, átutalásnál `wire_transfer`), a `method` opció felülírja.
 
 </details>
+
+{{links:fizetesek|fizetesbol-bizonylat|stripe-webhook}}
+
 
 ## Bizonylatnapló
 
@@ -926,6 +977,9 @@ Atomikusan ír (ideiglenes fájl, majd átnevezés), és nem ír, olvas vagy tö
 
 További adapterek: `s3Storage` (saját AWS SDK kliens), `r2BindingStorage` (Workers binding), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage`, `memoryStorage`. A `storePdf(tarhely, kulcs, bajtok)` bármilyen PDF-et elment, a `documents.pdf()` eredményét is.
 
+{{links:|pdf-tarhely|pdf-mentese}}
+
+
 ## Serverless és edge
 
 Több szerver vagy serverless példány között a `createOnce` zárja, a napló és a webhookok kettőzés elleni védelme közös tárolót kér. A `tarcajs/stores` adapterei a kassza tárolóival azonos felületet adnak.
@@ -1019,6 +1073,9 @@ billingo.data.documents.size
 A hamis Billingo a valódi drótformátumot beszéli: snake_case JSON, Laravel lapozás, a Billingo hibaüzenetei, sorszámozás tömbönként, és a mért kerekítés. Hálózati hibát, időtúllépést, 202-t és tetszőleges státuszt is tud szimulálni.
 
 </details>
+
+{{links:tesztek|mock-kliens}}
+
 
 ## Haladó beállítások
 
@@ -1295,6 +1352,9 @@ Csak POST JSON-RPC kérést fogad, legfeljebb 1 MiB-os törzzsel, az `Origin` fe
 
 </details>
 
+{{links:kiegeszitok/mcp-szerver||}}
+
+
 ## AI-val kódolsz?
 
 A csomagban van egy `agents/` mappa. Ebből a Claude Code, a Cursor, a Copilot és a többi asszisztens megtudja, hogyan kell jól használni a tárcát, és mik a buktatók. Szólj rá az AI-ra:
@@ -1307,7 +1367,7 @@ Claude Code-hoz kész skill is van: másold a `node_modules/tarcajs/agents/skill
 
 A Billingo API v3 minden művelete és a kassza összes Billingóra értelmezhető kiegészítője kész. Ami még hátravan:
 
-- **Dokumentáció és weboldal:** részletes leírás minden művelethez, receptek és sandbox a hamis Billingóval.
+- **Részletes dokumentáció:** minden művelet saját oldala kéréssel, válasszal és futtatható példával, és több recept. Az első oldalak, a sandbox és a receptek már a [{{host}}]({{web}}) oldalon vannak.
 
 Ha valami most hiányzik, [írd meg egy issue-ban]({{repo}}/issues/new?template=feature.yml).
 

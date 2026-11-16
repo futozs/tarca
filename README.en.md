@@ -51,7 +51,7 @@ Add-ons, each a separate subpath that the root `tarcajs` entry never loads:
 - `tarcajs/node`: mounts the web-standard handlers under Node `http`, Express, NestJS and Fastify with the raw body intact.
 - `tarcajs/mcp` and the `tarcajs` command: `npx tarcajs doctor` checks the key, profile, NAV connection, subscription and document blocks read-only; `npx tarcajs mcp` is an MCP server for AI assistants that issues documents only with `--allow-write` and a confirmation code from a preview.
 
-Planned: a documentation website.
+Website (in Hungarian): documentation, a browser sandbox against the fake Billingo, and recipes at [tarcajs.hu](https://tarcajs.hu).
 
 ## How it behaves
 
