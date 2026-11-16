@@ -1,5 +1,15 @@
 # Változásnapló
 
+## 0.3.0 (2026-11-16)
+
+### Újdonságok
+
+- **web:** search and AI discoverability for tarcajs.hu (05f1a5d)
+
+### Javítások
+
+- say plainly that tarca is independent of Billingo (b632d8d)
+
 ## 0.2.0 (2026-11-16)
 
 ### Újdonságok
