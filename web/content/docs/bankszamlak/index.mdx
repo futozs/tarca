@@ -1,0 +1,39 @@
+---
+title: Bankszámlák
+description: A Billingo profil bankszámlái a tárca bankAccounts API-jával. Lista, létrehozás, lekérés, teljes cserés módosítás és törlés, a számla alapértelmezett bankszámlájával.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/ListBankAccount
+---
+
+A bankszámla az a számlaszám, amelyet a Billingo átutalásos számlán a fizetési adatok közé ír. A tárcában a `tarca.bankAccounts` kezeli, ez a legegyszerűbb erőforrás: öt művelet, hét mező.
+
+```ts
+const bankszamla = await tarca.bankAccounts.create({ name: 'Fő számla', accountNumber: '11111111-22222222-33333333', currency: 'HUF' })
+```
+
+Számla kiállításakor a `bankAccountId` mezővel választasz bankszámlát, vagy a kliens `defaults.bankAccountId` beállításával egyszer, minden bizonylatra. Lásd [Alapértékek](/docs/alapok/alapertekek).
+
+<Cards>
+  <Card title="Lista" href="/docs/bankszamlak/lista">
+    Lapozás, szűrő nélkül.
+  </Card>
+  <Card title="Létrehozás" href="/docs/bankszamlak/letrehozas/keres">
+    Név, számlaszám és pénznem kötelező.
+  </Card>
+  <Card title="Lekérés" href="/docs/bankszamlak/lekeres">
+    Egy bankszámla azonosító alapján.
+  </Card>
+  <Card title="Módosítás" href="/docs/bankszamlak/modositas/keres">
+    PUT teljes cserével: a kihagyott IBAN és SWIFT kiürül.
+  </Card>
+  <Card title="Törlés" href="/docs/bankszamlak/torles">
+    Törlés 204-gyel.
+  </Card>
+</Cards>
+
+<Callout type="info" title="Friss teszt profilon nincs bankszámla">
+  Egy új fejlesztői teszt profilon a bankszámlák listája üres. Bankszámla nélkül a számla
+  kiállítható, a bizonylat szervezeti adataiban ilyenkor a bankszámla azonosítója `null`. A
+  `npx tarcajs doctor` figyelmeztet, ha a profilnak nincs bankszámlája.
+</Callout>
+
+<OperationTable pathPrefix="/bank-accounts" />

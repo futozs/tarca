@@ -1,0 +1,32 @@
+---
+title: Adószám-ellenőrzés
+description: Magyar adószám ellenőrzése a NAV-nál a Billingón keresztül a utils.checkTaxNumber() hívással. Élő NAV-kapcsolat kell hozzá, teszt profilon nav_unavailable hibát ad.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Util/CheckTaxNumber
+---
+
+A `utils.checkTaxNumber()` a Billingón keresztül megkérdezi a NAV-ot egy adószámról: létezik-e, és ha igen, kié és milyen címekkel. Akkor hasznos, ha a vevő csak az adószámát írja be, és a számla adatait ebből ellenőriznéd.
+
+<Operation id="CheckTaxNumber" methods={['utils.checkTaxNumber']} />
+
+```ts
+const valasz = await tarca.utils.checkTaxNumber('12345678-2-42')
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/segedvegpontok/adoszam-ellenorzes/keres">
+    A teljes NNNNNNNN-N-NN alak, a helyi ellenőrzés és az útvonal.
+  </Card>
+  <Card title="Válasz" href="/docs/segedvegpontok/adoszam-ellenorzes/valasz">
+    A TaxNumberCheckResponse mezői, a result értékei és a nav_unavailable hiba.
+  </Card>
+  <Card title="Minta" href="/docs/segedvegpontok/adoszam-ellenorzes/minta">
+    Törzsszám és teljes adószám a teszt profilnak megfelelő hamis Billingo ellen.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Teszt profilon nem működik">
+  Az ellenőrzéshez a profilnak élő NAV Online Számla kapcsolat kell. A fejlesztői teszt profilon
+  nincs ilyen, ott a Billingo érvényes kulccsal is 401-et ad („…live connection to NAV (not
+  available in sandbox mode)”). A tárca ezt `nav_unavailable` kategóriával jelzi, nem `auth`-tal,
+  mert a kulcs jó. Ezt a hibát ne próbáld újra.
+</Callout>

@@ -1,0 +1,88 @@
+---
+title: Bizonylat a fizetésből
+description: Az issueForPayment() egy fizetési eseményből pontosan egyszer állít ki nyugtát vagy számlát a Billingóban. Beállítások, vendorId, a kiállítás lépései és a visszaadott eredmény.
+---
+
+Az `issueForPayment()` önálló függvény, nem a kliens metódusa, így a `tarcajs` gyökér kicsi marad. Bármelyik webhookkezelő `onPayment` függvényéből hívhatod, vagy egy saját magad által összerakott `PaymentEvent`-tel.
+
+```ts
+issueForPayment(tarca: PaymentTarca, payment: PaymentEvent, options?: IssueForPaymentOptions): Promise<IssuedDocument>
+```
+
+<Example slug="szamla-fizetesbol" />
+
+Az **Elküldött kérések** fülön látod a sorrendet: két `vendorId` keresés (egy az `issueForPayment()`-é, egy a `createOnce`-é), a számlatömb, a partner keresése és létrehozása, a számla, végül a `PUT /documents/1/payments` a befizetéssel.
+
+## Beállítások
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `vat` | nincs | Az áfakulcs minden tételre, ha a tétel nem hoz sajátot: `27`, `5`, `18`, `'AAM'`, `'TAM'` … Nyugtán `'none'` is lehet. |
+| `vatFor(item)` | nincs | Tételenkénti áfakulcs. Sorrend: `vatFor`, a tétel saját `vat` mezője, végül a `vat`. A tárca nem találgat: kulcs nélkül `validation` hibát ad, kérés nélkül. |
+| `items` | a fizetés tételei | Saját tételek bruttó egységárral (`{ name, grossUnitPrice, vat, quantity?, unit?, sku?, comment? }`). |
+| `fallbackItemName` | `Termék vagy szolgáltatás` | Ha a fizetésnek nincs tétele, egy tétel készül ezzel a névvel a teljes összegre. |
+| `document` | `'auto'` | `'receipt'` vagy `'invoice'` felülírja a [döntést](/docs/fizetesek/nyugta-vagy-szamla). |
+| `partner` | a vevőből | Partner azonosító vagy `PartnerInput` a számlához. Alapból a [vevő adataiból](/docs/fizetesek/vevo-adatai) készül. |
+| `buyerIsBusiness`, `invoiceRequested` | `false` | Számlát kér a döntéstől. |
+| `cashRegisterRequired` | `false` | Pénztárgép-köteles tevékenység: nyugta helyett `validation` hiba. |
+| `vendorId` | `<SZOLGÁLTATÓ>-<id>` | Saját `vendorId` a fizetés azonosítója helyett. |
+| `currency` | a fizetés pénzneme | Csak akkor kell, ha a fizetésből nem olvasható ki. Ha eltér a fizetés pénznemétől, `validation` hiba. |
+| `conversionRate` | a Billingo árfolyama | Saját árfolyam devizás fizetéshez, a `currencies.rate()` helyett. |
+| `method` | a fizetés `method` mezője | A bizonylat Billingo fizetési módja (`stripe`, `simple_pay`, `barion`, `revolut`, `paypal` …). |
+| `allowAmountMismatch` | `false` | Engedi, hogy a tételek összege eltérjen a fizetett összegtől. |
+| `receipt`, `invoice` | nincs | További mezők a kiállításhoz. Nyugtánál a `receipts.createOnce` mezői (`blockId`, `emails`, `electronic` …), számlánál a `documents.createOnce` mezői (`blockId`, `comment`, `sendEmail` …). |
+| `partialRefund`, `refundItems`, `ledger` | `'auto'`, nincs, nincs | A visszatérítés beállításai, lásd [Részleges visszatérítés](/docs/fizetesek/reszleges-visszaterites). |
+| `signal`, `recoveryDelayMs`, `lock`, `lockTtlSeconds`, `lockWaitMs`, `lockFailure` | mint a `createOnce`-nál | A [`createOnce` beállításai](/docs/bizonylatok/pontosan-egyszer). |
+
+A `tarca` paraméter szerkezeti típus (`PaymentTarca`): a `documents` (`createOnce`, `findByVendorId`, `get`, `list`, `cancel`, `createModification`, `payments.replace`), a `receipts.createOnce` és a `currencies.rate` kell belőle. A `createTarca()` és a `createMockTarca()` is megfelel.
+
+## A vendorId
+
+```ts twoslash
+import { paymentVendorId } from 'tarcajs/payments'
+
+console.log(await paymentVendorId({ provider: 'paypal', id: '8MC585209K746392H' }))
+console.log(await paymentVendorId({ provider: 'simplepay', id: 'rendelés/1' }))
+```
+
+A `vendorId` a szolgáltató nagybetűs neve és a fizetés azonosítója: `PAYPAL-8MC585209K746392H`. Ha az azonosítóban az angol betűkön, számokon és a `_.:-` jeleken kívül más is van, vagy az eredmény 64 karakternél hosszabb, az azonosító helyére egy `h` betű és az azonosító SHA-256 kivonatának első 16 hexa jegye kerül: `SIMPLEPAY-hf0c34cbeb9b0bc39`. A visszatérítés ugyanezt a `vendorId`-t keresi, ezért a fizetés és a visszatérítés eseménye ugyanahhoz a bizonylathoz jut.
+
+<Callout type="info" title="Sztornó után a vendorId foglalt marad">
+  A Billingo a sztornózott bizonylat `vendorId`-ját sem adja ki újra. Ha egy visszatérített
+  fizetést mégis újra számláznál, adj meg saját `vendorId`-t. Az `issueForPayment()` a sztornózott
+  bizonylatú fizetést `skipped` eredménnyel kihagyja.
+</Callout>
+
+## Mi történik egy fizetésnél?
+
+1. **Helyi ellenőrzés, kérés nélkül.** A pénznem Billingo pénznem, az összeg `value` és `minor` mezője egyezik, minden tételnek van áfakulcsa, és a tételek bruttó összege a Billingo soronkénti kerekítésével fillérre egyezik a fizetett összeggel. Ha egy tétel összege nem osztható a mennyiséggel, a tárca egy sort készít belőle `Név (3 db)` névvel.
+2. **Keresés.** `findByVendorId`: ha már van bizonylat, `created: false` jön vissza.
+3. **Árfolyam.** Devizás fizetésnél a `conversionRate` opció, vagy a `currencies.rate()` a teljesítés napjára. Az eredmény `conversion` mezője mondja meg, honnan jött.
+4. **Döntés.** A `chooseDocument()` választ nyugta és számla között.
+5. **Kiállítás.** `receipts.createOnce` vagy `documents.createOnce` a `vendorId`-val.
+6. **Befizetés.** Ha a számla nem `paid`, a tárca rögzíti a befizetést: `payments.replace(id, [{ date, price: grossTotal, paymentMethod }])`, ahol a `date` a fizetés `paidAt` napja Budapesten. A nyugta eleve fizetett.
+
+## Az eredmény
+
+| `kind` | Mikor | Fontos mezők |
+| --- | --- | --- |
+| `receipt` | nyugta készült vagy már volt | `vendorId`, `created`, `document`, `decision`, `conversion` |
+| `invoice` | számla készült vagy már volt | ugyanezek, plusz `paymentRecorded` |
+| `cancellation` | teljes visszatérítés | `originalId`, `cancellation`, `created` |
+| `modification` | részleges visszatérítés | `originalId`, `modifications` |
+| `refund-proposal` | részleges visszatérítés, amit ember rendez | `documentId`, `refunds`, `reason` |
+| `refund-failed` | meghiúsult Stripe visszatérítés | `document`, `reason` |
+| `skipped` | `failed`, `other`, sztornózott bizonylat | `reason` |
+
+A `document` a Billingo válasza a kiállításkor. A befizetés rögzítése után a számla `paymentStatus` mezője a Billingóban már `paid`, a visszaadott objektumban viszont még a kiállításkori `outstanding` áll. A `paymentRecorded: true` jelzi, hogy a befizetés bekerült.
+
+## Hibák
+
+| Kategória | Mikor? | Mit tegyél? |
+| --- | --- | --- |
+| `validation` | Hiányzó áfakulcs, eltérő összeg, ismeretlen pénznem, pénztárgép-köteles tevékenység, vevő csak közösségi adószámmal. | Javítsd a beállítást vagy a vevő adatát. Újraküldéstől nem javul, ezért ezt az `onPayment`-ben kezeld le, és jelezd embernek. |
+| `network`, `timeout`, `server`, `unexpected_response` | A Billingo nem válaszolt biztosan. | Semmit: a `createOnce` visszakeresi a bizonylatot. Ha így sem dönthető el, a hiba továbbmegy, a webhook 500-at ad, és az újraküldés rendezi. |
+| `in_progress` | Visszatérítés, de a fizetésnek még nincs bizonylata, vagy egy másik folyamat dolgozik ugyanezen. | Hagyd 500-zal válaszolni. |
+| `auth`, `subscription`, `forbidden` | Kulcs, díjcsomag vagy jogosultság. | Lásd a [hibakategóriákat](/docs/hibak). |
+
+A kiállítás minden lépése a [Pontosan egyszer](/docs/alapok/pontosan-egyszer) oldalon leírt `createOnce`-ra épül.

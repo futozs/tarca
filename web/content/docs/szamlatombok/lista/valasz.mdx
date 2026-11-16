@@ -1,0 +1,51 @@
+---
+title: Válasz
+description: A documentBlocks.list() által visszaadott Page a hat listamezővel, a növekvő sorrend, a friss teszt profil két tömbje és a hibák.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentBlock/ListDocumentBlock
+---
+
+A `list()` egy `Page<Billingo.DocumentBlock>` objektumot ad vissza, az `all()` ugyanezeket a tömböket egyenként.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `data` | `readonly Billingo.DocumentBlock[]` | Az oldal tömbjei, növekvő azonosító szerint. |
+| `total` | `number` | Az összes tömb száma. |
+| `perPage` | `number` | Oldalméret. |
+| `currentPage` | `number` | Az aktuális oldal sorszáma. |
+| `lastPage` | `number` | Az utolsó oldal sorszáma. |
+
+A listaelem nem a teljes tömb, csak hat mezője:
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A tömb azonosítója. Ezt adod át `blockId`-ként a számlának. |
+| `name` | `string` | A tömb neve. |
+| `prefix` | `string` | Az előtag, `''`, ha nincs. |
+| `customField1`, `customField2` | `string` | Egyedi mezők, `''`, ha nincs. |
+| `type` | `Billingo.DocumentBlockType` | A tömb típusa. |
+
+A többi beállításért (feladó, értesítések, bankszámla) kérd le a tömböt egyenként, lásd [Lekérés](/docs/szamlatombok/lekeres).
+
+## Élő eltérések
+
+- **Növekvő sorrend.** A Billingo a tömböket azonosító szerint növekvő sorrendben adja, a legrégebbit elöl. A tárca alapértelmezett tömbje ezért a legrégebbi `invoice` tömb.
+- **Friss teszt profil.** Egy új fejlesztői teszt profilon két tömb van:
+
+```json
+[
+  { "id": 1, "name": "Számlák", "prefix": "", "custom_field1": "", "custom_field2": "", "type": "invoice" },
+  { "id": 2, "name": "Nyugták", "prefix": "NYT", "custom_field1": "", "custom_field2": "", "type": "receipt" }
+]
+```
+
+Az azonosítók a hamis Billingóból valók, élőben hatjegyűek. A nevek, az előtagok és a típusok élőben is ezek.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `RangeError` | Hibás `page` vagy `perPage`. Nincs kérés. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429 | `rate_limit` | Túl sok kérés. A tárca a `Retry-After` szerint újrapróbálja. |
+| 5xx | `server` | Billingo hiba. A tárca újrapróbálja, alapból összesen három kísérlettel. |
+| – | `network`, `timeout` | Nincs válasz. A tárca ezt is újrapróbálja. |

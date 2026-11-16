@@ -1,0 +1,39 @@
+---
+title: Válasz
+description: A spendings.update() válasza 200-as státusszal, a teljes csere hatása a kihagyott mezőkre, a hibák és az, hogy miért ismételhető a módosítás.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingUpdate
+---
+
+Sikeres módosításra a Billingo 200-as státusszal a felülírt költséget küldi vissza. A tárca `Billingo.Spending` típusként adja vissza, ugyanazokkal a mezőkkel, mint a [létrehozás](/docs/koltsegek/letrehozas/valasz#billingospending).
+
+```ts
+const fizetett = await tarca.spendings.update(id, { ...adatok, paidAt: '2026-11-10' })
+```
+
+## Mit érdemes megnézni a válaszban?
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | Ugyanaz, mint előtte. A módosítás nem hoz létre új költséget. |
+| `paidAt` | `string \| null` | A küldött fizetési nap. Élőben a `paid_at` változatlanul jött vissza. |
+| `comment` | `string \| null` | A küldött megjegyzés. Ha kihagytad, élőben üres szöveg lett. |
+| `partner` | `Billingo.SpendingPartner \| null` | A `partnerId` partnerének adatai, vagy `null`, ha nincs partner. |
+| `totalGrossLocal`, `totalVatAmountLocal` | `number` | A küldött forintos összegek, átszámolás nélkül. |
+
+A válaszban, ahogy a létrehozásnál, nincs `createdByNav`.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Érvénytelen dátum a bemenetben. Kérés nem ment ki. |
+| 404 | `not_found` | Nincs ilyen azonosítójú költség. A hamis Billingo így válaszol (`Spending is not found.`), élőben nem mértük. |
+| 422 | `validation` | A Billingo elutasította az adatokat, például hiányzik egy élőben kötelező mező. A `fieldErrors` a snake_case mezőt nevezi meg. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 403 | `forbidden` | Csak olvasási jogú kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca írást nem ismétel, a hibát azonnal megkapod. |
+| – | `network`, `timeout` | Nem jött válasz. A módosítás megtörténhetett. |
+
+## Újrapróbálás
+
+A `PUT` teljes csere: ugyanaz a bemenet másodszor is ugyanazt az állapotot hozza létre. Egy `network`, `timeout` vagy `server` hiba után ezért ugyanazzal a bemenettel megismételheted a hívást, második költség nem keletkezik. Közben más ne módosítsa ugyanazt a költséget, mert az ismételt kérésed felülírná a változtatását.

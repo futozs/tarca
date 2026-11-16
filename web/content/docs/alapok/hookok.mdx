@@ -1,0 +1,107 @@
+---
+title: Hookok
+description: A tárca hookjai naplózáshoz, metrikákhoz és bizonylatnaplóhoz. onRequest, onResponse, onError, onComplete, onWarning, az onDocument esemény minden új bizonylatról, az onDocumentError módjai és a DocumentHookError.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A hookokat a `createTarca({ hooks })` opcióban adod meg. Kétféle van: a **kérés hookok** minden HTTP kérésről szólnak, az **`onDocument`** minden új bizonylatról.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca({
+  hooks: {
+    onRequest: (event) => {
+      console.log('→', event.operation, event.method, event.path, event.attempt)
+    },
+    onResponse: (event) => {
+      console.log('←', event.operation, event.status, `${event.durationMs} ms`)
+    },
+    onError: (event) => console.warn(event.operation, event.error.category, event.willRetry),
+    onDocument: (event) => console.log(event.action, event.document.invoiceNumber, event.vendorId),
+  },
+})
+
+await tarca.documents.createOnce({
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+})
+```
+
+## Kérés hookok
+
+| Hook | Mikor fut? | Esemény |
+| --- | --- | --- |
+| `onRequest` | Minden kérés előtt, ismétlésnél újra. | `{ operation, method, path, attempt, requestId }` |
+| `onResponse` | Ha jött HTTP válasz, hibás státusszal is. | + `status`, `durationMs`, `rateLimit` |
+| `onError` | Minden hibánál, a helyi ellenőrzés hibáit kivéve. | + `error` (`BillingoError`), `willRetry` |
+| `onComplete` | Minden kérés végén, sikerrel vagy hibával. | + `outcome` (`'success'` vagy `'error'`), `durationMs`, `error?`, `willRetry` |
+| `onWarning` | Ha egy hook hibát dobott, vagy a `createOnce` zárja figyelmeztet. | `{ hook, operation, error, message? }` |
+
+- Az `operation` a Billingo operationId-ja (`CreateDocument`), a `path` a sablon (`/documents/{id}`), nem a kitöltött útvonal, így metrikacímkének is jó.
+- A `requestId` egy hívás összes ismétlésén ugyanaz, az `attempt` 1-től számol.
+- A `rateLimit` csak bináris válaszokon (PDF, POS PDF, export letöltése) van kitöltve, mert a Billingo csak ott küld `x-ratelimit-limit` és `x-ratelimit-remaining` fejlécet. JSON válaszon `undefined`.
+- A helyi ellenőrzés hibája (`validation` kérés nélkül) nem kérés, ezért nem fut rá hook.
+
+A hook hibája sosem töri el a kérést: a dobott hiba vagy az elutasított Promise az `onWarning`-hoz kerül, és az `onWarning` saját hibáját a tárca elnyeli. Az események nem tartalmazzák az API kulcsot, a kérés törzsét és a válasz törzsét.
+
+Kész naplózót, OpenTelemetry-kompatibilis span-eket és Prometheus metrikákat a `tarcajs/observe` ad: [Megfigyelhetőség](/docs/kiegeszitok/megfigyelhetoseg).
+
+## onDocument
+
+Az `onDocument` minden új bizonylatra egyszer fut, amelyet a Billingo visszaadott, és a tárca **megvárja**, mielőtt a hívás visszatér. Így a számla akkor is bekerül a bizonylatnaplóba, ha a kódod közvetlenül utána elszáll.
+
+| `action` | Melyik hívás? | `sourceId` |
+| --- | --- | --- |
+| `created` | `documents.create()`, `createRaw()`, `receipts.create()`, és a `createOnce()`-ok, ha `created: true` | – |
+| `finalized` | `documents.finalizeDraft()`, `receipts.finalizeDraft()` | – |
+| `converted` | `createFromProforma()` | a díjbekérő |
+| `copied` | `copy()` | az eredeti |
+| `cancelled` | `cancel()`, a `document` a sztornó bizonylat | az eredeti |
+| `modified` | `createModification()` | az eredeti |
+
+Az esemény: `{ action, operation, document, vendorId?, sourceId? }`. A `vendorId` akkor van kitöltve, ha a hívásnak volt. Befizetésre, sikertelen írásra és meglévő bizonylatot visszaadó `createOnce()`-ra nem fut. Egy sztornó vagy módosító, amelynek a válasza elveszett, szintén nem: a tárca nem kapta meg a bizonylatot. Ezt a [bizonylatnapló](/docs/kiegeszitok/bizonylatnaplo) `reconcile()` lépése pótolja.
+
+## onDocumentError
+
+Mi történjen, ha az `onDocument` hibát dob? A bizonylat ekkor már létezik a Billingóban.
+
+| Érték | Mit csinál? |
+| --- | --- |
+| `'warn'` (alapérték) | A hibát az `onWarning` kapja `hook: 'onDocument'` értékkel (ha nincs `onWarning`, a `console.warn`), és a hívás sikeresen visszatér. |
+| `'throw'` | A hívás `DocumentHookError`-ral utasít el. |
+| függvény | `(error, event) => …` saját kezelés. Ha ez is dob, `DocumentHookError`. |
+
+Más értékre a `createTarca()` `configuration` hibát dob.
+
+```ts twoslash
+import { createTarca, isDocumentHookError } from 'tarcajs'
+
+declare function naploz(szam: string): Promise<void>
+
+const tarca = createTarca({
+  hooks: {
+    onDocument: async (event) => naploz(event.document.invoiceNumber ?? ''),
+    onDocumentError: 'throw',
+  },
+})
+
+try {
+  await tarca.documents.createOnce({
+    vendorId: 'ORDER-1001',
+    partner: 1,
+    items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+  })
+} catch (error) {
+  if (!isDocumentHookError(error)) throw error
+  console.log('A számla elkészült, csak a napló maradt el:', error.number, error.document.id)
+}
+```
+
+A `DocumentHookError` mezői: `event`, `document`, `number` (a sorszám) és `cause` (a hook eredeti hibája). A bizonylat létezik: rögzítsd a hibából, és **ne állítsd ki újra**. A `createOnce()` ugyanazzal a `vendorId`-val is csak a meglévőt adná vissza, `created: false` értékkel, és az `onDocument` akkor már nem fut.
+
+A `createMockTarca({ hooks })` ugyanígy viselkedik, így a hookjaidat tesztben is kipróbálhatod.

@@ -1,0 +1,44 @@
+---
+title: Válasz
+description: A products.update() által visszaadott termék a teljes csere után, az újraszámolt ár, a null beszerzési ár és a módosítás hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/UpdateProduct
+---
+
+A Billingo 200-zal és a csere utáni teljes termékkel válaszol. A mezőket a [Lekérés](/docs/termekek/lekeres) oldal írja le.
+
+- **A másik ár újraszámolódik.** Ha bruttó árat küldesz, a Billingo a nettót számolja újra az áfakulcsból, és fordítva. Élőben 2 000 Ft nettóra 2 540 Ft bruttó jött.
+- **A kihagyott mezők kiürülnek.** Élőben a kihagyott `comment` `''` lett. A hamis Billingo a kihagyott `sku`-t is `''`-ra állítja.
+- **A `purchasePrice` `null`.** A módosítás válasza, akárcsak a létrehozásé, beszerzési ár nélkül `null`-t ad, a `get()` ugyanarra `0`-t.
+
+A számlák nem változnak: a kiállított bizonylat a tétel adatait a kiállításkor lemásolja.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Nincs ár, két ár van, vagy az ár nem véges szám. Nincs kérés. |
+| 422 | `validation` | Hiányzik a név, a pénznem, az áfakulcs vagy az egység. |
+| 404 | `not_found` | Törölt termék. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs, vagy ismeretlen azonosító. |
+| 5xx | `server` | Billingo hiba. Nem tudni, lefutott-e a csere. |
+| – | `network`, `timeout` | Nincs válasz. |
+
+A PUT ugyanazzal a törzzsel megismételve ugyanazt az állapotot adja, ezért bizonytalan hiba után a cserét megismételheted. A tárca nem teszi meg helyetted:
+
+```ts twoslash
+import { createTarca, isBillingoError, type ProductInput } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+
+async function arValtozas(id: number, input: ProductInput) {
+  try {
+    return await tarca.products.update(id, input)
+  } catch (error) {
+    if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+    return tarca.products.update(id, input)
+  }
+}
+```

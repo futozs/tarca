@@ -1,0 +1,11 @@
+---
+title: Minta
+description: SWIFT kód hozzáadása a lekért bankszámlához, majd egy csak kötelező mezős PUT, amely kiüríti az IBAN-t és a SWIFT-et.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/UpdateBankAccount
+---
+
+A példa egy IBAN-nal létrehozott euró bankszámlához SWIFT kódot ad úgy, hogy a lekért bankszámlát küldi vissza: az IBAN megmarad. A második csere csak a három kötelező mezőt küldi, ezért az IBAN és a SWIFT is kiürül.
+
+<Example slug="bankszamla-modositas" />
+
+Az **Elküldött kérések** fülön hasonlítsd össze a két `UpdateBankAccount` törzset, a **Billingo válasz** fülön pedig a második válasz üres `account_number_iban` és `swift` mezőjét.

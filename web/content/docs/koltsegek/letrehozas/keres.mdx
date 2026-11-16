@@ -1,0 +1,148 @@
+---
+title: Kérés
+description: A spendings.create() bemenete, a SpendingInput mezői és a snake_case párjuk, az élőben kötelező mezők, a dátumok ellenőrzése és a devizás költség árfolyammal.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingSave
+---
+
+<Operation id="SpendingSave" methods={['spendings.create']} />
+
+```ts
+tarca.spendings.create(input: SpendingInput, options?: RequestOptions): Promise<Billingo.Spending>
+```
+
+A `SpendingInput` a spec `SpendingSave` sémája két eltéréssel: a dátumokat `Date` értékként is megadhatod, és a négy, élőben kötelező mező a típusban is kötelező.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const koltseg = await tarca.spendings.create({
+  category: 'software',
+  currency: 'HUF',
+  conversionRate: 1,
+  totalGross: 12_700,
+  totalGrossHuf: 12_700,
+  totalVatAmount: 2_700,
+  totalVatAmountHuf: 2_700,
+  invoiceNumber: 'SZLA-2026-42',
+  invoiceDate: '2026-11-10',
+  fulfillmentDate: '2026-11-10',
+  dueDate: '2026-11-18',
+  paymentMethod: 'wire_transfer',
+})
+```
+
+## Mezők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `category` | `category` | – | **Kötelező.** A költség kategóriája, például `'software'`, `'office_rent'`, `'advertisement'`. A teljes lista a `Billingo.Category` típusban. |
+| `currency` | `currency` | – | **Kötelező.** A szállító számlájának pénzneme. |
+| `conversionRate` | `conversion_rate` | – | **Kötelező** (élőben). Az árfolyam a számla pénzneméből forintra. Forintnál `1`. |
+| `totalGross` | `total_gross` | – | **Kötelező.** Bruttó végösszeg a számla pénznemében. |
+| `totalGrossHuf` | `total_gross_huf` | – | **Kötelező.** Bruttó végösszeg forintban. A Billingo így tárolja, nem számolja újra. |
+| `totalVatAmount` | `total_vat_amount` | – | **Kötelező.** Az áfa a számla pénznemében. Áfamentes számlánál `0`. |
+| `totalVatAmountHuf` | `total_vat_amount_huf` | – | **Kötelező.** Az áfa forintban. |
+| `invoiceNumber` | `invoice_number` | – | **Kötelező** (élőben). A szállító számlájának sorszáma. |
+| `invoiceDate` | `invoice_date` | – | **Kötelező** (élőben). A számla kelte, `Date` vagy `YYYY-MM-DD`. |
+| `fulfillmentDate` | `fulfillment_date` | – | **Kötelező.** Teljesítés dátuma. |
+| `dueDate` | `due_date` | – | **Kötelező** (élőben). Fizetési határidő. |
+| `paidAt` | `paid_at` | nincs fizetve | A fizetés napja. Ha kihagyod, a költség fizetetlen, és a tárca a mezőt el sem küldi. |
+| `paymentMethod` | `payment_method` | – | **Kötelező.** Fizetési mód, például `'wire_transfer'`, `'bankcard'`, `'cash'`. A lehetséges értékek a `Billingo.SpendingPaymentMethod` típusban. |
+| `partnerId` | `partner_id` | – | Egy meglévő partner azonosítója, ha a szállító szerepel a [partnereid](/docs/partnerek) között. A Billingo a válasz `partner` mezőjébe bemásolja az adatait. |
+| `comment` | `comment` | – | Megjegyzés. |
+
+A költségnek nincs `vendorId` mezője, és a Billingo nem ellenőrzi, hogy ugyanazt a számlaszámot rögzítetted-e már. A duplikáció ellen neked kell védekezned, lásd [Ha a válasz elveszik](/docs/koltsegek/letrehozas/valasz#ha-a-válasz-elveszik).
+
+## Kötelező mezők élőben
+
+A spec nyolc mezőt jelöl kötelezőnek. A Billingo élőben, 2026. november 15-én további négyet kért, és nélkülük 422-vel válaszolt (`conversion_rate`, `invoice_number`, `invoice_date`, `due_date`: „The … field is required.”). A tárca típusában mind a tizenkettő kötelező, így ha valamelyik hiányzik, már a TypeScript fordító szól.
+
+## Devizás költség
+
+Devizás számlánál a forintos összeget te számolod ki. A tárca nem vált át, és a Billingo sem: azt tárolja, amit a `totalGrossHuf` mezőben küldesz. Ha a Billingo árfolyamát akarod használni, kérd le arra a napra, amelyikre a könyvelésed kéri. A példában mindhárom dátum ugyanaz a nap:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { rate } = await tarca.currencies.rate({ from: 'EUR', to: 'HUF', date: '2026-11-10' })
+
+const koltseg = await tarca.spendings.create({
+  category: 'online_subscriptions',
+  currency: 'EUR',
+  conversionRate: rate,
+  totalGross: 127,
+  totalGrossHuf: Math.round(127 * rate),
+  totalVatAmount: 27,
+  totalVatAmountHuf: Math.round(27 * rate),
+  invoiceNumber: 'INV-2026-1107',
+  invoiceDate: '2026-11-10',
+  fulfillmentDate: '2026-11-10',
+  dueDate: '2026-11-10',
+  paidAt: '2026-11-10',
+  paymentMethod: 'bankcard',
+})
+
+console.log(koltseg.totalGrossLocal)
+```
+
+Az árfolyam lekéréséről az [Árfolyam](/docs/arfolyam) oldal szól. Hogy a forintos összeget hogyan kerekíted, azt a könyvelésed szabálya dönti el.
+
+## Helyi ellenőrzés
+
+A tárca a kérés előtt átalakítja a négy dátummezőt. Ha valamelyik nem érvényes naptári nap, `validation` kategóriájú `BillingoError`-t dob mezőnkénti `fieldErrors` listával, és kérést nem küld:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  await tarca.spendings.create({
+    category: 'software',
+    currency: 'HUF',
+    conversionRate: 1,
+    totalGross: 12_700,
+    totalGrossHuf: 12_700,
+    totalVatAmount: 2_700,
+    totalVatAmountHuf: 2_700,
+    invoiceNumber: 'SZLA-2026-42',
+    invoiceDate: '2026-02-30',
+    fulfillmentDate: '2026-11-10',
+    dueDate: '2026.11.18',
+    paymentMethod: 'wire_transfer',
+  })
+} catch (error) {
+  if (isBillingoError(error)) console.log(error.category, error.fieldErrors)
+}
+```
+
+A `fieldErrors` itt két elemű: `invoiceDate` („Nem létező naptári dátum: 2026-02-30”) és `dueDate` (a hibás formátum miatt). A mezőnevek camelCase-ek, mert a te bemenetedre vonatkoznak. Ha a Billingo utasít el valamit, a `fieldErrors` a Billingo snake_case mezőnevét adja, élőben például `invoice_number`: „The invoice number field is required.”. Mást a tárca helyben nem ellenőriz, az összegeket és a felsorolt értékeket a típusok fogják meg.
+
+Nem létező `partnerId`-ra a hamis Billingo 422-t ad (`partner_id`: „The selected partner id is invalid.”). Hogy élőben mi jön, nem mértük.
+
+## A dróton
+
+A tárca a mezőket snake_case-re fordítja, a dátumokat `YYYY-MM-DD` alakban küldi, a meg nem adott `paidAt`, `partnerId` és `comment` mezőt pedig kihagyja. Az első példa törzse a hamis Billingo felvételéből:
+
+```json
+{
+  "category": "software",
+  "currency": "HUF",
+  "conversion_rate": 1,
+  "total_gross": 12700,
+  "total_gross_huf": 12700,
+  "total_vat_amount": 2700,
+  "total_vat_amount_huf": 2700,
+  "invoice_number": "SZLA-2026-42",
+  "payment_method": "wire_transfer",
+  "fulfillment_date": "2026-11-10",
+  "invoice_date": "2026-11-10",
+  "due_date": "2026-11-18"
+}
+```
+
+A Billingo válaszának mezőit a [Válasz](/docs/koltsegek/letrehozas/valasz) oldal írja le, a teljes kérést és választ a [Minta](/docs/koltsegek/letrehozas/minta) mutatja.

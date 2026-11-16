@@ -1,0 +1,23 @@
+---
+title: Létrehozás
+description: Bejövő számla rögzítése költségként a spendings.create() metódussal. Az élőben kötelező mezők, a forintos és devizás összegek, a válasz és a hibák.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingSave
+---
+
+Bejövő számlát a `spendings.create()` rögzít költségként. A `conversionRate`, az `invoiceNumber`, az `invoiceDate` és a `dueDate` a specben opcionális, de a Billingo élőben nélkülük 422-t ad, ezért a tárca típusában kötelezők.
+
+```ts
+const koltseg = await tarca.spendings.create(adatok)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/koltsegek/letrehozas/keres">
+    A `SpendingInput` mezői, a dátumok ellenőrzése és a devizás költség árfolyammal.
+  </Card>
+  <Card title="Válasz" href="/docs/koltsegek/letrehozas/valasz">
+    A rögzített költség mezői, az élőben mért eltérések, a hibák és az újrapróbálás kockázata.
+  </Card>
+  <Card title="Minta" href="/docs/koltsegek/letrehozas/minta">
+    Forintos költség partner nélkül, majd a lekérése, az elküldött JSON-nal és a válasszal.
+  </Card>
+</Cards>

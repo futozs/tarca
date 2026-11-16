@@ -1,0 +1,10 @@
+---
+title: Minta
+description: A partners.findOrCreate() háromszor a hamis Billingo ellen, azonos és megváltozott adatokkal, a ténylegesen elküldött kérésekkel.
+---
+
+A példa háromszor hívja a `findOrCreate()`-et. Az első létrehozza a partnert, a második ugyanazokkal az adatokkal megtalálja, a harmadik új címmel már új partnert kap, mert a cím eltér a tárolttól.
+
+<Example slug="partner" />
+
+Az **Elküldött kérések** fülön hívásonként látod a `ListPartner` keresést, és csak az első és a harmadik hívás után a `CreatePartner` törzsét. A második hívás egyetlen GET.

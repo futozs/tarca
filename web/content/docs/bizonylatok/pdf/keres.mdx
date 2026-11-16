@@ -1,0 +1,53 @@
+---
+title: Kérés
+description: A documents.pdf(), posPdf() és publicUrl() paraméterei. A maxWaitMs várakozási keret, a size papírszélesség, és milyen GET kéréseket küld a tárca.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/DownloadDocument
+---
+
+```ts
+tarca.documents.pdf(id: number, options?: { maxWaitMs?: number; signal?: AbortSignal }): Promise<DocumentPdf>
+tarca.documents.posPdf(id: number, options: { size: 58 | 80; signal?: AbortSignal }): Promise<DocumentPdf>
+tarca.documents.publicUrl(id: number, options?: { signal?: AbortSignal }): Promise<string>
+```
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+const pdf = await tarca.documents.pdf(szamlaId, { maxWaitMs: 10_000 })
+const blokk = await tarca.documents.posPdf(szamlaId, { size: 80 })
+const link = await tarca.documents.publicUrl(szamlaId)
+
+console.log(pdf.filename, blokk.bytes.length, link)
+```
+
+## pdf()
+
+`GET /documents/{id}/download`.
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `maxWaitMs` | `30000` | Ennyi ideig várja ki a 202-es „még készül” választ, a hívás kezdetétől, órával mérve. A `0` egyetlen kérés. |
+| `signal` | – | Megszakítja a kérést és a várakozást is. |
+
+202-es válasz után a tárca 1, 2, 4, … másodpercet vár, de sosem többet, mint ami a keretből hátravan. A 202-t a szállítási réteg nem ismétli, a várakozásnak egy gazdája van: a `pdf()`. Más hiba után (429, 5xx, hálózat) a szokásos GET-újrapróbálás érvényes, lásd [Újrapróbálás és korlátok](/docs/alapok/ujraprobalas-es-korlatok).
+
+## posPdf()
+
+`GET /documents/{id}/print/pos?size=58` vagy `size=80`.
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `size` | – | **Kötelező.** A papír szélessége milliméterben: `58` vagy `80`. Más érték kérés nélkül `validation` hibát ad `size` mezővel. |
+| `signal` | – | Megszakítás. |
+
+A blokknyomtatós PDF számlához és nyugtához is kérhető, lásd [Blokknyomtatás](/docs/nyugtak/blokknyomtatas).
+
+## publicUrl()
+
+`GET /documents/{id}/public-url`. Nincs más paramétere.
+
+Mindhárom lekérdezés, ezért egyik sem változtat semmit a Billingóban. Éles profilon a PDF letöltése sem számít bele a havi API keretbe, mert az csak az írásokat számolja.

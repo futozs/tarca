@@ -1,0 +1,57 @@
+---
+title: Revolut
+description: Revolut Merchant fizetésből nyugta vagy számla a tarcajs/payments/revolut webhookkezelővel. Revolut-Signature ellenőrzés időablakkal, a rendelés lekérése és a visszatérítések az eredeti rendeléshez kötve.
+official: https://developer.revolut.com/docs/guides/accept-payments/tutorials/work-with-webhooks/using-webhooks
+---
+
+A `revolutWebhook()` a Revolut Merchant API webhookját fogadja. A `Revolut-Signature` fejléc `v1=<hex>` alakú HMAC-SHA256 aláírás a `v1.{időbélyeg}.{törzs}` szövegre, az időbélyeg a `Revolut-Request-Timestamp` fejlécben van, ezredmásodpercben. A webhook csak a rendelés azonosítóját hozza, ezért a tárca az API-kulccsal lekéri a rendelést (`GET /api/orders/{id}`), és abból készíti a `PaymentEvent`-et.
+
+## Beállítás
+
+```dotenv title=".env.local"
+REVOLUT_WEBHOOK_SECRET=wsk_...
+REVOLUT_SECRET_KEY=sk_...
+```
+
+```ts twoslash title="app/api/revolut/webhook/route.ts"
+import { createTarca } from 'tarcajs'
+import { issueForPayment } from 'tarcajs/payments'
+import { revolutWebhook } from 'tarcajs/payments/revolut'
+
+const tarca = createTarca()
+
+export const POST = revolutWebhook({
+  secret: process.env.REVOLUT_WEBHOOK_SECRET ?? '',
+  apiKey: process.env.REVOLUT_SECRET_KEY ?? '',
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `secret` | nincs | A webhook aláíró titka. Kulcsváltáskor tömbként a régit és az újat is megadhatod. |
+| `apiKey` | nincs | A titkos API-kulcs a rendelés lekéréséhez. Kötelező: nélküle `TypeError` létrehozáskor. |
+| `apiVersion` | `2026-08-17` | A `Revolut-Api-Version` fejléc. |
+| `toleranceMs` | `300000` | Az időbélyeg legfeljebb ennyivel térhet el mindkét irányba. A `0` kikapcsolja. |
+| `sandbox` | `false` | A `sandbox-merchant.revolut.com` API-t használja. |
+| `method` | `revolut` | A bizonylat fizetési módja. |
+| `apiUrl`, `fetch`, `now` | | Tesztekhez. |
+
+A közös opciók: [Webhook beállítások](/docs/fizetesek/webhook-beallitasok). Sikeres feldolgozásra a Revolut 204-et kap törzs nélkül, hamis aláírásra vagy lejárt időbélyegre 400-at, feldolgozási hibára 500-at.
+
+## Események
+
+| Revolut esemény | Mit kér le a tárca? | `kind` |
+| --- | --- | --- |
+| `ORDER_COMPLETED`, `payment` vagy `payment_request` típusú rendelés | a rendelést | `paid` |
+| `ORDER_COMPLETED`, `refund` típusú rendelés | a visszatérítést és az eredeti rendelést | `refunded` vagy `partially-refunded` |
+| `ORDER_AUTHORISED` | semmit | `other` |
+| `ORDER_CANCELLED`, `ORDER_FAILED`, `ORDER_PAYMENT_DECLINED`, `ORDER_PAYMENT_FAILED` | semmit | `failed` |
+
+Ha a lekért rendelés állapota nem `completed`, a kezelő 500-at ad, és a Revolut később újraküldi az eseményt. A visszatérítés azonosítója (`id`) az eredeti rendelés, így ugyanahhoz a `vendorId`-hoz jut, mint a fizetés. Teljes visszatérítés (`refunded`) csak akkor, ha egyetlen visszatérítés pontosan a teljes összegre szól.
+
+A rendelésből jön az összeg (`amount`, `currency`), a tételek (`line_items`: `name`, `quantity.value`, `total_amount`, `external_id`), a vevő (`customer.full_name`, `email`, `phone`, a fizetés számlázási címe vagy a szállítási cím), és a rendelésszám (`merchant_order_data.reference` vagy `merchant_order_ext_ref`). Adószámot a Revolut nem ad, cégnek szóló számlához a `partner` opció kell, lásd [Vevő adatai](/docs/fizetesek/vevo-adatai).
+
+## Saját folyamatban
+
+`verifyRevolutSignature`, `parseRevolutEvent`, `fetchRevolutOrder` és `revolutPaymentEvent` külön is elérhető.

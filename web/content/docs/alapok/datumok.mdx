@@ -1,0 +1,56 @@
+---
+title: Dátumok
+description: A Billingo dátumai YYYY-MM-DD alakú budapesti naptárnapok. A tárca Date és szöveg bemenetet is fogad, Europe/Budapest időzónában számol, és dátumsegédeket ad a saját kódodhoz.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A Billingo minden dátuma naptárnap `YYYY-MM-DD` alakban: a teljesítés, a határidő, a befizetés, a lista szűrői. Időzóna nélkül, magyar idő szerint. A tárca ezért minden dátumot `Europe/Budapest` időzónában számol, függetlenül attól, hol fut a kódod.
+
+## Bemenet: Date vagy szöveg
+
+Minden dátummező `DateInput`: `Date` vagy `'YYYY-MM-DD'` szöveg.
+
+- A **szöveget** a tárca ellenőrzi, de nem alakítja: a `'2026-11-16'` változatlanul megy ki. Más alakra (`'2026.11.16.'`, `'2026-11-16T10:00'`) vagy nem létező napra (`'2026-02-30'`) kérés nélkül hibát ad.
+- A **`Date`-et** a budapesti naptárnapra váltja. A `2026-11-15T23:30:00Z` Budapesten már november 16., ezért `2026-11-16` lesz.
+
+```ts twoslash
+import { toBillingoDate } from 'tarcajs'
+
+console.log(toBillingoDate(new Date('2026-11-15T23:30:00Z')))
+console.log(new Date('2026-11-15T23:30:00Z').toISOString().slice(0, 10))
+console.log(toBillingoDate('2026-11-16'))
+```
+
+Az első sor `2026-11-16`, a második `2026-11-15`. A `toISOString().slice(0, 10)` az UTC szerinti napot adja, ezért éjfél után egy nappal korábbi dátumot ad: Budapesten télen éjfél és hajnali 1 óra között, nyáron éjfél és 2 óra között. Számlán ez rossz teljesítési napot jelent.
+
+## Segédfüggvények
+
+| Függvény | Eredmény | Példa |
+| --- | --- | --- |
+| `toBillingoDate(input)` | `'YYYY-MM-DD'`, budapesti nap | `toBillingoDate(new Date())` |
+| `todayInBudapest(now?)` | a mai budapesti nap | `'2026-11-16'` |
+| `addBudapestDays(date, days)` | a budapesti naphoz adott napok | `addBudapestDays(new Date(), 8)` |
+| `toBudapestDate(date)` | egy `Date` budapesti napja | `'2026-11-16'` |
+| `toBudapestTimestamp(date)` | ISO időbélyeg budapesti eltolással | `'2026-11-16T00:30:00+01:00'` |
+
+```ts twoslash
+import { addBudapestDays, todayInBudapest, toBudapestTimestamp } from 'tarcajs'
+
+const ma = todayInBudapest()
+const hatarido = addBudapestDays(new Date(), 8)
+
+console.log(ma, hatarido, toBudapestTimestamp(new Date('2026-11-15T23:30:00Z')))
+```
+
+Az `addBudapestDays()` a nyári időszámítás váltásánál sem csúszik: naptári napokat ad hozzá, nem 24 órákat. Tört napszámra `RangeError`-t dob, érvénytelen `Date`-re szintén.
+
+## Hol számol a tárca?
+
+- **Teljesítés**: alapból `todayInBudapest()`.
+- **Határidő**: `dueInDays` esetén `addBudapestDays(ma, dueInDays)`. Lásd [Dátumok és határidő](/docs/bizonylatok/kiallitas/szabalyok/datumok-es-hatarido).
+- **Lista szűrők**: a `startDate`, `endDate` és a többi dátumszűrő budapesti nap.
+- **`lastModifiedDate`**: ez nem nap, hanem időpont. A Billingo csak `YYYY-MM-DD HH:MM:SS` alakú budapesti időt fogad el; a tárca a `Date`-et erre alakítja, szövegként csak ezt az alakot engedi. Lásd [Lista: Kérés](/docs/bizonylatok/lista/keres).
+
+## Ami a Billingótól jön
+
+A válaszokban a dátumok szövegek (`invoiceDate: '2026-11-16'`), a tárca nem alakítja őket `Date`-té. Ha számolnál velük, ne `new Date('2026-11-16')`-tal tedd, mert az UTC éjfélt jelent: hasonlítsd őket szövegként (az `YYYY-MM-DD` alak sorba rendezhető), vagy add tovább a segédfüggvényeknek.

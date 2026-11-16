@@ -1,0 +1,73 @@
+---
+title: Törlés
+description: Partner törlése a partners.delete() hívással. A törlés puha, a bizonylatok megtartják a partner adatait, a lista total értéke percekig elavult.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/DeletePartner
+---
+
+<Operation id="DeletePartner" methods={['partners.delete']} />
+
+## Kérés
+
+```ts
+tarca.partners.delete(id: number, options?: { signal?: AbortSignal }): Promise<void>
+```
+
+Az egyetlen bemenet a partner azonosítója: `DELETE /v3/partners/{id}`, törzs nélkül. Írás, ezért a tárca nem ismétli magától.
+
+## Válasz
+
+A Billingo 204-gyel, üres törzzsel válaszol, a `delete()` `undefined`-dal teljesül.
+
+- **Bizonylattal rendelkező partner is törölhető.** Élőben mértük: a törlés 204-et adott, a partner bizonylata utána is lekérhető, és beágyazva hozza a partner adatait. A bizonylat a kiállításkor lemásolja a partnert, ezért a törlés nem érinti.
+- **Utána 404.** A törölt partnerre a `get()` 404-et ad (`Partner is not found.`), a `nullIfNotFound()` ezt `null`-ra fordítja.
+- **A lista `total` értéke késik.** A `list()` `data` tömbje már nem tartalmazza a törölt partnert, a `total` és a `lastPage` viszont percekig a régi számot mutatja.
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 404 | `not_found` | Nincs ilyen partner, vagy már törölték. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs. |
+| – | `network`, `timeout` | Nincs válasz. Kérd le a partnert: ha 404 jön, a törlés lefutott. |
+
+Bizonytalan hiba után a második törlés 404-et kap, ha az első lefutott. Ezt kezelheted sikerként:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function torol(id: number): Promise<void> {
+  try {
+    await tarca.partners.delete(id)
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'not_found') return
+    throw error
+  }
+}
+```
+
+## Minta
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+const partner = await tarca.partners.create({
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+})
+
+await tarca.partners.delete(partner.id ?? 0)
+
+console.log(await nullIfNotFound(tarca.partners.get(partner.id ?? 0)))
+```
+
+A kérés és a válasz a hamis Billingo felvétele szerint:
+
+```text
+DELETE /v3/partners/1
+204, üres törzs
+```

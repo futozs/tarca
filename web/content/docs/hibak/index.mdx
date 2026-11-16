@@ -1,0 +1,51 @@
+---
+title: Hibakategóriák
+description: "A BillingoError tizenöt kategóriája egyenként. Melyik Billingo válaszból vagy helyi ellenőrzésből jön, újrapróbálja-e a tárca, és mi a teendő egy bizonytalan kimenetelű írás után."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Minden hiba `BillingoError`, és a `category` mező mondja meg, mi történt. A kódod erre ágazzon el, ne az üzenet szövegére: a magyar üzenet és a `hint` változhat, a kategória nem. A hiba mezőit (`fieldErrors`, `traceId`, `hint`, `retryable` …) és az újrapróbálás szabályait a [Hibakezelés](/docs/alapok/hibakezeles) oldal írja le, itt kategóriánként nézzük meg, mikor jön elő, és mit kezdj vele.
+
+<ErrorCategoryTable />
+
+## Kategóriánként
+
+| Kategória | Honnan jön | Oldal |
+| --- | --- | --- |
+| `auth` | Billingo, 401 | [Érvénytelen kulcs](/docs/hibak/auth) |
+| `nav_unavailable` | Billingo, 401 vagy 403 a NAV üzenetével | [Nincs NAV-kapcsolat](/docs/hibak/nav-unavailable) |
+| `subscription` | Billingo, 402 | [Előfizetés](/docs/hibak/subscription) |
+| `forbidden` | Billingo, 403 | [Megtagadott művelet](/docs/hibak/forbidden) |
+| `not_found` | Billingo, 404 | [Nincs ilyen erőforrás](/docs/hibak/not-found) |
+| `validation` | a tárca ellenőrzése, vagy Billingo 400 és 422 | [Hibás adat](/docs/hibak/validation) |
+| `rate_limit` | Billingo, 429 | [Túl sok kérés](/docs/hibak/rate-limit) |
+| `server` | Billingo, 5xx | [Szerverhiba](/docs/hibak/server) |
+| `not_ready` | Billingo, 202 | [A fájl még készül](/docs/hibak/not-ready) |
+| `network` | nincs válasz | [Hálózati hiba](/docs/hibak/network) |
+| `timeout` | nincs válasz | [Időtúllépés](/docs/hibak/timeout) |
+| `configuration` | a tárca beállítása | [Hibás beállítás](/docs/hibak/configuration) |
+| `unexpected_response` | Billingo 2xx, értelmezhetetlen törzzsel | [Váratlan válasz](/docs/hibak/unexpected-response) |
+| `in_progress` | a tárca zárja vagy visszatérítése | [Folyamatban](/docs/hibak/in-progress) |
+| `store_unavailable` | a zár vagy a ledger tárolója | [Elérhetetlen tároló](/docs/hibak/store-unavailable) |
+
+## Írás után
+
+1. **Írást a tárca soha nem ismétel.** Csak a GET kéréseket próbálja újra (`rate_limit`, `server`, `network`, `timeout`), összesen legfeljebb `maxAttempts` alkalommal. A `retryable: true` azt jelenti, hogy a hiba átmeneti, nem azt, hogy egy írást nyugodtan elküldhetsz újra.
+2. **Bizonytalan írás után keress, ne küldj.** `network`, `timeout`, `server` és `unexpected_response` után egy POST a Billingónál lefuthatott. Bizonylatnál keresd meg a `vendorId` alapján (`documents.findByVendorId`), vagy eleve a `createOnce`-szal állíts ki, amely ezt magától megteszi. Lásd [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
+
+A `traceId`-t mindig naplózd: a Billingo 5xx válaszai nyomkövetési azonosítót hoznak, és a Billingo ügyfélszolgálata ezt kéri.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  await tarca.organization.get()
+} catch (error) {
+  if (!isBillingoError(error)) throw error
+  console.error(error.category, error.status, error.retryable, error.traceId)
+}
+```
+
+Az MCP szerver eszközei ugyanezeket a kategóriákat adják vissza, néhány sajáttal kiegészítve, lásd [MCP szerver](/docs/kiegeszitok/mcp-szerver).

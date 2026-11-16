@@ -1,0 +1,116 @@
+---
+title: Válasz
+description: Az exports.run() eredménye és a letöltött fájl, a simple_csv felépítése (BOM, pontosvessző, magyar fejléc), az export állapotai, a not_ready és a fail hiba kezelése.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentExport/Download
+---
+
+A `run()` a letöltött fájlt adja vissza, kiegészítve az export azonosítójával és végső állapotával.
+
+```ts
+const fajl = await tarca.exports.run(input)
+```
+
+## ExportResult
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `string` | Az export azonosítója. UUID szöveg, nem szám (élőben `d25d7614-…` alakú). |
+| `state` | `'success' \| 'warning'` | A végső állapot. `warning` esetén a fájl elkészült, de a Billingónak megjegyzése van. |
+| `message` | `string \| undefined` | A Billingo megjegyzése `warning` esetén. Üres üzenetnél `undefined`. |
+| `bytes` | `Uint8Array` | A fájl tartalma, ahogy a Billingo küldte. |
+| `contentType` | `string \| undefined` | A válasz `Content-Type` fejléce. `simple_csv` esetén élőben `text/csv; charset=UTF-8`. |
+| `filename` | `string \| undefined` | A fájlnév a `Content-Disposition` fejlécből, például `2026_11_15_15_06_59_export.csv`. Élőben a név budapesti időbélyeg volt, egy másodperccel a létrehozás után. |
+
+A `download()` ugyanezt adja `id`, `state` és `message` nélkül (`ExportFile`), a `create()` pedig `{ id }` objektumot.
+
+## A simple_csv fájl
+
+Élőben, 2026. november 15-én a `simple_csv` így nézett ki:
+
+- az első három bájt UTF-8 BOM (`ef bb bf`), ezért a magyar Excel ékezethelyesen nyitja meg;
+- a mezőket pontosvessző választja el, a szóközt tartalmazó mezők idézőjelben vannak;
+- az első sor magyar fejléc (`"Számla sorszáma"`, `"Kapcsolódó számla"`, `Kelt`, `"Telj. dátum"` és így tovább), a végén áfakulcsonként egy oszloppal (`27%`, `5%`);
+- a fejléc után bizonylatonként egy sor jön.
+
+A spec csak `application/*` tartalomtípust ír, élőben `text/csv` jött. A tárca a fájlt a tartalomtípusa miatt soha nem utasítja el: az xlsx és a könyvelőprogramok formátumai ugyanígy bájtként érkeznek.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const fajl = await tarca.exports.run({
+  queryType: 'invoice_date',
+  startDate: '2026-10-01',
+  endDate: '2026-10-31',
+  exportType: 'simple_csv',
+})
+
+const sorok = new TextDecoder().decode(fajl.bytes).trimEnd().split('\n')
+const fejlec = sorok[0]?.split(';') ?? []
+
+console.log(fejlec.length, sorok.length - 1)
+```
+
+Ha fájlba írod, a `bytes` változatlanul kerüljön bele, a BOM-mal együtt (lásd [Havi export](/docs/receptek/havi-export)). A `TextDecoder` a dekódoláskor alapból levágja a BOM-ot, így az első fejlécmező tisztán `"Számla sorszáma"`. Az idézőjeles mezőkben lehet pontosvessző, ezért éles feldolgozáshoz CSV-olvasót használj, ne `split(';')`-et.
+
+## Az állapotok
+
+A `poll()` válasza `Billingo.DocumentExportStatus`: `{ id, state, message }`.
+
+| `state` | Jelentés | Mit tesz a `run()`? |
+| --- | --- | --- |
+| `pending` | Sorban áll. | Vár, és újra lekérdez. |
+| `processing` | Készül. | Vár, és újra lekérdez. |
+| `success` | Elkészült. Élőben a `message` üres szöveg. | Letölti. |
+| `warning` | Elkészült, megjegyzéssel. | Letölti, a megjegyzés a `message` mezőbe kerül. |
+| `fail` | Nem készült el. | `server` hibát dob a Billingo üzenetével. |
+
+Élőben a létrehozás után 1,7 másodperccel lekérdezett export már `success` volt.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Érvénytelen `startDate` vagy `endDate`. Kérés nem ment ki. |
+| – | `RangeError` | Negatív vagy nem véges `maxWaitMs`. |
+| – | `not_ready` | A `run()` a `maxWaitMs` alatt nem kapott kész állapotot. Az üzenet tartalmazza az azonosítót: „Az export (id: …) 60000 ms alatt nem készült el.” |
+| – | `server` | Az export `fail` állapotba került. A `hint` a szűrők ellenőrzését javasolja. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 402 | `subscription` | Az előfizetés nem engedi a műveletet. |
+| 422 | `validation` | A Billingo elutasította az indítás adatait. A `fieldErrors` a snake_case mezőt nevezi meg. |
+| 429, 5xx | `rate_limit`, `server` | A lekérdezést és a letöltést a tárca újrapróbálja, az indítást nem. |
+| – | `network`, `timeout` | Nem jött válasz. Az indításnál lehet, hogy az export elindult. |
+| – | `unexpected_response` | Az indítás válasza üres, nem JSON, vagy hiányzik belőle az azonosító. Az export ettől még elindulhatott. |
+
+Az export nem bizonylat, és semmit nem módosít. Egy bizonytalan indítás után indíts újat, legfeljebb a Billingo kétszer készíti el ugyanazt a fájlt.
+
+## Ha lejárt a várakozás
+
+A `not_ready` után ne indíts új exportot, folytasd a régit. Az azonosító benne van a hiba üzenetében és a `hint`-ben is, de egyszerűbb, ha a `create()` hívással magad indítod az exportot, és eltárolod az azonosítót:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { id } = await tarca.exports.create({
+  queryType: 'invoice_date',
+  startDate: '2026-10-01',
+  endDate: '2026-10-31',
+  exportType: 'simple_csv',
+})
+
+async function letoltHaKesz(exportId: string) {
+  const allapot = await tarca.exports.poll(exportId)
+  if (allapot.state === 'fail') throw new Error(allapot.message || 'Az export nem készült el.')
+  if (allapot.state !== 'success' && allapot.state !== 'warning') return undefined
+  return tarca.exports.download(exportId)
+}
+
+const fajl = await letoltHaKesz(id)
+
+console.log(fajl === undefined ? 'Még készül, nézd meg később.' : fajl.filename)
+```
+
+A `letoltHaKesz()` egyszer kérdez, és nem vár. Egy ütemezett feladatból hívd újra, amíg fájlt nem ad. A letöltést csak `success` vagy `warning` után kérd: a hamis Billingo a kész állapot előtti letöltésre 404-et ad (`Document export is not finished yet.`), hogy élőben mi jön, nem mértük.

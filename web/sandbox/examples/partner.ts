@@ -5,8 +5,8 @@ const tarca = createTarca()
 const adatok = {
   name: 'Vevő Kft.',
   address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
-  emails: ['vevo@ceg.hu'],
-  taxcode: '12345676-2-41',
+  emails: ['vevo@example.hu'],
+  taxcode: '12345678-2-42',
 }
 
 const elso = await tarca.partners.findOrCreate(adatok)

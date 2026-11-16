@@ -1,0 +1,52 @@
+---
+title: "server: szerverhiba a Billingónál"
+description: "A server kategória: a Billingo 5xx választ adott, nyomkövetési azonosítóval. A tárca a GET-et újrapróbálja, az írást nem, és a createOnce a vendorId alapján keres utána."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | 500–599 |
+| Újrapróbálja a tárca? | GET kérést igen, írást nem |
+| `retryable` | `true` |
+
+## Mikor jön elő
+
+Hiba a Billingo oldalán. A törzsben a nyomkövetési azonosító is ott van:
+
+```text
+500 {"error":{"message":"Internal Server Error.","trace_id":"…"}}
+```
+
+A tárca üzenete `A Billingo szerverhibát adott (500).`, a `traceId` mezőben a Billingo azonosítója. Ezt a Billingo ügyfélszolgálata kéri, ha jelzed a hibát. Az exportnál a `fail` állapotú feladatot az `exports.run()` szintén `server` hibaként adja, a Billingo üzenetével.
+
+## Mit tesz a tárca
+
+- **GET:** újrapróbálja, összesen legfeljebb `maxAttempts` kérés.
+- **POST, PUT, DELETE:** nem próbálja újra. Egy 5xx válasz után nem tudod, hogy a Billingo a háttérben elvégezte-e az írást.
+- **`createOnce`:** 5xx után kétszer megkeresi a bizonylatot a `vendorId` alapján (`recoveryDelayMs`, alapból 1 000 és 2 000 ms múlva). Ha megvan, `created: true`, ha nincs, az eredeti `server` hibát kapod.
+
+## Mi a teendő
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  await tarca.documents.createOnce({
+    vendorId: 'ORDER-1001',
+    partner: {
+      name: 'Vevő Kft.',
+      address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+    },
+    items: [{ name: 'Webfejlesztés', quantity: 10, netUnitPrice: 15_000, vat: 27 }],
+  })
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'server') throw error
+  console.error('Billingo szerverhiba, nyomkövetési azonosító:', error.traceId)
+  throw error
+}
+```
+
+Webhookban add tovább a hibát, hogy a válasz 500 legyen: a szolgáltató később újraküldi az eseményt, és a `createOnce` akkor megtalálja a bizonylatot, ha az mégis elkészült. Sima `create` után ne küldd újra a kérést, hanem nézd meg a `findByVendorId()`-val.

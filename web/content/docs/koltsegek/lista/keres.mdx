@@ -1,0 +1,98 @@
+---
+title: Kérés
+description: A spendings.list() és a spendings.all() szűrői, a Billingo query paraméterei, az élőben ellenőrzött szűrők és a q keresés korlátja.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingList
+---
+
+<Operation id="SpendingList" methods={['spendings.list', 'spendings.all']} />
+
+```ts
+tarca.spendings.list(query?: SpendingListQuery, options?: RequestOptions): Promise<Page<Billingo.SpendingListItem>>
+```
+
+```ts
+tarca.spendings.all(query?: Omit<SpendingListQuery, 'page'>, options?: RequestOptions): AsyncGenerator<Billingo.SpendingListItem>
+```
+
+A `list()` egy oldalt ad vissza, az `all()` minden oldalt bejár ugyanazokkal a szűrőkkel. Mindkettő `GET` kérés, ezért a tárca hálózati hibánál, 429-nél és 5xx-nél magától újrapróbálja.
+
+## Szűrők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `q` | `q` | – | Szabad szöveges keresés. Élőben a pontos számlaszámra 0 találatot adott, és hogy miben keres, nem mértük. Számlaszámra a lenti módon keress. |
+| `spendingDate` | `spending_date` | – | Melyik dátumra vonatkozik a `startDate` és az `endDate`: `'invoice_date'` (számla kelte), `'fulfillment_date'` (teljesítés) vagy `'due_date'` (fizetési határidő). |
+| `startDate` | `start_date` | – | Az időszak első napja, `Date` vagy `YYYY-MM-DD`. A tárca a budapesti naptári napot küldi. |
+| `endDate` | `end_date` | – | Az időszak utolsó napja, a napot is beleértve. |
+| `paymentStatus` | `payment_status` | – | `'all'`, `'paid'` (kifizetve), `'unpaid'` (fizetetlen) vagy `'expired'` (fizetetlen, és lejárt a határideje). |
+| `spendingType` | `spending_type` | – | `'all'`, `'manual'` (kézzel vagy API-n rögzített) vagy `'nav'` (a NAV-tól átvett bejövő számla). |
+| `categories` | `categories` | – | Egy kategória, például `'office_rent'` vagy `'software'`. A teljes lista a `Billingo.Category` típusban. |
+| `currencies` | `currencies` | – | Egy pénznem, például `'EUR'`. |
+| `paymentMethods` | `payment_methods` | – | Egy fizetési mód, például `'wire_transfer'`. |
+| `page` | `page` | `1` | Az oldal száma. Az `all()` nem fogadja, ő lapoz. |
+| `perPage` | `per_page` | `25` | Oldalméret, 1 és 100 között. A `25` a Billingo alapértéke. Az `all()` magától 100-as oldalakat kér, ha nem adsz meg mást. |
+
+A `categories`, a `currencies` és a `paymentMethods` neve azért többes számú, mert a spec így nevezi őket, de mindegyik egyetlen értéket fogad. Több kategóriához kategóriánként hívd a listát.
+
+Élőben 2026. november 15-én a dátumtartományt, a `categories` és a `paymentStatus` szűrőt próbáltuk ki együtt, és pontosan a várt költség jött vissza. A többi szűrőt csak a spec írja le.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const lejart = await tarca.spendings.list({
+  spendingDate: 'due_date',
+  endDate: new Date(),
+  paymentStatus: 'expired',
+  perPage: 100,
+})
+
+console.log(lejart.total, lejart.data.map((koltseg) => koltseg.invoiceNumber))
+```
+
+## Keresés számlaszámra
+
+A `q` élőben nem találta meg a költséget a számlaszáma alapján. Ha egy szállító számlaszámát keresed, szűkítsd a listát a számla keltére, és a válaszban hasonlítsd össze a számlaszámokat:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function koltsegSzamlaszamra(szamlaszam: string, kelt: string) {
+  for await (const koltseg of tarca.spendings.all({
+    spendingDate: 'invoice_date',
+    startDate: kelt,
+    endDate: kelt,
+  })) {
+    if (koltseg.invoiceNumber === szamlaszam) return koltseg
+  }
+  return undefined
+}
+
+const talalat = await koltsegSzamlaszamra('SZLA-2026-42', '2026-11-10')
+```
+
+A hamis Billingo (`tarcajs/testing`) a `q` értékét a partner nevében keresi. Ez a fake feltételezése, élőben nem igazoltuk, ezért éles kódban ne építs rá.
+
+## Helyi ellenőrzés
+
+A tárca a kérés előtt ellenőrzi a lapozást és a dátumokat. Hibánál `RangeError`-t dob, és kérést nem küld:
+
+| Bemenet | Hiba |
+| --- | --- |
+| `startDate: '15/11/2026'` | `RangeError`: A dátumot YYYY-MM-DD formában vagy Date objektumként add meg, kapott: 15/11/2026 |
+| `startDate: '2026-02-30'` | `RangeError`: Nem létező naptári dátum: 2026-02-30 |
+| `perPage: 101` | `RangeError`: A perPage értéke 1 és 100 közötti egész szám legyen, kapott: 101 |
+| `page: 0` | `RangeError`: A page értéke legalább 1 egész szám legyen, kapott: 0 |
+
+## A dróton
+
+A tárca csak a megadott szűrőket küldi, camelCase-ből snake_case-re fordítva, a dátumokat `YYYY-MM-DD` alakban:
+
+```text
+GET /spendings?spending_date=invoice_date&start_date=2026-10-01&end_date=2026-11-30&payment_status=unpaid&categories=office_rent
+```
+
+A teljes kérést és a választ a [Minta](/docs/koltsegek/lista/minta) oldal mutatja. A lapozás közös szabályai a [Lapozás](/docs/alapok/lapozas) oldalon vannak.

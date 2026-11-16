@@ -1,0 +1,98 @@
+---
+title: Parancssor
+description: A tarcajs parancs ellenőrzi a Billingo beállítást (doctor), a kulcsot (verify), lekérdez egy bizonylatot (document get), és MCP szervert indít stdio-n. Kapcsolók, ellenőrzések, kilépési kódok.
+---
+
+A csomag egy `tarcajs` parancsot ad (Node.js 22 vagy újabb). A `BILLINGO_API_KEY` környezeti változóból olvassa a kulcsot, és magyarul válaszol.
+
+```bash title="Terminál"
+npx tarcajs doctor [--tax-code <adószám>] [--defaults <fájl.json>] [--check-update] [--json | --report]
+npx tarcajs verify
+npx tarcajs document get <azonosító> | --vendor <vendorId>
+npx tarcajs mcp [--allow-write] [--defaults <fájl.json>]
+```
+
+A `tarcajs help`, és bármelyik parancs után a `--help` vagy `-h` a súgót adja, kulcs és kérés nélkül. A `--version` a verziót.
+
+| Kilépési kód | Jelentés |
+| --- | --- |
+| `0` | siker |
+| `1` | hiba, vagy elbukott egy `doctor` ellenőrzés |
+| `2` | használati hiba: ismeretlen parancs, kapcsoló vagy fölösleges argumentum |
+
+Billingo hibánál a parancs kiírja a magyar üzenetet, a `Tipp:` sorban a `hint`-et, és ha van, a `Trace ID`-t.
+
+## doctor
+
+```bash title="Terminál"
+npx tarcajs doctor --tax-code 12345678-2-42
+```
+
+```text
+tarcajs doctor 0.1.2
+✓ Node.js 24.11.0
+✓ Időzóna-adatok: Europe/Budapest elérhető.
+✓ API kulcs: 40 karakter.
+✓ Hitelesítés: a Billingo elfogadta az API kulcsot.
+- Óra: a Billingo válaszában nem volt Date fejléc.
+✓ Profil: valószínűleg fejlesztői teszt profil (nincs NAV-kapcsolat, nincs előfizetett funkció). A Billingónak nincs teszt jelzője, ez becslés. Az adószám egyezik a megadottal.
+✓ NAV: nincs kapcsolat, teszt profilon ez várható (az adószám-ellenőrzés itt nav_unavailable hibát ad).
+✓ Előfizetés: érvényes 2026-11-17-ig.
+✓ Számlatömbök: 1 számla- és 1 nyugtatömb.
+! Bankszámlák: 0. Átutalásos számlán így nem szerepel bankszámlaszám.
+
+Összegzés: 0 hiba, 1 figyelmeztetés.
+```
+
+A kimenet a hamis Billingo ellen készült, ezért nincs `Date` fejléc és nincs bankszámla. A `doctor` csak olvas: legfeljebb 3 Billingo kérést küld (`organization.get`, `documentBlocks.list`, `bankAccounts.list`), ismétlés nélkül.
+
+| Ellenőrzés | Mit néz |
+| --- | --- |
+| `node` | Node.js 22 vagy újabb |
+| `timezone` | Van-e `Europe/Budapest` időzóna-adat. Nélküle a teljesítés és a határidő rossz napra eshet. |
+| `api-key` | Megvan-e a kulcs. Csak a hosszát írja ki, magát a kulcsot soha. A körülötte lévő szóköz figyelmeztetés. |
+| `auth` | A Billingo elfogadja-e. 401-nél tippet ad az új V3 kulcshoz. |
+| `clock` | A Billingo `Date` fejléce és a gép órája: 2 másodpercig rendben, 30 másodpercig figyelmeztetés, fölötte hiba. A dátumokat a tárca helyben, budapesti naptári napként számolja. |
+| `profile` | Teszt vagy éles profil. A Billingónak nincs teszt jelzője: a NAV-kapcsolat hiányából és az üres funkciólistából becsül. `--tax-code` mellett az adószámot is összeveti, de nem írja ki. |
+| `nav` | NAV-kapcsolat. Éles profilon a hiánya figyelmeztetés. |
+| `subscription` | Lejárt előfizetés hiba, mert az írások 402-t kapnak. Lejárat 14 napon belül NAV-kapcsolatos profilon figyelmeztetés. |
+| `environment` | `NODE_ENV=test` vagy `development` NAV-kapcsolatos profilon: figyelmeztetés, mert a teszt valódi bizonylatot állítana ki. |
+| `document-blocks` | Van-e számla- és nyugtatömb. `--defaults` mellett a `blockId` és a `receiptBlockId` létezik-e, jó típussal. |
+| `bank-accounts` | A bankszámlák száma és pénzneme, számlaszám nélkül. `--defaults` mellett a `bankAccountId` létezik-e. |
+| `update` | Csak `--check-update` mellett: a legfrissebb npm verzió. Hálózati hibánál kimarad. |
+
+Két dolgot olvasással nem lehet bizonyítani, ezért a `doctor` ki is mondja, hogy nem nézi: csak olvasási vagy írási jogú-e a kulcs, és megvan-e egy éles profilon az „API + Tömeges” kiegészítő. Ez utóbbit csak egy 402-t adó írás mutatja meg.
+
+- `--defaults tarca.json`: egy `TarcaDefaults` JSON fájl (`blockId`, `receiptBlockId`, `bankAccountId`, `paymentMethod`, `language`, `currency`, `dueInDays`, `electronic`, `sendEmail`). Ismeretlen kulcs, rossz típus vagy érvénytelen érték használati hiba, mielőtt bármi lefutna. A `-` a standard bemenetről olvas.
+- `--json`: géppel olvasható eredmény (`{ checks: [{ id, status, message }] }`).
+- `--report`: titokmentes Markdown táblázat hibajegyhez. Nincs benne API kulcs, adószám, bankszámlaszám, vevői adat és bizonylattartalom.
+
+## verify
+
+```bash title="Terminál"
+npx tarcajs verify
+```
+
+Egy `GET /organization` kéréssel ellenőrzi a kulcsot. Érvényes kulcsra `Az API kulcs érvényes: a Billingo elfogadta.` és 0 a kilépési kód, érvénytelenre 1.
+
+## document get
+
+```bash title="Terminál"
+npx tarcajs document get 1
+npx tarcajs document get --vendor ORDER-1001
+```
+
+A bizonylatot JSON-ban írja ki, camelCase mezőkkel. Ismeretlen vagy idegen azonosítóra (a Billingo ilyenkor 403-at ad, nem 404-et) és ismeretlen `vendorId`-ra 1 a kilépési kód, magyar üzenettel: `Nincs bizonylat ezzel a vendorId-val ebben a Billingo cégben.`
+
+## mcp
+
+```bash title="Terminál"
+BILLINGO_API_KEY=... npx tarcajs mcp
+TARCA_MCP_ALLOW_WRITE=1 npx tarcajs mcp --defaults tarca.json
+```
+
+MCP szervert indít stdio-n: soronként egy JSON-RPC üzenet a standard bemeneten, a válasz a standard kimeneten, az állapotsor a standard hibakimeneten. Alapból csak olvas. Az `--allow-write` kapcsoló vagy a `TARCA_MCP_ALLOW_WRITE=1` (`true`, `yes`, `igen` is) bekapcsolja az író eszközöket. Itt a `--defaults -` használati hiba, mert a standard bemenet az MCP protokollé. Az eszközök: [MCP szerver](/docs/kiegeszitok/mcp-szerver).
+
+## Hogyan tesztelik
+
+A parancs belül a `runCli(io)` függvényre épül, amely a környezetet egy `CliIo` objektumként kapja (`argv`, `env`, `stdout`, `stderr`, `readFile`, `readStdin`, `stdinLines`, `fetch`). A tárca saját tesztjei így futtatják a hamis Billingo ellen. A `runCli` nem része a publikus API-nak: a saját kódodból a `tarcajs` parancsot hívd, ne ezt.

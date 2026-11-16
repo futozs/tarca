@@ -1,0 +1,108 @@
+---
+title: Kérés
+description: A products.create() bemenete, a ProductInput mezői a Billingo neveivel, a pontosan egy ár szabálya és a törzs, amit a tárca elküld.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/CreateProduct
+---
+
+<Operation id="CreateProduct" methods={['products.create']} />
+
+```ts
+tarca.products.create(input: ProductInput, options?: { signal?: AbortSignal }): Promise<Billingo.Product>
+```
+
+A `ProductInput` a Billingo `Product` sémája azonosító nélkül, azzal a megkötéssel, hogy a két ár közül pontosan egy szerepelhet benne. A típus ezt már fordításkor kikényszeríti.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const termek = await tarca.products.create({
+  name: 'Kávé 250 g',
+  comment: 'Pörkölt szemes kávé',
+  currency: 'HUF',
+  vat: '27%',
+  unit: 'db',
+  netUnitPrice: 1_000,
+  sku: 'KAVE-250',
+})
+
+console.log(termek.id, termek.grossUnitPrice)
+```
+
+## Mezők
+
+Az „Alapérték” oszlop azt mutatja, mit tárol a Billingo, ha a mezőt kihagyod.
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező.** A termék neve, ez kerül a számla tételére. |
+| `currency` | `currency` | – | **Kötelező.** Pénznem, `Billingo.Currency` (`'HUF'`, `'EUR'` …). |
+| `vat` | `vat` | – | **Kötelező.** Áfakulcs Billingo kódként: `'27%'`, `'5%'`, `'AAM'`, `'TAM'` …, lásd `Billingo.Vat`. Itt nem szám, mint a számlatételeknél. |
+| `unit` | `unit` | – | **Kötelező.** Mennyiségi egység, például `'db'` vagy `'óra'`. |
+| `netUnitPrice` | `net_unit_price` | a Billingo számolja | Nettó egységár. Vagy ez, vagy a bruttó. |
+| `grossUnitPrice` | `gross_unit_price` | a Billingo számolja | Bruttó egységár. Vagy ez, vagy a nettó. |
+| `comment` | `comment` | `''` | Megjegyzés. |
+| `sku` | `sku` | `''` | Cikkszám. |
+| `ean` | `ean` | `''` | Vonalkód. |
+| `entitlement` | `entitlement` | `null` | Áfamentesség jogcíme (`'AAM'`, `'TAM'`, `'EUFAD37'` …), lásd `Billingo.Entitlement`. |
+| `generalLedgerNumber` | `general_ledger_number` | `''` | Főkönyvi szám. |
+| `generalLedgerTaxcode` | `general_ledger_taxcode` | `''` | Főkönyvi adókód. |
+| `purchasePrice` | `purchase_price` | `null` | Beszerzési ár. |
+| `isManage` | `is_manage` | `false` | A spec nem ír hozzá leírást. |
+| `isGenerateEraseCode` | `is_generate_erase_code` | `false` | A spec nem ír hozzá leírást. |
+| `connectProductId` | `connect_product_id` | `null` | Kapcsolt termék azonosítója. |
+| `isConnectProduct` | `is_connect_product` | `false` | Kapcsolt termék-e. |
+| `applyDiscount` | `apply_discount` | `false` | A spec nem ír hozzá leírást. |
+| `applyQuantity` | `apply_quantity` | `false` | A spec nem ír hozzá leírást. |
+| `isDepositFee` | `is_deposit_fee` | `false` | Betétdíj-e. |
+
+## Helyi ellenőrzés
+
+A tárca kérés előtt ellenőrzi az árat, és `validation` hibát dob `fieldErrors`-szal (mindkét ármezőre), ha:
+
+- egyik ár sincs megadva,
+- mindkét ár meg van adva,
+- az ár nem véges szám (`NaN` vagy `Infinity`).
+
+Ez akkor fordul elő, ha az árat típus nélküli forrásból, például egy CSV fájlból olvasod:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  await tarca.products.create({
+    name: 'Kávé 250 g',
+    currency: 'HUF',
+    vat: '27%',
+    unit: 'db',
+    netUnitPrice: Number('ezer'),
+  })
+} catch (error) {
+  if (isBillingoError(error)) {
+    console.log(error.category, error.fieldErrors.map((hiba) => hiba.field))
+  }
+}
+```
+
+A többi mezőt a Billingo ellenőrzi: név, pénznem, áfakulcs vagy egység nélkül 422-t ad.
+
+## Ami a dróton megy
+
+A camelCase mezőkből snake_case lesz, a meg nem adott ár nem kerül a törzsbe. A fenti létrehozás törzse a hamis Billingo felvétele szerint:
+
+```json
+{
+  "name": "Kávé 250 g",
+  "comment": "Pörkölt szemes kávé",
+  "currency": "HUF",
+  "vat": "27%",
+  "unit": "db",
+  "net_unit_price": 1000,
+  "sku": "KAVE-250"
+}
+```
+
+A tárca a létrehozást **nem ismétli** magától, mert egy második kérés második terméket hozna létre.

@@ -1,0 +1,74 @@
+---
+title: Törlés
+description: Bankszámla törlése a bankAccounts.delete() hívással, a 204-es válasz és a teendő bizonytalan hiba után.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/DeleteBankAccount
+---
+
+<Operation id="DeleteBankAccount" methods={['bankAccounts.delete']} />
+
+## Kérés
+
+```ts
+tarca.bankAccounts.delete(id: number, options?: { signal?: AbortSignal }): Promise<void>
+```
+
+Az egyetlen bemenet a bankszámla azonosítója: `DELETE /v3/bank-accounts/{id}`, törzs nélkül. Írás, ezért a tárca nem ismétli magától.
+
+## Válasz
+
+A Billingo 204-gyel, üres törzzsel válaszol, a `delete()` `undefined`-dal teljesül.
+
+Ha a kliensed `defaults.bankAccountId` beállítása a törölt bankszámlára mutat, írd át, mielőtt a következő számlát kiállítod. A `npx tarcajs doctor --defaults defaults.json` hibát jelez, ha a fájlban megadott `bankAccountId` nincs a profil bankszámlái között.
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 403 | `forbidden` | Ismeretlen vagy már törölt bankszámla (a hamis Billingóban), vagy csak olvasó kulcs. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| – | `network`, `timeout` | Nincs válasz. Nézd meg a listában, megvan-e még a bankszámla. |
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function torol(bankszamlaId: number): Promise<void> {
+  try {
+    await tarca.bankAccounts.delete(bankszamlaId)
+  } catch (error) {
+    if (!isBillingoError(error) || !['network', 'timeout', 'server'].includes(error.category)) {
+      throw error
+    }
+    for await (const szamla of tarca.bankAccounts.all()) {
+      if (szamla.id === bankszamlaId) return tarca.bankAccounts.delete(bankszamlaId)
+    }
+  }
+}
+```
+
+## Minta
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bankszamla = await tarca.bankAccounts.create({
+  name: 'Fő számla',
+  accountNumber: '11111111-22222222-33333333',
+  currency: 'HUF',
+})
+
+await tarca.bankAccounts.delete(bankszamla.id ?? 0)
+
+const maradt = await tarca.bankAccounts.list()
+console.log(maradt.total)
+```
+
+A törlés a hamis Billingo felvétele szerint:
+
+```text
+DELETE /v3/bank-accounts/1
+204, üres törzs
+```

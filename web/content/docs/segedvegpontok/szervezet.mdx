@@ -1,0 +1,69 @@
+---
+title: Szervezet
+description: A kulcshoz tartozó Billingo profil adatai az organization.get() hívással. Adószám, előfizetés lejárata és funkciói, NAV-kapcsolat, és ebből a teszt vagy éles profil.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Organization/GetOrganizationData
+---
+
+Egy API kulcs egy Billingo céghez (profilhoz) tartozik. Az `organization.get()` megmondja, melyikhez: az adószámát, az előfizetését és azt, hogy van-e NAV Online Számla kapcsolata.
+
+<Operation id="GetOrganizationData" methods={['organization.get', 'verifyCredentials']} />
+
+## Kérés
+
+```ts
+tarca.organization.get(options?: RequestOptions): Promise<Billingo.OrganizationData>
+```
+
+Nincs paraméter, a kérés `GET /organization`.
+
+## Válasz
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `taxCode` | `string` | A cég adószáma. Fejlesztői teszt profilon élőben `00000000-0-00` volt. |
+| `subscription.expirationDate` | `string` | Az előfizetés lejárata, `YYYY-MM-DD`. Egy friss teszt profilon élőben a regisztráció másnapja volt. |
+| `subscription.features` | `readonly Billingo.Feature[]` | Az előfizetett funkciók, például `'api_limit_pro'`. Teszt profilon élőben üres tömb. |
+| `hasNavConnection` | `boolean` | Be van-e állítva a NAV Online Számla összekötés. Teszt profilon mindig `false`. |
+| `kobakReceiptFsEnabled` | `boolean` | A nyugták NAV-beküldéséhez (KOBAK) tartozó jelző, a spec nem írja le pontosan a jelentését. Élőben a teszt profilon `true` volt. |
+| `hasSuccessfulNavReceiptSubmission` | `boolean` | Volt-e már sikeres nyugtabeküldés a NAV-nak. |
+
+A 3.0.14-es spec csak a `taxCode` és a `subscription` mezőt ismeri. A `hasNavConnection` és a két `kobak` mező a 3.0.15-ösben szerepel, a Billingo élőben mindhármat küldi.
+
+## Teszt vagy éles profil?
+
+A Billingo API-jában nincs olyan mező, amely kimondja, hogy a profil teszt profil. A fejlesztői teszt profilon nincs NAV-kapcsolat és nincs előfizetett funkció, ebből lehet következtetni:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szervezet = await tarca.organization.get()
+const funkciok = szervezet.subscription?.features ?? []
+
+const tesztProfil = szervezet.hasNavConnection === false && funkciok.length === 0
+
+console.log(tesztProfil ? 'Fejlesztői teszt profil' : 'Éles profil', szervezet.taxCode)
+```
+
+Ez csak becslés. Biztosabb, ha a várt adószámot is összeveted, ahogy a tárca e2e őre teszi (`hasNavConnection === false` és a megadott adószám). A `tarcajs doctor` parancs ugyanezt a becslést írja ki, lásd [Parancssor](/docs/kiegeszitok/parancssor). A teszt profilról a [Teszt profil](/docs/alapok/teszt-profil) oldal szól.
+
+<Callout type="warning" title="Éles profilon minden bizonylat valódi">
+  Ha a `hasNavConnection` `true`, a kiállított számlát a Billingo automatikusan jelenti a NAV-nak,
+  és törölni nem lehet, csak sztornózni. Tesztet és fejlesztést fejlesztői teszt profilon futtass.
+</Callout>
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 402 | `subscription` | Az előfizetés nem engedi a műveletet. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból legfeljebb három próbálkozásig. |
+| – | `network`, `timeout` | Nem jött válasz. A tárca ezt is újrapróbálja. |
+
+## Minta
+
+A példa előbb a kulcsot ellenőrzi, aztán lekéri a profil adatait. Mindkét kérés `GET /organization`: az első a `verifyCredentials()`, a második az `organization.get()` hívásé.
+
+<Example slug="szervezet-adatai" operation="GetOrganizationData" />
+
+A sandbox hamis Billingója teszt profilként válaszol: `tax_code` `00000000-0-00`, `has_nav_connection` `false`, üres `features`, a lejárat pedig a holnapi nap.

@@ -1,0 +1,41 @@
+---
+title: "not_ready: a fájl még készül"
+description: "A not_ready kategória: a Billingo 202-vel jelzi, hogy a bizonylat PDF-je még nem készült el. A documents.pdf() kivárja, az exports.run() pedig ezzel jelzi, ha a feladat a várakozási időn túl is fut."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | 202 |
+| Újrapróbálja a tárca? | A transport nem; a `documents.pdf()` kivárja |
+| `retryable` | `true` |
+
+## Mikor jön elő
+
+**PDF letöltés.** Egy friss bizonylat PDF-je néhány másodpercig még nem tölthető le, a Billingo ilyenkor 202-t ad:
+
+```text
+202 {"error":{"message":"Document PDF has not generated yet."}}
+```
+
+Élőben a PDF 1,6 másodperccel a kiállítás után már letölthető volt. A `documents.pdf()` a 202 után 1, 2, 4 … másodpercet vár, összesen legfeljebb `maxWaitMs` ideig (alapból 30 000 ms, az óra szerint mérve a hívás kezdetétől), és csak utána dob `not_ready` hibát `status: 202`-vel és a Billingo utolsó üzenetével. `maxWaitMs: 0` esetén egyetlen kérés megy ki.
+
+**Export.** Az `exports.run()` alapból 60 000 ms-ig vár a feladatra. Ha addig nem végez, `not_ready` hibát ad, amelynek az üzenete tartalmazza a feladat azonosítóját: a feladat fut tovább, később a `poll()` és a `download()` adja meg.
+
+## Mi a teendő
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  const pdf = await tarca.documents.pdf(1, { maxWaitMs: 10_000 })
+  console.log(pdf.filename, pdf.bytes.byteLength)
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'not_ready') throw error
+  console.log('A PDF még készül, kérd le később:', error.hint)
+}
+```
+
+Webhookban vagy háttérfeladatban ne várj a PDF-re a kiállítás után: tedd sorba, és egy későbbi futás töltse le. A [PDF tárhely](/docs/kiegeszitok/pdf-tarhely) `storeDocumentPdf()` függvénye ugyanígy vár, és ugyanezt a hibát adja.

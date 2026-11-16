@@ -1,0 +1,55 @@
+---
+title: "validation: hibás adat"
+description: "A validation kategória: a tárca kérés előtt elutasította a bemenetet magyar mezőhibákkal, vagy a Billingo 400-zal vagy 422-vel válaszolt. A duplikált vendorId, a fieldErrors és a hint."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | nincs (helyi ellenőrzés), 400 vagy 422 |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false` |
+
+## Mikor jön elő
+
+**Kérés előtt, a tárca ellenőrzéséből.** Minden törzset, amit a Billingónak küldenél, a tárca előbb ellenőriz: hiányzó vagy rossz áfakulcs, egyszerre nettó és bruttó egységár, lehetetlen dátum, devizás bizonylat árfolyam nélkül, rossz alakú adószám vagy e-mail, `.` és `..` mint `vendorId`. Ilyenkor kérés nem megy ki, a `fieldErrors` magyarul, mezőnként sorolja fel a hibát (`items.0.vat`, `dueDate`, `conversionRate`), a `hint` pedig azt, hogy semmi nem jött létre. A rossz argumentum (oldalszám, `maxWaitMs`) ezzel szemben `RangeError`.
+
+**A Billingo 422-es válaszából.** A Laravel alakú törzs mezőnkénti hibái a `fieldErrors`-ba kerülnek, Billingo nevekkel:
+
+```text
+422 {"message":"Validation Failed","errors":[{"field":"…","message":"…"}]}
+```
+
+**A Billingo 400-as válaszából.** A leggyakoribb a duplikált `vendorId`, amikor a sima `create` olyan `vendorId`-val megy, amely már foglalt:
+
+```text
+400 {"error":{"message":"Duplicate vendor id. (id:ORDER-1001)"}}
+```
+
+A 400 a módosított számla sztornózásakor (`Cannot cancel the document (id:…)`) is jön, és a Billingo saját MCP szervere szerint a napi írási kvóta kimerülésekor is (ennek az üzenetét élőben nem mértük). Ez utóbbinál a tárca magyar `hint`-et ad: a módosított számlát újabb módosító számlával lehet javítani. Egy ismeretlen 4xx státusz szintén `validation`.
+
+## Mi a teendő
+
+Újrapróbálni nincs értelme, az adatot kell javítani. Webhookban ezt a hibát kezeld le, és jelezd embernek: a szolgáltató újraküldése nem javít rajta.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  await tarca.documents.create({
+    partner: {
+      name: 'Vevő Kft.',
+      address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+    },
+    items: [{ name: 'Webfejlesztés', quantity: 10, netUnitPrice: 15_000, vat: 27 }],
+    dueDate: '2026-02-30',
+  })
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'validation') throw error
+  for (const { field, message } of error.fieldErrors) console.error(field, message)
+}
+```
+
+A duplikált `vendorId` 400-át nem kell kézzel kezelned: a `createOnce` felismeri, újra megkeresi a bizonylatot, és `created: false`-szal visszaadja. Lásd [Pontosan egyszer](/docs/alapok/pontosan-egyszer).

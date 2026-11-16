@@ -1,0 +1,50 @@
+---
+title: Válasz
+description: A products.create() által visszaadott termék a kiszámolt második árral, a null beszerzési ár és a létrehozás hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/CreateProduct
+---
+
+A Billingo 201-gyel és a mentett termékkel válaszol, a tárca `Billingo.Product` objektumként adja vissza. A mezőket a [Lekérés](/docs/termekek/lekeres) oldal írja le, itt a létrehozás sajátosságai jönnek.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | Az új termék azonosítója. Számlatételben `productId`-ként adhatod át. |
+| `netUnitPrice` | `number` | A megadott vagy a bruttóból számolt nettó egységár. |
+| `grossUnitPrice` | `number` | A megadott vagy a nettóból számolt bruttó egységár. |
+| `purchasePrice` | `number \| null` | Beszerzési ár nélkül **`null`**. Ugyanerre a termékre a `get()` és a `list()` `0`-t ad. |
+| `entitlement` | `Billingo.Entitlement \| null` | Jogcím nélkül `null`. |
+| `connectProductId` | `number \| null` | Kapcsolt termék nélkül `null`. |
+| `comment`, `sku`, `ean` | `string` | Megadás nélkül `''`. |
+
+Élőben 1 000 Ft nettó és `'27%'` mellé a Billingo 1 270 Ft bruttót számolt. A hamis Billingo a kiszámolt árat fillérre kerekíti, ezért bruttó árból tört nettó jöhet (3 990 Ft bruttóból 3 141,73 Ft).
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Nincs ár, két ár van, vagy az ár nem véges szám. Nincs kérés. |
+| 422 | `validation` | Hiányzik a név, a pénznem, az áfakulcs vagy az egység. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs. |
+| 5xx | `server` | Billingo hiba. Nem tudni biztosan, létrejött-e a termék. |
+| – | `network`, `timeout` | Nincs válasz. Nem tudni, létrejött-e a termék. |
+
+Bizonytalan hiba után ne hozd létre újra vakon: keresd meg a terméket a nevével, és csak akkor hozd létre, ha nincs meg.
+
+```ts twoslash
+import { createTarca, isBillingoError, type ProductInput } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+
+async function termekLetrehozasa(input: ProductInput) {
+  try {
+    return await tarca.products.create(input)
+  } catch (error) {
+    if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+    const { data } = await tarca.products.list({ query: input.name })
+    return data.find((termek) => termek.name === input.name) ?? tarca.products.create(input)
+  }
+}
+```

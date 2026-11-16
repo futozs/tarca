@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Árváltozás a lekért termékből bruttó árral, majd egy csonka PUT, amely kiüríti a megjegyzést és a cikkszámot.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/UpdateProduct
+---
+
+A példa először a lekért termékből hagyja el az azonosítót és a nettó árat, és 1 524 Ft bruttó árral küldi vissza: a Billingo 1 200 Ft nettót számol, a megjegyzés megmarad. A második csere csak a kötelező mezőket küldi, ezért a megjegyzés és a cikkszám kiürül.
+
+<Example slug="termek-modositas" />
+
+Az **Elküldött kérések** fülön az első `UpdateProduct` törzsében csak `gross_unit_price` van, `net_unit_price` nincs. A második törzs öt mezőből áll.

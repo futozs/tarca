@@ -1,0 +1,109 @@
+---
+title: Pénztári nyugta
+description: Nyugta a pénztárnál pontosan egyszer, 80 mm-es blokknyomtatós PDF-fel. Ismételt kérésre a meglévő nyugtát adja, nem állít ki másodikat.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Egy büfé vagy egy rendezvény pénztára minden eladásnál nyugtát ad. Ez a recept egy Next.js útvonal: a pénztárfelület elküldi az eladást, az útvonal kiállítja a nyugtát a Billingóban, és visszaadja a blokknyomtatóra szánt PDF-et. Ha a pénztár a gyenge wifi miatt kétszer küldi ugyanazt az eladást, a második kérés ugyanazt a nyugtát kapja vissza.
+
+## Az útvonal
+
+```ts twoslash title="app/api/nyugta/route.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+// @filename: route.ts
+// ---cut---
+import { isBillingoError } from 'tarcajs'
+import { tarca } from '@/lib/tarca'
+
+interface Eladas {
+  readonly id: string
+  readonly fizetesiMod: 'cash' | 'bankcard'
+  readonly tetelek: readonly { readonly nev: string; readonly mennyiseg: number; readonly ar: number }[]
+}
+
+export async function POST(request: Request): Promise<Response> {
+  const eladas = (await request.json()) as Eladas
+  try {
+    const { document: nyugta } = await tarca.receipts.createOnce({
+      vendorId: `POS-${eladas.id}`,
+      items: eladas.tetelek.map((tetel) => ({
+        name: tetel.nev,
+        quantity: tetel.mennyiseg,
+        grossUnitPrice: tetel.ar,
+        vat: 27,
+      })),
+      paymentMethod: eladas.fizetesiMod,
+    })
+    const blokk = await tarca.documents.posPdf(nyugta.id ?? 0, { size: 80 })
+    return new Response(blokk.bytes, {
+      headers: {
+        'content-type': 'application/pdf',
+        'content-disposition': `inline; filename="${blokk.filename ?? 'nyugta.pdf'}"`,
+      },
+    })
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'validation') {
+      return Response.json({ hibak: error.fieldErrors }, { status: 422 })
+    }
+    throw error
+  }
+}
+```
+
+Az eladás azonosítóját a pénztár adja, például a kassza száma és egy sorszám (`K1-2026-0042`). Ebből lesz a `vendorId`, ezért a pénztárnak egy eladás újraküldésekor ugyanazt kell küldenie. Az útvonalat ugyanúgy védd, mint bármelyik belső végpontot: aki eléri, nyugtát állíthat ki.
+
+## Mit kapsz vissza
+
+<Example slug="penztari-nyugta" />
+
+Két lángos darabonként 1 270 Ft-ért és egy limonádé 635 Ft-ért: a nyugta végösszege 3 175 Ft, az állapota `paid`, a sorszáma a hamis Billingóban `NYT-2026-1`. Az Elküldött kérések fülön a `CreateReceipt` törzsében az `electronic` mező is ott van. A tárca mindig elküldi, mert a Billingo nyugtánál élőben megköveteli, pedig a leírása szerint elhagyható. Az értéke a `defaults.electronic`, a [közös kliensnél](/docs/receptek/kozos-kliens) `true`. Ha a nyugtán mást szeretnél, add meg a hívásban az `electronic` mezőt.
+
+## Szabályok
+
+- **Bruttó árak.** A nyugta tételei bruttó egységárral mennek, az áfát a Billingo bontja ki. A kulcs `5`, `18`, `27`, `'none'`, `'AAM'` vagy `'TAM'` lehet.
+- **Partner nélkül.** Ilyenkor a Billingo a közös „Magánszemély” partnert teszi a nyugtára. A vevő e-mail-címe az `emails` mezőbe kerülhet.
+- **Számlatömb.** A nyugta az első `receipt` típusú számlatömbbe kerül (friss profilon `Nyugták`, `NYT` előtaggal). Mást a `defaults.receiptBlockId` állít be.
+- **Fizetés.** A nyugta mindig `paid`, a fizetési határideje a kiállítás napja. A fizetési módot minden nyugtán add meg: nélküle a `defaults.paymentMethod` érvényes, a közös kliensnél ez átutalás, ami a pultnál nem igaz.
+
+## Blokknyomtatás
+
+A `posPdf(id, { size: 80 })` a 80 mm-es hőpapírra méretezett PDF-et adja, keskenyebb nyomtatóhoz `size: 58` kell. Más méretet a tárca `validation` hibával utasít el, kérés nélkül.
+
+<Callout type="info" title="A Billingo application/octet-stream típussal küldi">
+  Élőben a blokknyomtatós PDF `application/octet-stream` tartalomtípussal érkezik, holott PDF. A
+  tárca a `%PDF` aláírást ellenőrzi, nem a fejlécet, és az útvonal a saját `content-type`
+  fejlécét állítja be, így a böngésző és a nyomtatószoftver PDF-ként kezeli.
+</Callout>
+
+## Hibák
+
+| Kategória | Mikor? | Mit tegyél |
+| --- | --- | --- |
+| `validation` | Hibás tétel: rossz áfakulcs (nyugtán csak a fentiek), üres név vagy nem szám ár. A tárca a kérés előtt jelzi. | A pénztár mutassa meg a `hibak` listát. |
+| `network`, `timeout`, `server` | Bizonytalan, a nyugta elkészülhetett. A `createOnce` ilyenkor visszakeresi. | Ha így is hibát kapsz, küldd újra ugyanazzal az eladás-azonosítóval. |
+| `subscription` (402) | Éles profilon hiányzik az „API + Tömeges” kiegészítő. | Előfizetés kell. |
+
+## Buktatók
+
+<Callout type="warning" title="Sztornó új eladásként">
+  Egy hibás nyugtát a `documents.cancel(nyugta.id)` sztornóz, az eredménye `receipt_cancellation`
+  típusú bizonylat. A `POS-K1-2026-0042` kulcs ezután is foglalt marad: a javított eladásnak új
+  azonosító kell.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Nyugta kiállítása" href="/docs/nyugtak/kiallitas">
+    A receipts.create kérése, válasza és a Billingo hibái.
+  </Card>
+  <Card title="Blokknyomtatás" href="/docs/nyugtak/blokknyomtatas">
+    A posPdf méretei és a tartalomtípus eltérése.
+  </Card>
+  <Card title="Nyugta sztornózása" href="/docs/nyugtak/sztorno">
+    A receipt_cancellation és a vendorId sorsa.
+  </Card>
+</Cards>

@@ -1,27 +1,9 @@
 ---
-title: MCP és parancssor
-description: A tarcajs parancssor ellenőrzi a Billingo beállítást, az MCP szerver pedig előnézettel és megerősítő kóddal enged számlát kiállítani Claude, Cursor és más AI asszisztensek számára.
+title: MCP szerver
+description: A tarcajs/mcp MCP szervere 21 eszközzel kérdez le és állít ki számlát Claude, Cursor és más AI asszisztensek számára. Írás csak allowWrite mellett, előnézettel és a hozzá kötött megerősítő kóddal, pontosan egyszer.
 ---
 
-## Parancssor
-
-```bash title="Terminál"
-npx tarcajs doctor --tax-code 12345678-2-42 --defaults tarca.json
-npx tarcajs verify
-npx tarcajs document get --vendor ORDER-1001
-```
-
-A `doctor` három olvasó kéréssel ellenőrzi a Node.js-t, az időzónát, az API kulcsot (csak a hosszát írja ki), a gép óráját, azt, hogy teszt vagy éles profilon vagy, a NAV-kapcsolatot, az előfizetést, a számlatömböket és a bankszámlákat.
-
-- A `--tax-code` adószámot összeveti, de nem írja ki.
-- A `--defaults` a `TarcaDefaults` azonosítóit keresi meg a fiókban.
-- A `--report` titokmentes Markdown jelentést ad hibajegyhez.
-
-Azt, hogy a kulcs csak olvasásra szól-e, vagy hogy az éles profilon megvan-e az „API + Tömeges” kiegészítő, olvasással nem lehet bizonyítani: a doctor ezt kimondja, nem találgat.
-
-A `document get` a bizonylatot JSON-ban írja ki azonosító vagy `--vendor` alapján. A `--help` bármelyik parancs után a súgót adja, kulcs és kérés nélkül. Kilépési kódok: 0 siker, 1 hiba, 2 használati hiba.
-
-## MCP szerver
+A `createTarcaMcpServer()` egy Model Context Protocol szerver, amelyen keresztül egy AI asszisztens a Billingo fiókodban kérdezhet le és, ha engeded, állíthat ki bizonylatot. Futtatókörnyezet-független: nincs `node:` import, csak WebCrypto. Stdio-n a [`npx tarcajs mcp`](/docs/kiegeszitok/parancssor) parancs indítja, HTTP-n a [`createTarcaMcpHandler()`](/docs/kiegeszitok/mcp-http).
 
 ```json title="claude_desktop_config.json"
 {
@@ -35,42 +17,103 @@ A `document get` a bizonylatot JSON-ban írja ki azonosító vagy `--vendor` ala
 }
 ```
 
-Claude, Cursor és más MCP kliensek számára, 21 eszközzel. Alapból csak olvas: profil, bizonylatok, partnerek, termékek, költségek, adószám, árfolyam, és öt előnézet.
-
-Az `--allow-write` kapcsolóval (vagy `TARCA_MCP_ALLOW_WRITE=1`) számlát és nyugtát állíthat ki, sztornózhat, befizetést rögzíthet és e-mailt küldhet. Minden íráshoz kell az előnézeti eszköz megerősítő kódja, pontosan ugyanarra a bemenetre, 15 percig és csak az előnézet budapesti napján. A kiállítás `createOnce`-szal megy, így egy ismételt hívás nem állít ki második számlát.
+Más kliensek beállítása: [AI asszisztensek](/docs/kiegeszitok/ai-asszisztensek).
 
 <Callout type="warning" title="Próbához teszt profilt használj">
-  Éles profilon a kiállított számlát a Billingo jelenti a NAV-nak, és csak sztornózni lehet.
+  Éles profilon a kiállított számlát a Billingo jelenti a NAV-nak, és csak sztornózni lehet. Az
+  asszisztenssel először egy fejlesztői teszt profilon próbáld ki, külön kulccsal.
 </Callout>
 
-## MCP edge-en
+## Eszközök
 
-A `createTarcaMcpHandler()` Cloudflare Workers és Vercel Edge alá ad `Request → Response` kezelőt. Az `authorize` kötelező, mert a szerveroldali Billingo kulccsal névtelen végponton bárki számlát állíthatna ki, és a `confirmationSecret` is, mert a megerősítő kódot egy másik példány is ellenőrzi.
+**Olvasók**, mindig elérhetők (`readOnlyHint: true`):
+
+| Eszköz | Mit csinál |
+| --- | --- |
+| `get_profile` | Szervezet, számlatömbök, bankszámlák (azonosító, név, pénznem, számlaszám és adószám nélkül), a profil becslése (teszt vagy éles) és a szerver alapbeállításai. Ezzel érdemes kezdeni. |
+| `list_documents` | `type` (`invoice` vagy `receipt`), `paymentStatus`, `partnerId`, `blockId`, `startDate`, `endDate`, `query`, `page`, `perPage` (legfeljebb 100). A legújabb elöl, egy friss bizonylat 15–30 másodpercig hiányozhat. |
+| `get_document` | Pontosan egy `id` vagy `vendorId`, és kérésre `includePayments`, `includeNavStatus`, `includePublicUrl`. Ismeretlen azonosítóra (403) vagy `vendorId`-ra `{ found: false }`. |
+| `list_partners`, `get_partner` | A keresés csak a név szavainak elejére illeszt. |
+| `list_products`, `get_product` | Az `includeStock` a készletet is lekéri (készletkezelés nélkül `null`). |
+| `list_spendings`, `get_spending` | Költségek. |
+| `check_tax_number` | Élő NAV-kapcsolat kell hozzá, teszt profilon `nav_unavailable`. |
+| `get_conversion_rate` | Árfolyam, a `to` alapból HUF. |
+
+**Előnézetek**, mindig elérhetők, csak olvasnak, és megerősítő kódot adnak:
+
+| Eszköz | Mit ellenőriz írás előtt |
+| --- | --- |
+| `preview_document` | A tárca saját ellenőrzése magyar mezőhibákkal, a számlatömb, a partner (meglévő, vagy új jön létre), a termék tételek, a `vendorId` (megadott, vagy `MCP-` és a bemenet kivonata), van-e már bizonylat ezzel, és a sor- és végösszegek a Billingo kerekítésével, becslésként. `invoice`, `proforma` és `advance`. |
+| `preview_receipt` | Ugyanez nyugtára: nyugtatömb, bruttó árak, áfa `5`, `18`, `27`, `none`, `AAM`, `TAM`. |
+| `preview_cancellation` | Elutasítja a már sztornózott bizonylatot, a sztornót, a módosítót, a módosított eredetit, a piszkozatot és a díjbekérőt. Előleg- és végszámlánál figyelmeztet, hogy a legújabbat sztornózd előbb. |
+| `preview_payment` | A még nyitott összeg: bruttó végösszeg mínusz a rögzített befizetések. 0 vagy kevesebb esetén nincs mit rögzíteni, kód sincs. |
+| `preview_send` | A bizonylat és a címzettek (1–10 cím). |
+
+**Írók**, csak `allowWrite` mellett listázva és hívhatók:
+
+| Eszköz | Miért pontosan egyszer |
+| --- | --- |
+| `create_document` | `documents.createOnce` az előnézet `vendorId`-jával és dátumaival. `created: false`, ha már van ilyen bizonylat, `recovered: true`, ha a válasz elveszett, és a keresés megtalálta. |
+| `create_receipt` | `receipts.createOnce`, ugyanígy. |
+| `cancel_document` | A kód egyszer használható, így egy kód legfeljebb egy sztornó kérést indít, párhuzamos hívásoknál is. Bizonytalan hiba után a bizonylatot olvassa vissza, nem küld második kérést. |
+| `mark_document_paid` | A meglévő befizetések plusz egy a nyitott összegre. A kód a nyitott összeghez is kötött: ha közben változott, új előnézet kell. |
+| `send_document` | A felhasznált kódot a szerver megjegyzi, kétszer nem küld. |
+
+Szándékosan nincs: PDF letöltés és blokknyomtatás (bináris PDF a modell kontextusában, a `get_document` nyilvános linket ad), emlékeztetők, export, módosító számla (nincs `vendorId`-ja, pontosan egyszer csak tartós ledgerrel lehetne), díjbekérőből számla, piszkozatok, másolás, törlés, archiválás, befizetés törlése, és a partnerek, termékek, költségek, bankszámlák, számlatömbök írása.
+
+## A megerősítő kód
+
+Minden írás előtt az asszisztens meghívja az előnézetet, megmutatja neked, és csak a jóváhagyásod után hívja az író eszközt pontosan ugyanazzal a bemenettel és a kapott `confirmation` kóddal. A kód HMAC-SHA256 aláírás a műveletre, a lejáratra (alapból 15 perc), az előnézet budapesti napjára és a bemenet kanonikus JSON-jára, kiegészítve azzal, amit az előnézet az órából és a szerver beállításaiból kiszámolt (számlánál a teljesítés és a határidő). Ha a bemenet más, ha a kód lejárt, éjfél előtti, vagy egy más beállítású példánytól jött, az író eszköz `confirmation` hibát ad, és új előnézet kell.
+
+Az MCP a `sendEmail`-t akkor is `false`-nak veszi, ha a `defaults.sendEmail` `true`, hacsak a bemenet kifejezetten nem kéri.
+
+## A saját kódodból
 
 ```ts twoslash
-import { createTarcaMcpHandler, createTarcaMcpServer, type TarcaMcpHandler } from 'tarcajs/mcp'
+import { createTarcaMcpServer } from 'tarcajs/mcp'
 
-interface Env {
-  BILLINGO_API_KEY: string
-  MCP_SECRET: string
-  MCP_TOKEN: string
-}
+const server = createTarcaMcpServer({ apiKey: process.env.BILLINGO_API_KEY, allowWrite: false })
+const connection = server.connect()
 
-let handler: TarcaMcpHandler | undefined
+const valasz = await connection.handleLine(
+  JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'teszt', version: '1' },
+    },
+  }),
+)
 
-export default {
-  fetch(request: Request, env: Env) {
-    handler ??= createTarcaMcpHandler(
-      createTarcaMcpServer({ apiKey: env.BILLINGO_API_KEY, confirmationSecret: env.MCP_SECRET }),
-      {
-        authorize: (incoming) =>
-          Boolean(env.MCP_TOKEN) &&
-          incoming.headers.get('authorization') === `Bearer ${env.MCP_TOKEN}`,
-      },
-    )
-    return handler(request)
-  },
-}
+console.log(valasz, server.tools.length, server.allowWrite)
 ```
 
-A titok legalább 16 bájt legyen (például `openssl rand -hex 32`). A szervert ne kérésenként hozd létre: a felhasznált megerősítő kódot a példány memóriája jegyzi meg.
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| a `createTarca()` opciói | | `apiKey`, `defaults`, `fetch`, `timeoutMs` … A kliens az első eszközhívásnál jön létre, így a hiányzó kulcs csak a Billingót hívó eszközöket rontja el. |
+| `allowWrite` | `false` | Az író eszközök. |
+| `confirmationSecret` | folyamatonként véletlen | A kód aláíró titka, legalább 16 bájt. Több példánynál (HTTP) kötelező és közös. |
+| `confirmationTtlMs` | `900000` | A kód élettartama. |
+| `recoveryDelayMs` | `1000` | Várakozás bizonytalan hiba utáni visszaolvasás előtt. |
+| `now` | `() => new Date()` | Az óra, tesztekhez. |
+
+A `server.tools` a `{ name, title, write }` listát adja, a `server.allowWrite` és a `server.hasConfirmationSecret` a beállítást. A `connect()` egy `{ handle(message), handleLine(line) }` kapcsolatot ad.
+
+**Protokoll:** az állapotmentes 2026-07-28-as változat (`server/discover`, `tools/list`, `tools/call`, a `_meta` mezőben a protokollverzióval és a kliens képességeivel), és a régi `initialize` kézfogás (2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05) `ping`-gel. Kötegelt üzenetek, értesítések, a szabványos JSON-RPC hibakódok, egyoldalas `tools/list`.
+
+## Eredmények és hibák
+
+Sikeres eszközhívásnál két szöveges blokk jön (magyar összefoglaló és a JSON adat) és `structuredContent`. Hibánál `isError: true`, két szöveges blokk, és nincs `structuredContent`: a magyar üzenet (`Tipp:` sorral, ha van), és `{"error":{"category","status","retryable","traceId","fields"}}`, ahol a `fields` csak mezőneveket tartalmaz, értékeket nem.
+
+A kategóriák a `BillingoError` [kategóriái](/docs/hibak), kiegészítve ezekkel:
+
+| Kategória | Mikor |
+| --- | --- |
+| `invalid_input` | Hibás eszközparaméterek. |
+| `confirmation` | Hiányzó, hibás, lejárt vagy nem egyező megerősítő kód. |
+| `refused` | A bizonylat állapota nem engedi a műveletet (például már sztornózott). |
+| `write_disabled` | Író eszköz `allowWrite` nélkül. Semmi nem történt. |
+| `internal` | Váratlan hiba a szerverben. |

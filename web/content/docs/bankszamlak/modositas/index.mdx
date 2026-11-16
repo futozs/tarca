@@ -1,0 +1,23 @@
+---
+title: Módosítás
+description: Bankszámla módosítása a bankAccounts.update() metódussal. A PUT teljes csere, ezért a teljes bankszámlát kell elküldeni, a kihagyott IBAN és SWIFT kiürül.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/UpdateBankAccount
+---
+
+A `bankAccounts.update()` PUT kéréssel a teljes bankszámlát cseréli. A kihagyott IBAN és SWIFT kiürül, ezért előbb kérd le a bankszámlát, és az egészet küldd vissza.
+
+```ts
+const bankszamla = await tarca.bankAccounts.update(id, adatok)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/bankszamlak/modositas/keres">
+    A teljes `BankAccountInput`, és mi lesz azzal, ami kimarad.
+  </Card>
+  <Card title="Válasz" href="/docs/bankszamlak/modositas/valasz">
+    A bankszámla a csere után, a kiürülő IBAN és SWIFT, és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bankszamlak/modositas/minta">
+    SWIFT kód hozzáadása, majd egy csak kötelező mezős PUT, amely kiüríti az IBAN-t és a SWIFT-et.
+  </Card>
+</Cards>

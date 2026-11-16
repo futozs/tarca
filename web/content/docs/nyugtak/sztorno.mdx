@@ -1,0 +1,44 @@
+---
+title: Sztornó
+description: Nyugta sztornózása a documents.cancel() metódussal. A sztornó receipt_cancellation típusú, negatív végösszegű bizonylat a nyugtatömbben, új NYT sorszámmal.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CancelDocument
+---
+
+A nyugtát ugyanaz a metódus sztornózza, mint a számlát: a `documents.cancel()`. A kérés, az opciók és a hibák a [Bizonylatok: Sztornó](/docs/bizonylatok/sztorno) oldalon vannak, itt csak a nyugtára jellemző részek.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const nyugta = await tarca.receipts.create({
+  items: [{ name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 }],
+  paymentMethod: 'bankcard',
+})
+
+const sztorno = await tarca.documents.cancel(nyugta.id ?? 0, { reason: 'Hibás tétel.' })
+
+console.log(sztorno.type, sztorno.invoiceNumber, sztorno.grossTotal)
+```
+
+## Ami a nyugta sztornóján más
+
+| | Nyugta sztornója | Számla sztornója |
+| --- | --- | --- |
+| `type` | `receipt_cancellation` | `cancellation` |
+| Sorszám | a nyugtatömb következő száma, például `NYT-2026-2` | a számlatömb következő száma |
+| Végösszeg | a nyugta végösszege negatívan | ugyanígy |
+
+Élőben a nyugta sztornója 200-zal jött, `receipt_cancellation` típussal, `NYT-2026-3` sorszámmal. Az eredeti nyugta utána `cancelled: true`.
+
+## Visszatérítés
+
+Ha egy online fizetést visszatérítesz, a `tarcajs/payments` teljes visszatérítésnél sztornózza a nyugtát. Részleges visszatérítésnél nyugtán nem ír semmit, hanem `refund-proposal` javaslatot ad, amelyet kézzel intézel: [Visszatérítés](/docs/fizetesek/visszaterites).
+
+A nyugta `vendorId`-ja a sztornó után is foglalt. Ha ugyanazt a fizetést újra nyugtáznád, új `vendorId` kell.
+
+## Minta
+
+A példa kiállít egy 1 200 Ft-os kártyás nyugtát, sztornózza, és lekéri az eredetit. A sztornó `NYT-2026-2` sorszámot és −1 200 Ft végösszeget kap, az eredeti `cancelled` mezője `true`, a `paymentStatus` `none`. Az **Elküldött kérések** fülön a sztornó törzs nélkül megy, mert a példa nem ad meg okot.
+
+<Example slug="nyugta-sztorno" />

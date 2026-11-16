@@ -1,0 +1,73 @@
+---
+title: Kérés
+description: A documents.createOnce() bemenete és opciói. A vendorId szabályai, a bizonytalan hiba utáni visszakeresés időzítése, a több szerveres zár beállításai és a kérések sorrendje.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/GetDocumentByVendorId
+---
+
+```ts
+tarca.documents.createOnce(input: DocumentOnceInput, options?: CreateOnceOptions): Promise<DocumentOnceResult>
+```
+
+A `DocumentOnceInput` ugyanaz, mint a `create()` bemenete ([Kérés](/docs/bizonylatok/kiallitas/keres)), egy különbséggel: a `vendorId` kötelező.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { document, created } = await tarca.documents.createOnce(
+  {
+    vendorId: 'ORDER-1001',
+    partner: {
+      name: 'Vevő Kft.',
+      address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+    },
+    items: [{ name: 'Konyhabútor', quantity: 1, netUnitPrice: 150_000, vat: 27 }],
+  },
+  { recoveryDelayMs: 500, signal: AbortSignal.timeout(20_000) },
+)
+
+console.log(created, document.invoiceNumber)
+```
+
+## A vendorId
+
+- A te azonosítód: rendelésszám, fizetési azonosító, előfizetés és időszak. Ugyanabból az eseményből mindig ugyanaz legyen, különben a védelem nem működik.
+- A Billingo cégprofilon belül egyedi, és a számlák és a nyugták közös térben osztoznak rajta: egy `ORDER-1001` nyugta után nem állíthatsz ki `ORDER-1001` számlát.
+- A tárca levágja a szélein lévő szóközöket, és URL-kódolva teszi az útvonalba.
+- Üres `vendorId` és a `.` meg a `..` kérés nélkül `validation` hibát ad. Ez utóbbi kettőt a `fetch` útvonal-lépésnek értené, és a `GET /documents/vendor/..` kérésből a dokumentumlista lekérése lenne.
+- Sztornó után is foglalt marad.
+
+## Opciók
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `signal` | – | Megszakítja a keresést, a várakozást és egy közös, folyamatban lévő hívás kivárását. Egy már elküldött `POST`-ot nem von vissza. |
+| `recoveryDelayMs` | `1000` | Bizonytalan hiba után ennyit vár az első visszakeresés előtt, a másodiknál a dupláját. Negatív vagy nem szám érték `configuration` hiba. |
+| `lock` | a kliens `createOnceLock` tárolója | Egy `KeyValueStore` `setIfAbsent` metódussal a több szerveres zárhoz. `false` kikapcsolja ennél a hívásnál. |
+| `lockTtlSeconds` | `600` | Ennyi idő után jár le a zár, ha a tartó folyamat elhalt. |
+| `lockWaitMs` | `10000` | Ennyit vár egy foglalt zárra, utána `in_progress` hibát ad. |
+| `lockFailure` | `'throw'` | Ha a zár tárolója nem érhető el: `'throw'` esetén `store_unavailable` hiba, `'proceed'` esetén figyelmeztetés az `onWarning` hookon, és zár nélkül folytatja. |
+
+A zárat egyszer, a kliensnél érdemes beállítani:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { memoryStore } from 'tarcajs/stores'
+
+const tarca = createTarca({ createOnceLock: memoryStore() })
+```
+
+Éles környezetben Redis vagy Durable Object kell, lásd [Tárolók](/docs/kiegeszitok/tarolok). A Cloudflare KV erre nem alkalmas, mert nincs atomi írása.
+
+## Kérések sorrendje
+
+1. `GET /documents/vendor/ORDER-1001`. Ha 200, kész: a meglévő bizonylat jön vissza, `created: false`.
+2. 404 `Document is not found.` esetén jön a kiállítás előkészítése: `GET /document-blocks` (kliensenként egyszer), `GET /partners`, szükség esetén `POST /partners`.
+3. `POST /documents` a `vendor_id` mezővel.
+4. Bizonytalan hiba után (`network`, `timeout`, `server`, `unexpected_response`) két `GET /documents/vendor/ORDER-1001`, `recoveryDelayMs` és kétszer annyi várakozás után.
+5. 400 `Duplicate vendor id.` után (egy másik folyamat megelőzte) szintén visszakeresés.
+
+Egy folyamaton belül az egyszerre érkező, azonos `vendorId`-ú hívások egyetlen kérést küldenek, ha ugyanazt a fiókot és ugyanazt a `fetch`-et használják. A második hívás `created: false` eredményt kap.
+
+A helyi ellenőrzés a keresés előtt fut, ugyanazokkal a szabályokkal, mint a `create()`-nél: hibás bemenetre egyetlen kérés sem megy ki.

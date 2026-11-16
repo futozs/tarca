@@ -1,0 +1,54 @@
+---
+title: Hogyan működik a tárca?
+description: Egy számla útja a kódodtól a Billingóig, lépésről lépésre. Ellenőrzés, alapértékek, számlatömb és partner, a kérés, a válasz értelmezése, a hookok és az újrapróbálás.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A Billingo REST API: minden művelet egy HTTP kérés JSON törzzsel, az `X-API-KEY` fejléccel, a `https://api.billingo.hu/v3` alatt. Egy számla kiállítása viszont nem egy kérés, mert a Billingo a partner és a számlatömb azonosítóját várja, nem az adataikat.
+
+<FlowDiagram />
+
+## Mi történik egy documents.create() alatt?
+
+1. **Ellenőrzés.** A tárca megnézi a bemenetet: van-e tétel, pontosan egy ára van-e minden tételnek, ismert-e az áfakulcs, létező-e a dátum, van-e árfolyam a devizás számlán. Hibára `validation` kategóriájú `BillingoError` jön, mezőnként magyar üzenettel, és kérés el sem megy.
+2. **Alapértékek.** Ami hiányzik, azt a kliens `defaults` beállításából vagy a tárca saját alapértékéből tölti ki: a teljesítés ma van, a határidő 8 nap, a fizetési mód átutalás, a nyelv magyar, a pénznem forint. Lásd [Alapértékek](/docs/alapok/alapertekek).
+3. **Számlatömb.** Ha nincs `blockId`, lekéri az első `invoice` típusú tömböt. Kliensenként egyszer, utána megjegyzi.
+4. **Partner.** Ha a partnert adatokkal adtad meg, a `partners.findOrCreate()` megkeres egy pontosan ilyen partnert, és ha nincs, létrehozza.
+5. **Átalakítás.** A camelCase mezőket a Billingo snake_case neveire fordítja (`netUnitPrice` → `unit_price` és `unit_price_type: "net"`, `27` → `"27%"`), a dátumokat budapesti napra.
+6. **Küldés.** `POST /documents`. A tárca ezt a kérést soha nem ismétli meg.
+7. **Válasz.** A 2xx választ camelCase-re alakítja, és `Billingo.Document`-ként adja vissza. A hibaválaszt (a Billingo háromféle hibaformát használ) `BillingoError`-rá alakítja, kategóriával és tippel.
+8. **Hook.** Ha van `onDocument` hookod, a tárca megvárja, mielőtt a hívás visszatér. Így a számla akkor is bekerül a naplódba, ha utána a kódod elszáll. Lásd [Hookok](/docs/alapok/hookok).
+
+A [Kiállítás: Kérés](/docs/bizonylatok/kiallitas/keres) oldal mutatja meg, pontosan milyen JSON megy ki.
+
+## Lekérdezés és írás
+
+A tárca két csoportra osztja a műveleteket:
+
+| | Lekérdezés (GET) | Írás (POST, PUT, DELETE) |
+| --- | --- | --- |
+| Újrapróbálás | 429, szerverhiba, hálózati hiba és időtúllépés után, legfeljebb 3 kérés | soha |
+| Hiba után | megismételhető | előbb ellenőrizd, lefutott-e |
+| Példa | `documents.get()`, `partners.list()`, `pdf()` | `documents.create()`, `cancel()`, `payments.add()` |
+
+Egy újraküldött `POST /documents` második számlát állít ki, amelyet a Billingo éles profilon beküld a NAV-nak, és csak sztornózni lehet. Ezért nincs ismétlés. Lásd [Újrapróbálás és korlátok](/docs/alapok/ujraprobalas-es-korlatok).
+
+<Callout type="tip">
+  Az egészet végignézheted a [sandboxban](/sandbox): a hamis Billingo ugyanazokat a kéréseket
+  fogadja, mint az élő API, és a „Kérések a Billingónak” részben látod a ténylegesen elküldött JSON-t és a választ.
+</Callout>
+
+## A hamis Billingo
+
+A `tarcajs/testing` egy memóriában futó Billingót ad, amely a `fetch`-et helyettesíti. Mind az 57 műveletet ismeri, ugyanúgy sorszámoz, kerekít és hibázik, mint az élő API, ahol azt mértük. A dokumentáció minden mintája ezen fut, és minden kódpéldát egy teszt ellenőriz ellene. Lásd [Tesztek](/docs/tesztek).
+
+## Következő lépések
+
+<Cards>
+  <Card title="Telepítés" href="/docs/alapok/telepites">
+    A csomag, a kulcs és az első számla.
+  </Card>
+  <Card title="Kliens beállítása" href="/docs/alapok/kliens-beallitasa">
+    A createTarca() opciói, időkorlát, újrapróbálás, hookok.
+  </Card>
+</Cards>

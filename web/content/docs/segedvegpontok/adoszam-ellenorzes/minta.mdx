@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Törzsszám és teljes adószám ellenőrzése a teszt profilnak megfelelő hamis Billingo ellen. Az egyik kérés ki sem megy, a másik nav_unavailable hibát kap.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Util/CheckTaxNumber
+---
+
+A példa két adószámot ellenőriz. A sandbox hamis Billingója úgy viselkedik, mint egy fejlesztői teszt profil: nincs NAV-kapcsolata.
+
+<Example slug="adoszam-ellenorzes" />
+
+Az **Elküldött kérések** fülön egyetlen kérést látsz. A `12345678` törzsszámot a tárca kérés nélkül utasította el (`validation`), a `12345678-2-42` kérése kiment, és 401-et kapott a Billingo NAV-üzenetével. A konzolon ez `nav_unavailable 401`, nem `auth`. A sikeres válasz kipróbálását a [Válasz](/docs/segedvegpontok/adoszam-ellenorzes/valasz#tesztekben) oldal mutatja.

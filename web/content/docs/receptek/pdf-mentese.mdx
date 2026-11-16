@@ -1,42 +1,123 @@
 ---
 title: PDF mentése tárhelyre
-description: A kiállított számla PDF-jének mentése dátum szerinti kulccsal S3-ra, Cloudflare R2-re vagy a lemezre a tarcajs/storage csomagrésszel, AWS SDK nélkül.
+description: A kiállított számla PDF-jének letöltése és mentése dátum szerinti kulccsal S3-ra, Cloudflare R2-re vagy a lemezre, AWS SDK nélkül, webhookban a válasz után.
+official: https://developers.billingo.hu/post/api-v3
 ---
 
-A Billingo a PDF-et a kiállítás után néhány másodpercig még készíti. A `storeDocumentPdf()` kivárja (alapból legfeljebb 30 másodpercig), letölti, és egy dátum szerinti kulccsal a tárhelyre írja.
+A Billingo a számla PDF-jét a kiállítás után még néhány másodpercig készíti, ilyenkor a letöltés 202-t ad. Az élő méréseinkben a PDF 2 másodpercen belül elkészült. A tárca ezt kivárja: a `documents.pdf()` alapból legfeljebb 30 másodpercig próbálkozik, 1, 2, 4 … másodperces szünetekkel, és csak utána ad `not_ready` hibát.
 
-<Example slug="pdf-tarhely" />
+A recept előbb fájlba tölti le a PDF-et, aztán objektumtárba menti a `tarcajs/storage` csomagrésszel. Utána egy webhook jön, amely előbb válaszol, és csak azután ment. A végén a lemezre író adapter következik.
 
-## S3 és Cloudflare R2
+## Letöltés fájlba
 
-S3, Cloudflare R2, MinIO vagy Backblaze esetén nem kell az AWS SDK: a tárca maga írja alá a kérést.
-
-```ts twoslash title="lib/szamla-pdf.ts"
+```ts twoslash title="scripts/szamla-pdf.ts"
+import { writeFile } from 'node:fs/promises'
 import { createTarca } from 'tarcajs'
-import { s3FetchStorage, storeDocumentPdf } from 'tarcajs/storage'
 
 const tarca = createTarca()
+const szamlaId = Number(process.argv[2])
+
+const pdf = await tarca.documents.pdf(szamlaId, { maxWaitMs: 30_000 })
+await writeFile(`szamlak/${pdf.filename ?? `${szamlaId}.pdf`}`, pdf.bytes)
+```
+
+```bash title="Terminál"
+node --env-file=.env scripts/szamla-pdf.ts 123456
+```
+
+A `pdf.bytes` egy `%PDF`-fel kezdődő `Uint8Array`, a `pdf.filename` a Billingo `content-disposition` fejlécéből jön (`2026-1.pdf`). Ha a bájtok nem PDF-fel kezdődnek, a tárca `unexpected_response` hibát dob, a tartalomtípust nem nézi. Workersben vagy egy route handlerben a bájtokat közvetlenül visszaadhatod: `new Response(pdf.bytes, { headers: { 'content-type': 'application/pdf' } })`.
+
+## Mentés S3-ba vagy R2-be
+
+Objektumtárhoz a `storeDocumentPdf()` kényelmesebb. A kulcsot a bizonylatból képzi, ugyanúgy kivárja a 202-t, és csak PDF-et ír a tárhelyre. S3, Cloudflare R2, MinIO vagy Backblaze esetén nem kell az AWS SDK, a tárca maga írja alá a kérést.
+
+```dotenv title=".env.local"
+R2_ACCOUNT_ID=a-cloudflare-fiok-azonositoja
+R2_ACCESS_KEY_ID=az-r2-api-token-kulcsa
+R2_SECRET_ACCESS_KEY=az-r2-api-token-titka
+```
+
+```ts twoslash title="lib/szamla-pdf.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+// @filename: szamla-pdf.ts
+// ---cut---
+import type { Billingo } from 'tarcajs'
+import { s3FetchStorage, storeDocumentPdf } from 'tarcajs/storage'
+import { tarca } from '@/lib/tarca'
 
 const tarhely = s3FetchStorage({
   bucket: 'szamlak',
   region: 'auto',
-  endpoint: 'https://<account-id>.r2.cloudflarestorage.com',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
   secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
 })
 
-export async function mentsdAPdfet(bizonylatId: number) {
-  const fajl = await storeDocumentPdf(tarca, tarhely, bizonylatId)
+export async function mentsdAPdfet(bizonylat: Billingo.Document | number): Promise<string> {
+  const fajl = await storeDocumentPdf(tarca, tarhely, bizonylat)
   return fajl.key
+}
+
+export function letoltesiLink(kulcs: string): Promise<string> {
+  return tarhely.getUrl(kulcs, { expiresInSeconds: 3_600 })
 }
 ```
 
-- A kulcs a bizonylat típusából, kiállítási dátumából és sorszámából áll, például `szamlak/2026/11/2026-1.pdf`. Díjbekérő: `szamlak/dijbekero/…`, sztornó: `szamlak/sztorno/…`, nyugta: `nyugtak/2026/11/…`.
-- Ha csak az azonosító van meg, a tárca a kulcshoz előbb lekéri a bizonylatot.
-- Piszkozatnak nincs sorszáma, ezért a tárca nem ment belőle PDF-et (`StorageError`).
-- A tárhely hibája `StorageError` (`operation`, `key`, `status`).
+- A kulcs a bizonylat típusából, a kiállítás évéből és hónapjából, valamint a sorszámból áll: `szamlak/2026/11/2026-1.pdf`. Díjbekérő: `szamlak/dijbekero/…`, sztornó: `szamlak/sztorno/…`, nyugta: `nyugtak/2026/11/…`. A sorszámból a tárca leveszi az ékezeteket, a betűn, számjegyen, ponton, aláhúzáson és kötőjelen kívüli karaktereket pedig kötőjelre cseréli (`TRCE / 2026-000001` → `TRCE-2026-000001`).
+- Ha csak az azonosítót adod át, a tárca a kulcshoz előbb lekéri a bizonylatot (`GET /documents/{id}`). Ha a kiállítás eredménye kéznél van, add át azt, így egy kéréssel kevesebb.
+- A `letoltesiLink` egy órán át érvényes, aláírt URL-t ad, amelyet a vevő fiókoldalán megmutathatsz. Az S3 legfeljebb 7 napos aláírt linket enged.
 
-## Lemezre, Node.js alatt
+<Example slug="pdf-tarhely" />
+
+A sandbox egy memóriás tárhelyre ment, a kulcs és a méret ugyanúgy alakul, mint R2-n.
+
+## Webhookban: előbb a válasz
+
+A fizetési szolgáltató webhookja néhány másodpercen belül választ vár. A számla kiállítása után ne a PDF-re várj: a számla már kész, és egy elbukott PDF-mentés miatt a szolgáltatónak nem kell újraküldenie az eseményt. A Next.js `after()` függvénye a válasz elküldése után futtatja a mentést.
+
+```ts twoslash title="app/api/stripe/route.ts"
+// @filename: modulok.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+declare module '@/lib/szamla-pdf' {
+  export function mentsdAPdfet(bizonylat: import('tarcajs').Billingo.Document): Promise<string>
+}
+declare module 'next/server' {
+  export function after(task: () => Promise<unknown>): void
+}
+// @filename: route.ts
+// ---cut---
+import { after } from 'next/server'
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+import { mentsdAPdfet } from '@/lib/szamla-pdf'
+import { tarca } from '@/lib/tarca'
+
+export const POST = stripeWebhook({
+  secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+  onPayment: async (payment) => {
+    const eredmeny = await issueForPayment(tarca, payment, { vat: 27 })
+    if (eredmeny.kind === 'receipt' || eredmeny.kind === 'invoice') {
+      const bizonylat = eredmeny.document
+      after(() =>
+        mentsdAPdfet(bizonylat).catch((error: unknown) => {
+          console.error('A PDF mentése nem sikerült', bizonylat.id, error)
+        }),
+      )
+    }
+  },
+})
+```
+
+Ha a mentés elbukik, a bizonylat azonosítójával később is megismételheted: a kulcs ugyanaz lesz, a tárhely felülírja ugyanazt a fájlt.
+
+## Mentés lemezre
+
+Node.js alatt, saját szerveren a `tarcajs/storage/fs` adaptere a lemezre ír:
 
 ```ts twoslash
 import { fsStorage } from 'tarcajs/storage/fs'
@@ -44,10 +125,33 @@ import { fsStorage } from 'tarcajs/storage/fs'
 const tarhely = fsStorage({ directory: './szamlak' })
 ```
 
-Atomikusan ír (ideiglenes fájl, majd átnevezés), és nem ír a megadott mappán kívülre, szimbolikus linken át sem.
+Atomikusan ír (ideiglenes fájl, majd átnevezés), és nem ír a megadott mappán kívülre, szimbolikus linken át sem. További adapterek: `s3Storage` (saját AWS SDK kliens), `r2BindingStorage` (Workers binding, lásd a [Cloudflare Workers](/docs/receptek/cloudflare-workers) receptet), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage` és `memoryStorage`.
 
-További adapterek: `s3Storage` (saját AWS SDK kliens), `r2BindingStorage` (Workers binding), `vercelBlobStorage`, `supabaseStorage`, `uploadthingStorage` és `memoryStorage`.
+## Hibák
 
-## Webhook után
+| Hiba | Mikor? | Mit tegyél |
+| --- | --- | --- |
+| `BillingoError` `not_ready` (202) | A PDF a `maxWaitMs` alatt sem készült el. | Próbáld újra később ugyanazzal az azonosítóval. |
+| `BillingoError` `forbidden` (403) | Ismeretlen vagy másik céghez tartozó azonosító. A Billingo 404 helyett 403-at ad. | Ellenőrizd az azonosítót. |
+| `StorageError` `operation: 'key'` | Piszkozat: nincs sorszáma, ezért kulcsa sem. | Előbb véglegesítsd. |
+| `StorageError` `operation: 'put'` | A tárhely hibát adott (`status` mezővel). | A hibaüzenet nem tartalmaz titkot, naplózhatod. |
 
-Webhookban előbb küldd el a választ, és a mentést utána futtasd. A számla ekkor már kész, a mentés hibája nem ok arra, hogy a fizetési szolgáltató újraküldje az eseményt. Ha a mentés elbukik, a bizonylat azonosítójával később is megismételheted.
+<Callout type="warning" title="Ne tárold a PDF-et a webhook válasza előtt">
+  Ha a mentés a válasz előtt fut és elbukik, a webhook 500-at ad, a szolgáltató újraküldi az
+  eseményt, és a tárca minden alkalommal újra letölti a PDF-et. A számla ettől nem duplázódik,
+  de a webhook feleslegesen lassú és hibás lesz.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Számla PDF" href="/docs/bizonylatok/pdf">
+    A documents.pdf, a 202 kezelése és a publicUrl.
+  </Card>
+  <Card title="PDF tárhely" href="/docs/kiegeszitok/pdf-tarhely">
+    Az összes adapter, a kulcsképzés és a StorageError.
+  </Card>
+  <Card title="Stripe webhook" href="/docs/receptek/stripe-webhook">
+    A webhook, amely a számlát kiállítja.
+  </Card>
+</Cards>

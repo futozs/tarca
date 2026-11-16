@@ -1,0 +1,55 @@
+---
+title: Válasz
+description: A documents.list() Page borítékja, a documents.all() aszinkron iterátora, a sorrend, a lista késése és a lekérdezés hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/ListDocument
+---
+
+```ts
+interface Page<T> {
+  readonly data: readonly T[]
+  readonly total: number
+  readonly perPage: number
+  readonly currentPage: number
+  readonly lastPage: number
+}
+```
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `data` | `readonly Billingo.Document[]` | Az oldal bizonylatai, a teljes bizonylattal, ugyanúgy, mint a [lekérésnél](/docs/bizonylatok/lekeres). |
+| `total` | `number` | Az összes találat száma. |
+| `perPage` | `number` | Elemek oldalanként. |
+| `currentPage` | `number` | Ez az oldal. |
+| `lastPage` | `number` | Az utolsó oldal sorszáma. |
+
+A Billingo Laravel-boríték `prev_page_url` és `next_page_url` mezőjét a tárca nem adja tovább: élőben az első és az utolsó oldalon `null`, a lapozáshoz pedig a `currentPage` és a `lastPage` elég.
+
+Az `all()` `AsyncGenerator<Billingo.Document>`: `for await` ciklusban bizonylatonként kapod az elemeket, a tárca közben oldalanként kéri le őket.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+for await (const szamla of tarca.documents.all({ type: 'invoice', paymentStatus: 'outstanding' })) {
+  console.log(szamla.invoiceNumber, szamla.grossTotal, szamla.dueDate)
+}
+```
+
+## Mit tartalmaz a lista?
+
+- **Sorrend**: a legújabb elöl.
+- **Típusok**: élőben a számlák, az előlegszámla, a módosító és a nyugták is megjelentek. A `type: 'receipt'` csak a nyugtákat adja.
+- **Archivált díjbekérő**: nem jelenik meg.
+- **Késés**: egy friss bizonylat 15–30 másodperc múlva kerül a listába. Ha a kiállítás után azonnal listázol, lehet, hogy még hiányzik.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `RangeError` | Hibás `page`, `perPage` vagy `lastModifiedDate`, kérés előtt. |
+| 401 | `auth` | Érvénytelen API kulcs. |
+| 422 | `validation` | A Billingo elutasított egy szűrőt. |
+| 429, 5xx | `rate_limit`, `server` | A tárca a GET-et újrapróbálta, de nem sikerült. |
+
+Az `all()` egy oldal hibájánál megáll, és a hibát a következő `for await` lépésben dobja.

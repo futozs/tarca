@@ -1,0 +1,48 @@
+---
+title: Számlatömbök
+description: Számlatömbök a Billingóban a tárca documentBlocks API-jával. Lista típus szerint, létrehozás előtaggal, lekérés, teljes cserés módosítás és törlés, három nem dokumentált, élőben ellenőrzött útvonallal.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentBlock/ListDocumentBlock
+---
+
+A számlatömbből (a Billingo felületén bizonylattömb) jön a bizonylat sorszáma: az előtagja kerül a sorszám elejére, és a számozás tömbönként külön fut. Minden számla, díjbekérő és nyugta egy tömbbe kerül, a nyugták a saját `receipt` típusú tömbjükbe. A tárcában a `tarca.documentBlocks` kezeli őket.
+
+```ts
+const tomb = await tarca.documentBlocks.create({ name: 'Webshop', prefix: 'WEB', type: 'invoice' })
+```
+
+Számla kiállításakor nem kell tömböt megadnod: a tárca az első `invoice` típusú tömböt használja, nyugtánál az első `receipt` típusút, és kliensenként egyszer kérdezi le őket. Ezt a `defaults.blockId` és a `defaults.receiptBlockId` írja felül, lásd [Alapértékek](/docs/alapok/alapertekek).
+
+<Cards>
+  <Card title="Lista" href="/docs/szamlatombok/lista/keres">
+    Típus szerinti szűrés, növekvő azonosító szerinti sorrend.
+  </Card>
+  <Card title="Létrehozás" href="/docs/szamlatombok/letrehozas/keres">
+    Név csak betűvel, számmal és szóközzel, kötelező előtag.
+  </Card>
+  <Card title="Lekérés" href="/docs/szamlatombok/lekeres">
+    A tömb minden beállítása, 403 az ismeretlen tömbre.
+  </Card>
+  <Card title="Módosítás" href="/docs/szamlatombok/modositas/keres">
+    Teljes csere, a lekért tömb változtatás nélkül visszaküldhető.
+  </Card>
+  <Card title="Törlés" href="/docs/szamlatombok/torles">
+    Bizonylat nélküli tömb törlése.
+  </Card>
+</Cards>
+
+<Callout type="info" title="Három nem dokumentált útvonal">
+  A `GET`, `PUT` és `DELETE /document-blocks/{id}` egyik Billingo specben sincs benne. A tárca
+  élőben, a fejlesztői teszt profilon ellenőrizte mindhármat, és a drift figyelő hetente
+  megnézi, hogy az útvonalak még léteznek-e.
+</Callout>
+
+## Élő eltérések röviden
+
+- Friss teszt profilon két tömb van: `Számlák` (`invoice`, üres előtag) és `Nyugták` (`receipt`, `NYT` előtag).
+- A lista növekvő azonosító szerint jön, a legrégebbi tömb elöl, és csak hat mezőt tartalmaz.
+- A tömb neve csak betűt, számot és szóközt tartalmazhat. A `TARCA-E2E` név 422-t kapott, a `TARCA E2E` átment.
+- A létrehozás 201-et és a teljes tömböt adja, holott a spec törzset sem ígér.
+- Ismeretlen vagy törölt tömbre a `get()` 403-at ad, nem 404-et.
+- A `PUT` teljes csere, és a `null` e-mail mezőket 422-vel utasítja el.
+
+<OperationTable pathPrefix="/document-blocks" />

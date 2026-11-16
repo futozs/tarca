@@ -1,0 +1,9 @@
+---
+title: Minta
+description: Előlegszámla, majd végszámla, amelyről a Billingo levonja az előleget, a ténylegesen elküldött advance_invoice mezővel és a Billingo válaszával.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+Az előlegszámla 63 500 Ft, a végszámla 254 000 Ft-os tételéből a Billingo levonja, így a végösszege 190 500 Ft. Az **Elküldött kérések** fülön a második `POST /documents` törzsében keresd az `advance_invoice: [1]` mezőt, a válaszban pedig a negatív `Előleg` tételt.
+
+<Example slug="eloleg-vegszamla" />

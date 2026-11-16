@@ -1,0 +1,92 @@
+---
+title: AI asszisztensek
+description: A tárca MCP szerverének beállítása Claude, Cursor és más kliensekben, a csomagban szállított agents mappa és skill kódíráshoz, és miben más a tárca MCP-je, mint a Billingo saját @billingo/billingo-mcp csomagja.
+---
+
+Két különböző dologról van szó. Ha azt szeretnéd, hogy egy asszisztens közvetlenül kérdezzen le vagy állítson ki bizonylatot, az [MCP szerver](/docs/kiegeszitok/mcp-szerver) kell. Ha azt, hogy jó kódot írjon a tárcával, a csomagban lévő `agents/` mappa.
+
+## Az MCP szerver a kliensekben
+
+**Claude Desktop:**
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "tarcajs": {
+      "command": "npx",
+      "args": ["-y", "tarcajs", "mcp"],
+      "env": { "BILLINGO_API_KEY": "..." }
+    }
+  }
+}
+```
+
+**Claude Code:**
+
+```bash title="Terminál"
+claude mcp add tarcajs -e BILLINGO_API_KEY=... -- npx -y tarcajs mcp
+```
+
+**Cursor:** ugyanez a `mcpServers` blokk a `.cursor/mcp.json` fájlban.
+
+Íráshoz add hozzá a `--allow-write` kapcsolót (`"args": ["-y", "tarcajs", "mcp", "--allow-write"]`) vagy a `TARCA_MCP_ALLOW_WRITE=1` változót. Az alapbeállításokat (`blockId`, `bankAccountId` …) a `--defaults tarca.json` kapcsoló adja. Távoli kliensnek a [HTTP kezelő](/docs/kiegeszitok/mcp-http) való.
+
+Egy beszélgetés így néz ki: az asszisztens a `get_profile` eszközzel megnézi, teszt vagy éles profilon dolgozik, a `preview_document` eszközzel összeállítja a számlát, megmutatja a becsült végösszeget és a megerősítő kódot, és csak a te jóváhagyásod után hívja a `create_document` eszközt.
+
+<Callout type="warning" title="Kezdd teszt profillal">
+  Éles profilon a kiállított számlát a Billingo jelenti a NAV-nak, és csak sztornózni lehet. Az
+  asszisztenst először egy fejlesztői teszt profil kulcsával próbáld ki.
+</Callout>
+
+## Miben más, mint a Billingo saját MCP-je?
+
+A Billingónak is van MCP szervere: `@billingo/billingo-mcp` (MIT, a `mcp.billingo.hu` címen is fut). A tárca nem ennek a része, és nem is a Billingo terméke. A különbségek a 0.1.3-as hivatalos verzióhoz képest:
+
+| | `@billingo/billingo-mcp` | tárca |
+| --- | --- | --- |
+| Eszközök | 49 (22 olvasó, 27 író) | 21 (11 olvasó, 5 előnézet, 5 író) |
+| Számla kiállítása | `create_document`: egy POST, előnézet és idempotencia nélkül, így egy ismételt hívás második, NAV-hoz jelentett számlát ad | `preview_document`, majd `create_document` megerősítő kóddal, `createOnce`-szal és `vendorId`-val |
+| Sztornó, befizetés, kiküldés | közvetlen írás, a befizetés teljes cserével | előnézet, állapot-ellenőrzés és egyszer használható kód; a befizetés a meglévők mellé kerül |
+| Hibák | angol üzenetek | magyar üzenet `Tipp:` sorral, és gépi hibablokk kategóriával, mezőnevekkel |
+| Futtatás | Node.js 22+, `@modelcontextprotocol/sdk` és `zod` függőséggel | függőség nélkül, stdio-n és edge-en (Workers, Vercel Edge, Deno, Bun) |
+
+A tárca eszközei a mért élő eltérésekre is számítanak: ismeretlen bizonylatra a Billingo 403-at ad 404 helyett (a `get_document` ezt `{ found: false }`-ként adja), a lista 15–30 másodpercet, a partnerkereső körülbelül egy percet késik (az előnézet szól, ha emiatt új partner jön létre), és a spec szerint nem `null` mezők is jöhetnek `null`-ként.
+
+A tárca szándékosan kihagyja a PDF letöltést, a törzsadatok írását és a módosító számlát; ezeket a [könyvtárból](/docs/alapok/telepites) vagy a Billingo felületén érdemes intézni. Ha ezekre MCP-n keresztül van szükséged, a Billingo saját szervere lefedi őket.
+
+## Kódírás az agents mappával
+
+Az npm csomag az `agents/` mappát és az `llms.txt` fájlt is tartalmazza, telepítés után a projektedben is ott vannak. A fájlok angol nyelvűek, és pontosan a telepített verzió API-ját írják le.
+
+| Fájl | Tartalom |
+| --- | --- |
+| `node_modules/tarcajs/agents/README.md` | Áttekintés, olvasási sorrend és az öt legfontosabb szabály. |
+| `node_modules/tarcajs/agents/pitfalls.md` | Kötelező szabályok: dupla és visszavonhatatlan bizonylatok, partnerkereső, kulcsok, korlátok, adatalakok, webhookok, hibakategóriák. |
+| `node_modules/tarcajs/agents/api.md` | Minden metódus bemenete és kimenete, az alcsomagokkal együtt. |
+| `node_modules/tarcajs/agents/recipes.md` | Kész minták: webshop számla, díjbekérő, nyugta, PDF, export, fizetési webhookok, zár, napló, tömeges számlázás, MCP, naplózás, tesztek. |
+| `node_modules/tarcajs/agents/skills/tarca/SKILL.md` | Kész Claude Code skill. |
+| `node_modules/tarcajs/agents/skills/migrate-from-codingsans-billingo-client/SKILL.md` | Átállás a `@codingsans/billingo-client` csomagról. |
+| `node_modules/tarcajs/llms.txt` | Tartalomjegyzék [llms.txt](https://llmstxt.org) formátumban. |
+
+**Claude Code:** másold a skillt a projekted `.claude/skills/` mappájába:
+
+```bash title="Terminál"
+mkdir -p .claude/skills
+cp -r node_modules/tarcajs/agents/skills/tarca .claude/skills/
+```
+
+A skill a `node_modules`-ból olvassa a dokumentációt, maga a `SKILL.md` viszont a másoláskor rögzül: a tárca frissítése után másold újra.
+
+**Cursor és Copilot:** egy projektszabály (`.cursor/rules/tarca.mdc`) vagy a `.github/copilot-instructions.md` mondja meg, hogy kódírás előtt olvassa el a `node_modules/tarcajs/agents/pitfalls.md`, `api.md` és `recipes.md` fájlt.
+
+Ez a weboldal a teljes dokumentációt gépi formában is kiadja: `/llms.txt` (az oldalak listája), `/llms-full.txt` (minden oldal egy fájlban) és `/docs/<oldal>.md` (egy oldal Markdownként).
+
+## Ellenőrzőlista a generált kódhoz
+
+- A kliens egyszer jön létre, csak szerveren, a kulcs a `BILLINGO_API_KEY` változóból.
+- Minden bizonylatnak van `vendorId`-ja a rendelés vagy a fizetés azonosítójából, és a kiállítás `createOnce`-szal megy.
+- Nincs saját újrapróbáló ciklus egy `create` körül.
+- A kód a `BillingoError.category` mezőre ágazik el, nem az üzenetre, és naplózza a `traceId`-t.
+- A PUT hívások a teljes objektumot küldik.
+- A dátumok `toBillingoDate()`-tel készülnek, nem `toISOString().slice(0, 10)`-zel.
+- A tesztek a `tarcajs/testing` mock kliensét vagy hamis Billingóját használják, valódi kulcs nélkül.

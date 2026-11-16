@@ -1,0 +1,23 @@
+---
+title: Létrehozás
+description: Új bankszámla a Billingóban a bankAccounts.create() metódussal. A kötelező név, számlaszám és pénznem, a 201-es válasz és egy euró számla a saját bankszámlájával.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/CreateBankAccount
+---
+
+Új bankszámlát a `bankAccounts.create()` hoz létre. A név, a számlaszám és a pénznem kötelező. A válaszban kapott azonosítót a számla `bankAccountId` mezőjébe írod, vagy egyszer a `defaults` beállításba.
+
+```ts
+const bankszamla = await tarca.bankAccounts.create(adatok)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/bankszamlak/letrehozas/keres">
+    A `BankAccountInput` mezői a Billingo neveivel és alapértékeivel, és az elküldött törzs.
+  </Card>
+  <Card title="Válasz" href="/docs/bankszamlak/letrehozas/valasz">
+    A 201-es válasz a teljes bankszámlával, az üres törzsű válasz esete és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bankszamlak/letrehozas/minta">
+    Forint és euró bankszámla, majd egy euró számla, amely az euró bankszámlát kapja.
+  </Card>
+</Cards>

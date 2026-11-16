@@ -1,0 +1,23 @@
+---
+title: Létrehozás
+description: Új termék a Billingóban a products.create() metódussal. A ProductInput mezői, a pontosan egy ár szabálya és a Billingo által kiszámolt második ár.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/CreateProduct
+---
+
+Új terméket a `products.create()` hoz létre. A nettó és a bruttó egységár közül pontosan egyet adhatsz meg, a másikat a Billingo számolja ki. A tárca típusa ezt fordításkor kikényszeríti.
+
+```ts
+const termek = await tarca.products.create(adatok)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/termekek/letrehozas/keres">
+    A `ProductInput` mezői, az egy ár szabálya és az elküldött törzs.
+  </Card>
+  <Card title="Válasz" href="/docs/termekek/letrehozas/valasz">
+    A termék a kiszámolt második árral, a `null` beszerzési ár és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/termekek/letrehozas/minta">
+    Termékek nettó és bruttó egységárral, és egy érvénytelen ár, amelyet a tárca el sem küld.
+  </Card>
+</Cards>

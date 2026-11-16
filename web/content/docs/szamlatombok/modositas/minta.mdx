@@ -1,0 +1,11 @@
+---
+title: Minta
+description: A Számlák tömb módosítása a lekért tömbből, majd egy csak kötelező mezős PUT, amely kiüríti az egyedi mezőt és a feladó nevét.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/ListDocumentBlock
+---
+
+A példa lekéri a friss profil `Számlák` tömbjét, és egyedi mezővel meg feladónévvel küldi vissza. A második csere csak a három kötelező mezőt küldi, ezért a Billingo mindkét beállítást kiüríti.
+
+<Example slug="szamlatomb-modositas" />
+
+Az **Elküldött kérések** fülön az első `UpdateDocumentBlock` törzséből hiányzik az `id`, a `pic_path` és a három `null` mező: a tárca hagyta ki őket. A második törzs három mezőből áll.

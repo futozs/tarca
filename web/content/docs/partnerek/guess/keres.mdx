@@ -1,0 +1,78 @@
+---
+title: Kérés
+description: A partners.guess() bemenete. A Billingo POST /partners/guess végpontja upsert, nem keresés, ezért a tárca saját keresése nem erre épül.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/Partners/PartnerGuess
+---
+
+<Operation id="PartnerGuess" methods={['partners.guess']} />
+
+```ts
+tarca.partners.guess(input: PartnerInput, options?: { signal?: AbortSignal }): Promise<Billingo.Partner>
+```
+
+A bemenet ugyanaz a `PartnerInput`, mint a [létrehozásnál](/docs/partnerek/letrehozas/keres). A név alapján visszaad egy meglévő partnert, vagy létrehoz egy újat.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const partner = await tarca.partners.guess({
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  taxcode: '12345678-2-42',
+})
+
+console.log(partner.id)
+```
+
+<Callout type="warning" title="Upsert, nem keresés">
+  A neve ellenére a `guess` nem keres. Élőben csak pontosan egyező névre adott vissza meglévő
+  partnert, minden más esetben újat hozott létre: akkor is, ha csak az adószám vagy csak az
+  e-mail cím egyezett, és akkor is, ha a név egy része egyezett. Partner kereséséhez a
+  [`list()`](/docs/partnerek/lista/keres), számlázáshoz a
+  [`findOrCreate()`](/docs/partnerek/kereses-vagy-letrehozas/keres) való.
+</Callout>
+
+## Mezők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező.** Ezzel azonosítja a meglévő partnert, pontos egyezéssel. |
+| `address.postCode` | `address.post_code` | – | **Kötelező.** |
+| `address.city` | `address.city` | – | **Kötelező.** |
+| `address.address` | `address.address` | – | **Kötelező.** |
+| `address.countryCode` | `address.country_code` | `'HU'` (a tárca tölti ki) | Kétbetűs országkód. |
+| többi mező | lásd [Létrehozás](/docs/partnerek/letrehozas/keres) | – | Új partnernél ezekkel jön létre. |
+
+Üres törzsre a Billingo 422-t ad a névvel és a cím három mezőjével.
+
+## Mitől függ a találat?
+
+| Mi egyezik a meglévő partnerrel? | Eredmény élőben |
+| --- | --- |
+| A teljes név, pontosan | A meglévő partner |
+| Csak a név eleje | Új partner |
+| Csak az adószám | Új partner |
+| Csak az e-mail cím | Új partner |
+
+A pontos névegyezés is a késleltetett keresőindexen át működik, ezért egy 20–60 másodperce létrehozott vagy átnevezett partnerre a `guess` duplikátumot hozhat létre. Azt a mérés nem döntötte el, hogy az adószám is számít-e a találatnál. Egy átnevezett partnerre adószám nélkül hívva élőben új partner jött, de ezt a késés önmagában is megmagyarázza.
+
+## Ami a dróton megy
+
+Ugyanaz a törzs, mint a létrehozásnál, a `POST /v3/partners/guess` útvonalra:
+
+```json
+{
+  "name": "Vevő Kft.",
+  "address": {
+    "country_code": "HU",
+    "post_code": "1111",
+    "city": "Budapest",
+    "address": "Fő utca 1."
+  },
+  "taxcode": "12345678-2-42"
+}
+```
+
+A végpont csak a 3.0.15-ös specben szerepel. Írás, mert új partnert hozhat létre, ezért a tárca nem ismétli magától.

@@ -1,0 +1,23 @@
+---
+title: Lista és szűrés
+description: Költségek listája szűrőkkel és lapozással a spendings.list() és a spendings.all() metódussal. Dátum, kategória, fizetési állapot és pénznem szerint.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingList
+---
+
+A `spendings.list()` egy oldalt ad vissza, a `spendings.all()` minden oldalt bejár ugyanazokkal a szűrőkkel. A `q` keresés élőben a pontos számlaszámra sem talált, számlaszámra máshogy keress.
+
+```ts
+const lejart = await tarca.spendings.list({ paymentStatus: 'expired' })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/koltsegek/lista/keres">
+    A szűrők, a Billingo paraméternevei és a `q` keresés korlátja.
+  </Card>
+  <Card title="Válasz" href="/docs/koltsegek/lista/valasz">
+    A `Page` boríték, a listaelem mezői, és miben tér el a lekéréstől.
+  </Card>
+  <Card title="Minta" href="/docs/koltsegek/lista/minta">
+    Két havi bérleti díj, az egyik kifizetve, majd a fizetetlenek listája.
+  </Card>
+</Cards>

@@ -1,0 +1,94 @@
+---
+title: Készlet
+description: Egy termék elérhető mennyisége az inventory.quantity() hívással. Készletkezelés nélkül, így a fejlesztői teszt profilon is, a Billingo 400-at ad.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/Inventory/GetProductQuantity
+---
+
+<Operation id="GetProductQuantity" methods={['inventory.quantity']} />
+
+## Kérés
+
+```ts
+tarca.inventory.quantity(productId: number, options?: { signal?: AbortSignal }): Promise<Billingo.ProductQuantity>
+```
+
+Az egyetlen bemenet a termék azonosítója: `GET /v3/inventory/product/{id}/quantity`, törzs nélkül. A végpont csak a 3.0.15-ös specben szerepel. Olvasás, ezért a tárca 429, 5xx, hálózati hiba és időtúllépés után újrapróbálja.
+
+## Válasz
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `availableQuantity` | `number` | Az elérhető mennyiség a termék egységében. |
+
+A sikeres alak csak dokumentált: élőben nem láttuk, mert a fejlesztői teszt profilon nincs készletkezelés.
+
+<Callout type="warning" title="Készletkezelés nélkül 400">
+  Ha a fiókban nincs bekapcsolva a készletkezelés (automatikus rendeléskezelés), a Billingo
+  400-at ad. A fejlesztői teszt profilon ez az alapállapot. A tárca a hibát `validation`
+  kategóriával, magyar üzenettel és tippel adja tovább.
+</Callout>
+
+A Billingo élő válasza készletkezelés nélküli termékre:
+
+```json
+{ "error": { "message": "Automatic order processing is disabled" } }
+```
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 400 | `validation` | Nincs bekapcsolva a készletkezelés. Az `apiMessage` a Billingo üzenete, a `hint` szerint a készletkezelés a Billingo felületén kapcsolható be. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból összesen három kísérlettel. |
+
+A 400-at kezeld külön, ha a kódod készletkezelés nélküli fiókon is fut:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function keszlet(termekId: number): Promise<number | null> {
+  try {
+    return (await tarca.inventory.quantity(termekId)).availableQuantity ?? 0
+  } catch (error) {
+    if (isBillingoError(error) && error.status === 400) return null
+    throw error
+  }
+}
+
+console.log(await keszlet(1))
+```
+
+## Minta
+
+A tárca hamis Billingója alapból úgy viselkedik, mint a teszt profil: 400-at ad. A `stock` beállítással bekapcsolod a készletkezelést, a mennyiséget a termék cikkszáma (`sku`) szerint adod meg, a fel nem sorolt cikkszám 0 darab:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
+
+const billingo = createFakeBillingoFetch({ stock: { 'KAVE-250': 42 } })
+const tarca = createTarca({ apiKey: 'teszt', fetch: billingo.fetch })
+
+const termek = await tarca.products.create({
+  name: 'Kávé 250 g',
+  currency: 'HUF',
+  vat: '27%',
+  unit: 'db',
+  netUnitPrice: 1_000,
+  sku: 'KAVE-250',
+})
+
+const { availableQuantity } = await tarca.inventory.quantity(termek.id ?? 0)
+console.log(availableQuantity)
+```
+
+A hamis Billingo válasza a dróton:
+
+```json
+{ "available_quantity": 42 }
+```
+
+A sandbox a hamis Billingót beállítás nélkül indítja, ezért ott ez a példa a 400-as ágat mutatná. A hamis Billingo többi beállítása: [Hamis Billingo](/docs/tesztek/hamis-billingo).

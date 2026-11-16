@@ -1,0 +1,61 @@
+---
+title: Kérés
+description: A finalizeDraft() a piszkozatot a teljes bizonylattal írja felül (PUT /documents/{id}), a deleteDraft() törli (DELETE /documents/{id}). A bemenet és a dróton küldött törzs.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocumentFromDraft
+---
+
+```ts
+tarca.documents.finalizeDraft(id: number, input: DraftFinalizeInput, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+tarca.documents.deleteDraft(id: number, options?: { signal?: AbortSignal }): Promise<void>
+```
+
+## Véglegesítés
+
+A `finalizeDraft()` a `PUT /documents/{id}` kérést küldi. A Billingo itt nem a piszkozat tárolt adataiból dolgozik: a teljes bizonylatot újra el kell küldeni, ugyanúgy, mint a kiállításnál. Amit kihagysz, az nem marad meg a piszkozatból.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = {
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+}
+
+const piszkozat = await tarca.documents.create({ ...szamla, type: 'draft' })
+const vegleges = await tarca.documents.finalizeDraft(piszkozat.id ?? 0, {
+  ...szamla,
+  comment: 'Átnézve.',
+})
+
+console.log(vegleges.id === piszkozat.id, vegleges.invoiceNumber)
+```
+
+A `DraftFinalizeInput` a [kiállítás bemenete](/docs/bizonylatok/kiallitas/keres), két eltéréssel:
+
+| Mező | Billingo mező | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `type` | `type` | `'invoice'` | `'invoice'`, `'proforma'` vagy `'advance'`. A `'draft'` nem adható meg, és nem is alapérték. |
+| `vendorId` | `vendor_id` | – | Megadható, de a `finalizeDraft()`-nek nincs `Once` változata. |
+
+Minden más ugyanúgy működik: a `defaults`, a számlatömb és a partner keresése, a dátumok, a tételek és a helyi ellenőrzés. A tárca a `type`-ot és a többi kötelező mezőt mindig elküldi, mert élőben az üres törzsre a Billingo 422-t ad tíz mezővel: `partner_id`, `block_id`, `type`, `fulfillment_date`, `due_date`, `payment_method`, `language`, `currency`, `items`, és `conversion_rate` („…required unless currency is in HUF.”).
+
+## Törlés
+
+A `deleteDraft(id)` a `DELETE /documents/{id}` kérést küldi, törzs nélkül. Csak piszkozat törölhető. A kiállított számlát a [Sztornó](/docs/bizonylatok/sztorno) érvényteleníti, a díjbekérőt az [archiválás](/docs/bizonylatok/dijbekero) tünteti el a listából.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const piszkozatId: number
+
+await tarca.documents.deleteDraft(piszkozatId)
+```
+
+Egyik metódust sem ismétli meg a tárca hiba után.

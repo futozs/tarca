@@ -1,0 +1,60 @@
+---
+title: Teszt profil
+description: A Billingo fejlesztői teszt profilja. Létrehozás, mire jó, mi nincs benne (NAV kapcsolat), mely végpontok viselkednek rajta másképp, és hogyan ellenőrizd kódból, hogy nem éles profilon vagy.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A Billingónak nincs külön sandbox címe. A fejlesztői teszt profil egy külön cégprofil ugyanazon az `api.billingo.hu` címen, saját adatbázissal és saját API kulccsal.
+
+## Létrehozás
+
+A Billingo felületén a profilváltóban: Új vállalkozás létrehozása, és kapcsold be a teszt profil opciót. Első regisztrációkor a profilvarázsló is felajánlja. Utána a teszt profilon hozz létre egy V3 API kulcsot, olvasás és írás joggal ([Hitelesítés](/docs/alapok/hitelesites)).
+
+## Mi más rajta?
+
+- **Nincs NAV kapcsolat.** A számlák nem mennek a NAV-hoz, és hivatalosan nem használhatók.
+- **„TESZT” felirat** van a bizonylatokon, egyébként úgy néznek ki, mint az élesek.
+- **Előfizetés nélkül** is működik az API, korlátlan ideig.
+- **Külön adatbázis**: partnereket, termékeket, számlatömböket újra létre kell hozni.
+- **Soha nem kapcsolható élesre.** Az éles működéshez új profil és új kulcs kell.
+
+A tárca e2e tesztje is ilyen profilon fut, és mind az 57 műveletet élőben lefuttatja.
+
+## Végpontok, amelyek itt másképp válaszolnak
+
+| Művelet | A teszt profilon |
+| --- | --- |
+| `utils.checkTaxNumber()` | 401, „…live connection to NAV (not available in sandbox mode)”. A tárca `nav_unavailable` kategóriát ad, nem `auth`-ot. |
+| `documents.navStatus()` | Kiállított számlára 200 `no_online_szamla_settings` („NAV Online Számla összeköttetés nincs beállítva.”), az első másodpercekben `null`. |
+| `inventory.quantity()` | 400 `Automatic order processing is disabled`, mert nincs készletkezelés. |
+| `organization.get()` | `hasNavConnection: false`. A mi teszt profilunk adószáma `00000000-0-00` volt. |
+| Nyugta | A `kobakReceiptStatus` `pending` marad. |
+
+Kiállított számlát a teszt profilon sem lehet törölni, csak sztornózni. Ha sok tesztadat gyűlik össze, a Billingo felületén a Beállítások → Vállalkozási adatok → Adatok törlése kitörli őket.
+
+<Callout type="warning" title="Az e-mail valódi lehet">
+  Nem ellenőriztük, hogy a teszt profil kézbesíti-e az e-maileket (`send()`, `sendEmail: true`).
+  A tesztpartnereid e-mail címe legyen a sajátod vagy egy `example.hu` cím.
+</Callout>
+
+## Teszt profilon vagy?
+
+A Billingo nem ad „teszt profil” jelzőt. Két tény együtt jó őr: a teszt profilnak nincs NAV kapcsolata, és az adószáma a tiéd. Ha a kódod (például egy integrációs teszt) csak teszt profilon írhat, ellenőrizd az első írás előtt:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca({ apiKey: process.env.BILLINGO_TEST_API_KEY })
+
+const { hasNavConnection, taxCode } = await tarca.organization.get()
+
+if (hasNavConnection !== false || taxCode !== process.env.BILLINGO_TEST_TAX_CODE) {
+  throw new Error('Ez nem a várt teszt profil, a teszt nem ír semmit.')
+}
+```
+
+Éles profil NAV kapcsolat nélkül nem állíthat ki számlát, így a `hasNavConnection: false` önmagában is erős jel. A rögzített adószám azt is kizárja, hogy egy másik teszt profilra írj.
+
+## Teszt profil nélkül
+
+Egységtesztekhez nem kell Billingo fiók: a `tarcajs/testing` hamis Billingója ugyanazt a teszt profilt utánozza (`00000000-0-00`, NAV kapcsolat nélkül, `Számlák` és `Nyugták` tömbbel). Lásd [Tesztek](/docs/tesztek).

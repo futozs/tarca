@@ -1,0 +1,84 @@
+---
+title: Tételek és áfa
+description: Nettó vagy bruttó egységár, tárolt termék a számlán, az áfakulcs számként vagy Billingo kódként, áfamentességi jogcím, cikkszám és bizonylatszintű kedvezmény.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+Egy tétel háromféle lehet. A tárca mindhármat a `items` tömbben fogadja, és tételenként dönti el, melyik Billingo alakra fordítja.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.create({
+  partner: 1,
+  items: [
+    { name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 },
+    { name: 'Tankönyv', quantity: 2, grossUnitPrice: 4_200, vat: 5 },
+    { productId: 1, quantity: 2 },
+  ],
+})
+
+console.log(szamla.grossTotal)
+```
+
+## Nettó vagy bruttó egységár
+
+Tételenként pontosan az egyik árat add meg:
+
+- `netUnitPrice`: nettó egységár. A dróton `unit_price` és `unit_price_type: "net"`.
+- `grossUnitPrice`: bruttó egységár. A dróton `unit_price` és `unit_price_type: "gross"`.
+
+Ha egyiket sem, vagy mindkettőt megadod, a tárca kérés nélkül `validation` hibát ad, `items.0` mezővel. Az egységárból a Billingo számolja a tétel nettó, áfa és bruttó értékét, lásd [Kerekítés](/docs/bizonylatok/kiallitas/szabalyok/kerekites).
+
+B2B számlán általában nettó árlistád van, webshopban bruttó árad: azt add meg, amelyik pontosan ismert, a Billingo a másikat abból számolja.
+
+## Tárolt termék
+
+A `{ productId, quantity, comment? }` tétel a Billingóban tárolt termék nevét, egységét, árát és áfáját használja. A dróton csak a `product_id`, a `quantity` és a megadott `comment` megy. Terméket a [Termékek](/docs/termekek) oldalon hozhatsz létre.
+
+## Áfa
+
+A `vat` két alakban adható meg:
+
+- **Számként**: `27` → `'27%'`, `5` → `'5%'`, `5.5` → `'5,5%'`, `13.5` → `'13,5%'`. Csak olyan kulcs fogadható el, amelyet a Billingo ismer.
+- **Billingo kódként**, szövegként: `'27%'`, `'AAM'` (alanyi adómentes), `'TAM'` (tárgyi adómentes), `'EU'`, `'EUK'`, `'F.AFA'` (fordított adózás), `'K.AFA'`, `'MAA'`, `'ÁKK'`, `'ÁTHK'` és a többi a `Billingo.Vat` típusban.
+
+Ismeretlen kulcsra (például `12.5`) a tárca kérés nélkül `validation` hibát ad `items.0.vat` mezővel, és az üzenet felsorolja az összes elfogadott kódot.
+
+<Callout type="info" title="EU-s áfakód csak külföldi partnernek">
+  Élőben az `'EU'` és az `'EUK'` kódot a Billingo csak `taxType: 'FOREIGN'` partnerrel fogadta el,
+  más partnerrel 400-as hibát adott. A tárca ezt nem ellenőrzi előre, a hamis Billingo sem.
+</Callout>
+
+## Egység, megjegyzés, jogcím, cikkszám
+
+| Mező | Billingo mező | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `unit` | `unit` | `'db'` | Mennyiségi egység, szabad szöveg: `'óra'`, `'hónap'`, `'kg'`. |
+| `comment` | `comment` | – | A tétel alatti megjegyzés. |
+| `entitlement` | `entitlement` | – | Az áfamentesség jogcíme (`Billingo.Entitlement`, például `'AAM'`, `'TAM'`, `'SECOND_HAND'`). |
+| `sku` | `sku` | – | Saját cikkszám. Élőben a válaszban `null`, ha nem adtad meg. |
+
+## Kedvezmény
+
+A `discountPercent: 10` bizonylatszintű százalékos kedvezményt küld (`discount: { type: 'percent', value: 10 }`), ahogy a spec és az útmutató leírja. Élőben nem próbáltuk ki, és a Billingo ügyfélszolgálati cikke a NAV miatt inkább negatív tételsort ajánl. A hamis Billingo eltárolja, de az összegekből nem vonja le. Ha biztosra mennél, adj egy negatív árú tételt:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.create({
+  partner: 1,
+  items: [
+    { name: 'Éves előfizetés', quantity: 1, netUnitPrice: 120_000, vat: 27 },
+    { name: 'Kedvezmény 10%', quantity: 1, netUnitPrice: -12_000, vat: 27 },
+  ],
+})
+
+console.log(szamla.grossTotal)
+```
+
+A végösszeg 137 160 Ft: 108 000 Ft nettó és 27% áfa.

@@ -1,0 +1,88 @@
+---
+title: Kérés
+description: A partners.findOrCreate() bemenete, az egyezés szabályai és a kérések, amelyeket a tárca a Billingónak küld.
+---
+
+```ts
+tarca.partners.findOrCreate(input: PartnerInput, options?: { signal?: AbortSignal }): Promise<{ partner: Billingo.Partner, created: boolean }>
+```
+
+A `findOrCreate()` a tárca saját hívása, a Billingónak nincs ilyen művelete. Két Billingo műveletből áll: előbb a [listát](/docs/partnerek/lista/keres) kéri név szerint, és ha nem talál pontosan egyező partnert, [létrehoz](/docs/partnerek/letrehozas/keres) egy újat. A bemenete ugyanaz a `PartnerInput`, amit a `create()` kap.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { partner, created } = await tarca.partners.findOrCreate({
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  emails: ['vevo@example.hu'],
+  taxcode: '12345678-2-42',
+  taxType: 'HAS_TAX_NUMBER',
+})
+
+console.log(created, partner.id)
+```
+
+## Mikor egyezik egy partner?
+
+A tárca csak akkor használja a meglévő partnert, ha a tárolt adatai **minden olyan mezőben** megegyeznek a bemenettel, amit megadtál. Ha bármelyik eltér, új partnert hoz létre. Így a számlára soha nem kerül régi cím, adószám vagy e-mail cím: a Billingo a kiállításkor lemásolja a partner adatait a bizonylatba.
+
+| Szabály | Példa |
+| --- | --- |
+| Amit nem adtál meg, azt nem hasonlítja. | Telefonszám nélküli bemenet egyezik a telefonszámos partnerrel. |
+| A szöveg elején és végén álló szóközt levágja, a belső szóközöket egyre vonja össze. | `'Vevő  Kft. '` egyezik a `'Vevő Kft.'` névvel. |
+| Az e-mail címeknél a kis- és nagybetű nem számít. | `'Vevo@Example.hu'` egyezik a `'vevo@example.hu'` címmel. |
+| Az e-mail címek sorrendje számít. | `['a@example.hu', 'b@example.hu']` nem egyezik a fordított sorrenddel. |
+| A beágyazott objektumokat mezőnként hasonlítja. | `customBillingSettings.dueDays: 15` csak 15 napos partnerrel egyezik. |
+| Az ország alapértéke `'HU'`, és ezt is hasonlítja. | `countryCode` nélküli bemenet nem egyezik egy `'AT'` címmel. |
+
+Más normalizálás nincs: a `'Fő utca 1.'` és a `'Fő u. 1.'` két különböző cím, ilyenkor új partner jön létre.
+
+## Mezők
+
+A mezők ugyanazok, mint a létrehozásnál, a teljes táblát a [Létrehozás](/docs/partnerek/letrehozas/keres) oldalon találod. A legfontosabbak:
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező.** Ezzel keres a tárca a listában. |
+| `address.postCode` | `address.post_code` | – | **Kötelező.** Irányítószám. |
+| `address.city` | `address.city` | – | **Kötelező.** Település. |
+| `address.address` | `address.address` | – | **Kötelező.** Utca, házszám. |
+| `address.countryCode` | `address.country_code` | `'HU'` | Kétbetűs országkód. |
+| `emails` | `emails` | – | E-mail címek, a sorrend számít. |
+| `taxcode` | `taxcode` | – | Adószám, a Billingo írásmódjával. |
+| `taxType` | `tax_type` | – | `'HAS_TAX_NUMBER'`, `'NO_TAX_NUMBER'` vagy `'FOREIGN'`. |
+
+## Helyi ellenőrzés
+
+- Üres vagy csak szóközből álló névre a tárca `validation` hibát dob `fieldErrors`-szal (`name`: „A partner neve nem lehet üres.”), és kérést sem küld.
+- A többi mezőt a Billingo ellenőrzi a létrehozáskor: hiányzó címre 422-t ad, lásd [Válasz](/docs/partnerek/kereses-vagy-letrehozas/valasz).
+
+## Ami a dróton megy
+
+Először a lista megy el a normalizált névvel, 100-as oldalakkal. Ha az első oldalon nincs egyező partner, de a találatok több oldalra férnek ki, a tárca a következő oldalakat is megnézi, összesen legfeljebb hármat (300 partnert):
+
+```text
+GET /v3/partners?page=1&per_page=100&query=Vev%C5%91+Kft.
+```
+
+Ha nincs egyező partner, a `create()` ugyanazzal a törzzsel, amit a [Létrehozás](/docs/partnerek/letrehozas/keres) ír le, kiegészítve az alapértelmezett országkóddal:
+
+```json
+{
+  "name": "Vevő Kft.",
+  "address": {
+    "country_code": "HU",
+    "post_code": "1111",
+    "city": "Budapest",
+    "address": "Fő utca 1."
+  },
+  "emails": ["vevo@example.hu"],
+  "taxcode": "12345678-2-42",
+  "tax_type": "HAS_TAX_NUMBER"
+}
+```
+
+A `guess` végpontot a `findOrCreate()` szándékosan nem használja: az nem keres, hanem pontos névegyezésen kívül mindig új partnert hoz létre, és a válaszában a `taxType` mindig `''`. Lásd [Guess végpont](/docs/partnerek/guess/keres).

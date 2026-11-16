@@ -1,0 +1,50 @@
+---
+title: Kérés
+description: A documents.send() címzettlistája és ellenőrzése, a POST /documents/{id}/send törzse, és a documents.reminders() GET kérése.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/SendDocument
+---
+
+```ts
+tarca.documents.send(id: number, input: { emails: readonly string[] }, options?: { signal?: AbortSignal }): Promise<Billingo.SendDocument>
+tarca.documents.reminders(id: number, options?: { signal?: AbortSignal }): Promise<Billingo.DocumentReminderEventList>
+```
+
+## send()
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+const { emails } = await tarca.documents.send(szamlaId, {
+  emails: ['vevo@example.hu', 'konyveles@example.hu'],
+})
+
+console.log(emails)
+```
+
+| Mező | Billingo mező | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `emails` | `emails` | – | **Kötelező**, legalább egy cím. A Billingo pontosan ezekre küldi. |
+
+A tárca `POST /documents/{id}/send` kérést küld, a törzs `{"emails":["vevo@example.hu","konyveles@example.hu"]}`. Üres listára vagy hibás címre kérés nélkül `validation` hibát ad (`emails`, `emails.1`). Az `emails` mező nem hagyható el: a tárca nem bízza a Billingóra, kinek küld.
+
+## reminders()
+
+`GET /documents/{id}/reminders`, paraméter nélkül. Az emlékeztetőket a Billingo felületén állítod be; az API csak lekérdezni tudja őket.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+const { sentReminders, upcomingReminders } = await tarca.documents.reminders(szamlaId)
+
+console.log(sentReminders?.length, upcomingReminders?.length)
+```
+
+A `reminders()` lekérdezés, a tárca hiba után újrapróbálja. A `send()` írás, egyszer megy ki.

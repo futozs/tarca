@@ -1,0 +1,65 @@
+---
+title: PayPal
+description: PayPal capture-ből nyugta vagy számla a tarcajs/payments/paypal webhookkezelővel. Az aláírást a PayPal verify-webhook-signature végpontja ellenőrzi, a tételek és a vevő a rendelésből jönnek.
+official: https://developer.paypal.com/api/rest/webhooks/
+---
+
+A `payPalWebhook()` a PayPal REST webhookját fogadja. Az aláírást a PayPal saját végpontja ellenőrzi (`POST /v1/notifications/verify-webhook-signature`): a tárca a `PAYPAL-TRANSMISSION-*` és `PAYPAL-AUTH-ALGO` fejléceket és a nyers eseményt bájtra pontosan beágyazva küldi el, és csak `SUCCESS` válasz után dolgozik tovább. A PayPal API-hoz a REST alkalmazás `clientId`-ja és `clientSecret`-je kell, a hozzáférési tokent a tárca kéri le és tartja meg a lejáratáig.
+
+## Beállítás
+
+```dotenv title=".env.local"
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+PAYPAL_WEBHOOK_ID=...
+```
+
+```ts twoslash title="app/api/paypal/webhook/route.ts"
+import { createTarca } from 'tarcajs'
+import { issueForPayment } from 'tarcajs/payments'
+import { payPalWebhook } from 'tarcajs/payments/paypal'
+
+const tarca = createTarca()
+
+export const POST = payPalWebhook({
+  webhookId: process.env.PAYPAL_WEBHOOK_ID ?? '',
+  clientId: process.env.PAYPAL_CLIENT_ID ?? '',
+  clientSecret: process.env.PAYPAL_CLIENT_SECRET ?? '',
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `webhookId` | nincs | A webhook azonosítója a PayPal Developer Dashboardról. Üresen `TypeError`. |
+| `clientId`, `clientSecret` | nincs | A REST alkalmazás adatai. Üresen `TypeError`. |
+| `fetchOrder` | `true` | A `PAYMENT.CAPTURE.COMPLETED` eseménynél lekéri a rendelést (`GET /v2/checkout/orders/{id}`) a tételekért és a vevőért. |
+| `sandbox` | `false` | Az `api-m.sandbox.paypal.com` címet használja. |
+| `method` | `paypal` | A bizonylat fizetési módja. |
+| `apiUrl`, `fetch` | | Tesztekhez. |
+
+A közös opciók: [Webhook beállítások](/docs/fizetesek/webhook-beallitasok). Iratkozz fel a `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.DECLINED`, `PAYMENT.CAPTURE.PENDING` és `PAYMENT.CAPTURE.REFUNDED` eseményre. Hiányzó fejlécekre vagy elutasított aláírásra 400, sikeres feldolgozásra 200 a válasz.
+
+## Események
+
+| PayPal esemény | `kind` |
+| --- | --- |
+| `PAYMENT.CAPTURE.COMPLETED`, `COMPLETED` állapottal | `paid` |
+| `PAYMENT.CAPTURE.PENDING`, vagy a capture állapota nem `COMPLETED` | `other` |
+| `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.DECLINED` | `failed` |
+| `PAYMENT.CAPTURE.REFUNDED`, a teljes capture összegére | `refunded` |
+| `PAYMENT.CAPTURE.REFUNDED`, kisebb összegre | `partially-refunded` |
+| `PAYMENT.CAPTURE.REFUNDED`, a visszatérítés állapota nem `COMPLETED` | `other` |
+
+A fizetés azonosítója a capture, így a visszatérítés ugyanahhoz a `vendorId`-hoz jut (`PAYPAL-<capture id>`). Visszatérítésnél a tárca lekéri az eredeti capture-t (`GET /v2/payments/captures/{id}`), és annak összegével veti össze a visszatérített összeget.
+
+## Tételek és vevő
+
+- A tételek a rendelés egyetlen `purchase_unit`-jából jönnek: tételenként az egységár és az adó összege, szorozva a mennyiséggel. A szállítási, kezelési és biztosítási díj külön tétel (`Szállítási díj`, `Kezelési díj`, `Biztosítás`).
+- Ha a rendelésben kedvezmény van, több `purchase_unit` van, adó csak egyes tételeken szerepel, vagy eltérő pénznemű összegek, a tárca nem ad tételeket. Ilyenkor egy tétel készül a fizetett összegre, vagy a saját `items` opciódat használja.
+- A vevő a fizető neve (magyar címnél vezetéknév elöl), e-mail címe, telefonszáma és címe (a fizető címe, ha teljes, különben a szállítási cím). Adószámot a PayPal nem ad.
+- A rendelésszám a capture `custom_id` vagy `invoice_id` mezője, ezek hiányában a `purchase_unit` `custom_id`, `invoice_id` vagy `reference_id` mezője.
+
+## Saját folyamatban
+
+`payPalApi`, `verifyPayPalWebhook`, `parsePayPalEvent` és `payPalPaymentEvent` külön is elérhető.

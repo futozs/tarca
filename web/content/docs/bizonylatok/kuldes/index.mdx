@@ -1,0 +1,35 @@
+---
+title: Kiküldés és emlékeztetők
+description: A bizonylat kiküldése e-mailben megadott címekre a documents.send() metódussal, és a kiküldött és tervezett fizetési emlékeztetők lekérése a documents.reminders() metódussal.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/SendDocument
+---
+
+A `send()` a Billingóval küldeti ki a bizonylatot a megadott címekre. A `reminders()` megmutatja, milyen fizetési emlékeztető ment már ki, és mi van még hátra.
+
+<Operation id="SendDocument" methods={['documents.send']} />
+
+<Operation id="GetDocumentReminderEventList" methods={['documents.reminders']} />
+
+```ts
+await tarca.documents.send(szamla.id ?? 0, { emails: ['vevo@example.hu'] })
+```
+
+Kiállításkor a `sendEmail: true` a partner címeire küld, ehhez nem kell a `send()`: [Értesítés és rendelésszám](/docs/bizonylatok/kiallitas/szabalyok/ertesites-es-rendelesszam).
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/kuldes/keres">
+    A címzettlista szabályai és a két kérés.
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/kuldes/valasz">
+    A visszaigazolt címek, az emlékeztetők listái és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/kuldes/minta">
+    Kiküldés két címre, majd az emlékeztetők lekérése.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Az e-mail valódi címre megy">
+  A `send()` valódi levelet küldhet, akkor is, ha a fejlesztői teszt profilról hívod: hogy a teszt
+  profil kézbesít-e, azt nem tudtuk ellenőrizni. Teszteléskor csak saját vagy `example.hu` címet
+  adj meg. A tárca a `send()`-et soha nem ismétli meg, így egy hiba nem küld két levelet.
+</Callout>

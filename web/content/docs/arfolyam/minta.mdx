@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Euró–forint árfolyam egy adott napra és forint–euró árfolyam dátum nélkül a hamis Billingo ellen, a ténylegesen elküldött kérésekkel és a válaszokkal.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Currency/GetConversionRate
+---
+
+A példa kétszer kérdez: egyszer az euró–forint árfolyamot 2026. november 13-ra, egyszer a forint–euró árfolyamot dátum nélkül.
+
+<Example slug="arfolyam" />
+
+Az **Elküldött kérések** fülön az első kérés query-jében ott a `date=2026-11-13`, a másodikban nincs `date`. A válaszokban a mező neve `conversation_rate`. A sandbox árfolyamai a hamis Billingo alapértékei (1 euró 390 forint), nem valódi árfolyamok.

@@ -1,0 +1,180 @@
+---
+title: Számlázás AI asszisztensből
+description: A tárca MCP szervere Claude Desktopban, Claude Code-ban és más MCP kliensben. Alapból csak olvas, írni csak előnézet és megerősítő kód után tud, pontosan egyszer.
+---
+
+A tárca MCP szerverén keresztül egy AI asszisztens eléri a Billingo fiókodat: lekérdezi a számlákat, a partnereket és a költségeket, és ha engedélyezed, számlát állít ki, sztornóz, befizetést rögzít vagy e-mailt küld. Ez a recept a beállítást mutatja helyi gépen és szerveren.
+
+<Callout type="warning" title="Kezdd teszt profillal">
+  Éles profilon a kiállított számla azonnal a NAV-hoz kerül, és csak sztornózni lehet. Amíg
+  ismerkedsz az asszisztenssel, a [fejlesztői teszt profil](/docs/alapok/teszt-profil) kulcsát
+  add meg.
+</Callout>
+
+## Claude Desktop
+
+A beállításokban a Developer → Edit Config menü nyitja meg a `claude_desktop_config.json` fájlt:
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "tarcajs": {
+      "command": "npx",
+      "args": ["-y", "tarcajs", "mcp"],
+      "env": { "BILLINGO_API_KEY": "a-teszt-profil-v3-kulcsa" }
+    }
+  }
+}
+```
+
+Mentés és újraindítás után a Claude 16 eszközt lát: 11 olvasót és 5 előnézetet. Számlát így még nem tud kiállítani. A szerverhez Node.js 22 vagy újabb kell.
+
+## Claude Code
+
+```bash title="Terminál"
+claude mcp add tarcajs --env BILLINGO_API_KEY=a-teszt-profil-v3-kulcsa -- npx -y tarcajs mcp
+```
+
+Más MCP kliensben (Cursor, VS Code) ugyanez a parancs és ugyanez a környezeti változó kell, a saját beállítófájljuk formátumában.
+
+## Írás engedélyezése
+
+Íráshoz add a parancshoz a `--allow-write` kapcsolót, vagy állítsd be a `TARCA_MCP_ALLOW_WRITE=1` változót:
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "tarcajs": {
+      "command": "npx",
+      "args": ["-y", "tarcajs", "mcp", "--allow-write", "--defaults", "/Users/te/tarca-defaults.json"],
+      "env": { "BILLINGO_API_KEY": "a-teszt-profil-v3-kulcsa" }
+    }
+  }
+}
+```
+
+```json title="tarca-defaults.json"
+{ "dueInDays": 8, "paymentMethod": "wire_transfer", "electronic": true }
+```
+
+A `--defaults` ugyanazt a [`TarcaDefaults`](/docs/alapok/alapertekek) objektumot várja, mint a `createTarca()`. Az ismeretlen kulcsot és a hibás értéket a szerver már indulás előtt elutasítja. Egy eltérés van: a `sendEmail` alapértéket az MCP szerver nem veszi figyelembe, e-mailt csak akkor küld, ha az eszköz bemenete kéri.
+
+Minden írás két lépés. Az asszisztens előbb az előnézeti eszközt hívja (`preview_document`). Ez semmit nem ír: ellenőrzi a bemenetet, kiszámolja a végösszeget, és ad egy megerősítő kódot. Ha jóváhagyod, az asszisztens az írást (`create_document`) pontosan ugyanazzal a bemenettel és a kóddal hívja. A hamis Billingón egy 10 órás, nettó 15 000 Ft-os óradíjú webfejlesztés előnézete így néz ki:
+
+```
+Számla előnézete (még NEM készült el): Vevő Kft., nettó 150 000 HUF, bruttó 190 500 HUF (becslés: a végleges összeget a Billingo számolja).
+Kelte: 2026-11-16 (a kiállítás napja), teljesítés: 2026-11-16, fizetési határidő: 2026-11-24, fizetési mód: wire_transfer, tömb: Számlák (#1).
+A vevő nem kap e-mailt a Billingótól.
+vendorId: MCP-AF9C404F8A6205C7B03E (automatikus: ugyanez a bemenet ma csak egyszer állít ki bizonylatot).
+```
+
+A kód 15 percig érvényes, és csak az előnézet budapesti napján. Más bemenettel, éjfél után vagy egy más titokkal futó szerverpéldányon `confirmation` hibát kapsz, és új előnézet kell.
+
+| Írás | Előnézet | Miért nem fut le kétszer |
+| --- | --- | --- |
+| `create_document` | `preview_document` | `documents.createOnce` az előnézet `vendorId`-jával |
+| `create_receipt` | `preview_receipt` | `receipts.createOnce`, ugyanígy |
+| `cancel_document` | `preview_cancellation` | Egy kód legfeljebb egy `POST`, bizonytalan hiba után a tárca visszaolvassa a bizonylatot |
+| `mark_document_paid` | `preview_payment` | A kód a hátralékhoz kötött, már fizetett számlára nem ír |
+| `send_document` | `preview_send` | A felhasznált kódot a szerverpéldány megjegyzi |
+
+## Kipróbálás kódból
+
+Az MCP szerver a hamis Billingón is fut, így a teljes folyamat kulcs és hálózat nélkül kipróbálható, például egy saját integrációs tesztben:
+
+```ts twoslash title="mcp-proba.ts"
+import { createTarcaMcpServer } from 'tarcajs/mcp'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
+
+const billingo = createFakeBillingoFetch()
+const kapcsolat = createTarcaMcpServer({
+  apiKey: 'teszt-kulcs',
+  fetch: billingo.fetch,
+  allowWrite: true,
+}).connect({ protocolVersion: '2025-06-18' })
+
+async function eszkoz(nev: string, bemenet: Record<string, unknown>) {
+  const sor = await kapcsolat.handleLine(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: nev, arguments: bemenet },
+    }),
+  )
+  return JSON.parse(sor ?? '{}').result
+}
+
+const szamla = {
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+}
+
+const elonezet = await eszkoz('preview_document', szamla)
+const kiallitas = await eszkoz('create_document', {
+  ...szamla,
+  confirmation: elonezet.structuredContent.confirmation,
+})
+
+console.log(kiallitas.content[0].text)
+console.log(billingo.count('CreateDocument'))
+```
+
+A kiállítás összefoglalója: `Kiállítva: Számla 2026-1: Vevő Kft., bruttó 190 500 HUF`, és a hamis Billingo egyetlen `CreateDocument` kérést kapott. Ha a `create_document`-et kód nélkül hívod, `isError: true` választ kapsz `confirmation` kategóriával, és kérés nem megy ki.
+
+## Szerveren, HTTP-n
+
+Ha az asszisztens nem a te gépeden fut, az MCP szervert HTTP végpontként is elérhetővé teheted. A kezelő web-szabványos: Next.js, Cloudflare Workers, Deno és Bun alatt közvetlenül használható, Expresshez a [`toNodeHandler`](/docs/receptek/express-nestjs-fastify) köti be.
+
+```ts twoslash title="app/api/mcp/route.ts"
+import { createTarcaMcpHandler, createTarcaMcpServer } from 'tarcajs/mcp'
+
+export const POST = createTarcaMcpHandler(
+  createTarcaMcpServer({ confirmationSecret: process.env.MCP_CONFIRMATION_SECRET }),
+  {
+    authorize: (request) => {
+      const token = process.env.MCP_TOKEN
+      return Boolean(token) && request.headers.get('authorization') === `Bearer ${token}`
+    },
+  },
+)
+```
+
+- Az `authorize` kötelező. Névtelen végpont mögött a szerveroldali Billingo kulccsal bárki olvashatná a számláidat, vagy újat állíthatna ki. A `Boolean(token)` nélkül egy beállítatlan token mellett a `Bearer undefined` fejléc is átmenne.
+- A `confirmationSecret` legalább 16 bájt legyen, és minden szerverpéldányon ugyanaz: egy véletlen, példányonkénti titok nem tudja ellenőrizni a másik példány kódját. Mindkét hiányt a tárca létrehozáskor `configuration` hibával jelzi.
+- A kezelőt modulszinten hozd létre, ne kérésenként. A `send_document` a felhasznált kódokat a szerverpéldányban jegyzi meg.
+- Írni itt is csak az `allowWrite: true` opcióval tud.
+
+## Buktatók
+
+<Callout type="info" title="Amit szándékosan nem tud">
+  PDF-et nem tölt le, és blokkot sem nyomtat, mert bináris adatnak nincs helye a modell
+  kontextusában. Helyette a `get_document` kérésre a nyilvános linket adja. Módosító számlát, díjbekérőből számlát, piszkozatot,
+  másolatot és törzsadat-írást (partner, termék, bankszámla) sem kínál. Ezekhez a könyvtárat vagy
+  a Billingo felületét használd.
+</Callout>
+
+<Callout type="info" title="Előtte nézd meg a profilt">
+  Az `npx tarcajs doctor` három GET kéréssel ellenőrzi a kulcsot, a profilt, a NAV-kapcsolatot és
+  a számlatömböket. Az asszisztens a `get_profile` eszközzel ugyanezt látja.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="MCP szerver" href="/docs/kiegeszitok/mcp-szerver">
+    Mind a 21 eszköz, a bemenetek és a hibakategóriák.
+  </Card>
+  <Card title="MCP HTTP-n" href="/docs/kiegeszitok/mcp-http">
+    A createTarcaMcpHandler sorrendje: metódus, Origin, authorize, méret.
+  </Card>
+  <Card title="AI asszisztensek" href="/docs/kiegeszitok/ai-asszisztensek">
+    Miben más, mint a hivatalos Billingo MCP.
+  </Card>
+  <Card title="Parancssor" href="/docs/kiegeszitok/parancssor">
+    A doctor, a verify és a document get parancs.
+  </Card>
+</Cards>

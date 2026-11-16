@@ -1,0 +1,91 @@
+---
+title: Törlés
+description: Számlatömb törlése a documentBlocks.delete() hívással. Nem dokumentált útvonal, élőben bizonylat nélküli tömbön ellenőrizve, utána a lekérés 403-at ad.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/ListDocumentBlock
+---
+
+<Operation id="DeleteDocumentBlock" methods={['documentBlocks.delete']} />
+
+<Callout type="info" title="Nem dokumentált útvonal">
+  A `DELETE /document-blocks/{id}` egyik Billingo specben sincs benne. A tárca élőben, a
+  fejlesztői teszt profilon egy bizonylat nélküli tömbön ellenőrizte (2026. november 15.).
+</Callout>
+
+## Kérés
+
+```ts
+tarca.documentBlocks.delete(id: number, options?: { signal?: AbortSignal }): Promise<void>
+```
+
+Az egyetlen bemenet a tömb azonosítója: `DELETE /v3/document-blocks/{id}`, törzs nélkül. Írás, ezért a tárca nem ismétli magától.
+
+## Válasz
+
+A Billingo 204-gyel, üres törzzsel válaszol, a `delete()` `undefined`-dal teljesül. Élőben ezután:
+
+- a `get()` 403-at adott, nem 404-et,
+- a lista már nem tartalmazta a tömböt.
+
+<Callout type="warning" title="Bizonylatos tömb törlése nem ellenőrzött">
+  Hogy mi történik egy olyan tömb törlésekor, amelyben már vannak bizonylatok, élőben nem
+  próbáltuk ki. Éles profilon ne törölj olyan tömböt, amelybe valaha számlát állítottál ki.
+  Ha a `defaults.blockId` a törölt tömbre mutat, írd át, mielőtt a következő számlát kiállítod;
+  a `npx tarcajs doctor --defaults defaults.json` ezt hibaként jelzi. Beállítás nélkül a tárca kliensenként egyszer kérdezi le az alapértelmezett tömböt, és megjegyzi:
+  ha éppen azt törlöd, hozz létre új klienst.
+</Callout>
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 403 | `forbidden` | Ismeretlen vagy már törölt tömb, vagy csak olvasó kulcs. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| – | `network`, `timeout` | Nincs válasz. Nézd meg a listában, megvan-e még a tömb. |
+
+Mivel a törölt tömbre 403 jön, a második törlés nem különböztethető meg egy jogosultsági hibától. Bizonytalan hiba után ezért a listát nézd:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function torol(tombId: number): Promise<void> {
+  try {
+    await tarca.documentBlocks.delete(tombId)
+  } catch (error) {
+    if (!isBillingoError(error) || !['network', 'timeout', 'server'].includes(error.category)) {
+      throw error
+    }
+    for await (const tomb of tarca.documentBlocks.all()) {
+      if (tomb.id === tombId) return tarca.documentBlocks.delete(tombId)
+    }
+  }
+}
+```
+
+## Minta
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const tomb = await tarca.documentBlocks.create({ name: 'Ideiglenes', prefix: 'TMP', type: 'invoice' })
+await tarca.documentBlocks.delete(tomb.id ?? 0)
+
+const hiba = await tarca.documentBlocks.get(tomb.id ?? 0).catch((error: unknown) => error)
+console.log(isBillingoError(hiba) ? hiba.category : hiba)
+
+const maradt = await tarca.documentBlocks.list()
+console.log(maradt.data.map((elem) => elem.name))
+```
+
+A törlés és az utána következő lekérés a hamis Billingo felvétele szerint, élőben ugyanezekkel a státuszokkal:
+
+```text
+DELETE /v3/document-blocks/3
+204, üres törzs
+
+GET /v3/document-blocks/3
+403
+```

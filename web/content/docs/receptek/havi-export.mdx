@@ -1,0 +1,132 @@
+---
+title: Havi export a könyvelőnek
+description: Havonta automatikusan lefutó Billingo export az előző hónap számláiról, CSV-ben, tárhelyre mentve, Vercel cron feladatból.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A könyvelő minden hónap elején kéri az előző havi számlák listáját. Ez a recept egy cron útvonal, amely hónap elsején elindítja a Billingo exportját az előző hónapra, megvárja, és a CSV-t a tárhelyre menti. A könyvelő onnan tölti le, vagy te küldöd tovább.
+
+## Az útvonal
+
+```ts twoslash title="app/api/cron/havi-export/route.ts"
+// @filename: modulok.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+declare module '@/lib/tarhely' {
+  export const tarhely: import('tarcajs/storage').StorageAdapter
+}
+// @filename: route.ts
+// ---cut---
+import { isBillingoError } from 'tarcajs'
+import { billingPeriod, todayPeriod } from 'tarcajs/batch'
+import { tarca } from '@/lib/tarca'
+import { tarhely } from '@/lib/tarhely'
+
+export const maxDuration = 300
+
+const HONAPOK = { interval: 'month', anchor: '2020-01-01' } as const
+
+export async function GET(request: Request): Promise<Response> {
+  const titok = process.env.CRON_SECRET
+  if (!titok || request.headers.get('authorization') !== `Bearer ${titok}`) {
+    return new Response('Nincs jogosultság', { status: 401 })
+  }
+
+  const honap = billingPeriod(HONAPOK, todayPeriod(HONAPOK).index - 1)
+  try {
+    const fajl = await tarca.exports.run(
+      {
+        queryType: 'invoice_date',
+        startDate: honap.start,
+        endDate: honap.end,
+        exportType: 'simple_csv',
+      },
+      { maxWaitMs: 240_000 },
+    )
+    const kulcs = `exportok/${honap.start.slice(0, 7)}.csv`
+    await tarhely.put(kulcs, fajl.bytes, { contentType: fajl.contentType ?? 'text/csv' })
+    return Response.json({ kulcs, allapot: fajl.state, uzenet: fajl.message })
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'not_ready') {
+      console.warn(error.message, error.hint)
+      return Response.json({ hiba: error.message }, { status: 202 })
+    }
+    throw error
+  }
+}
+```
+
+```json title="vercel.json"
+{
+  "crons": [{ "path": "/api/cron/havi-export", "schedule": "0 5 1 * *" }]
+}
+```
+
+A Vercel a cron kérésben a `CRON_SECRET` változó értékét küldi `Bearer` tokenként. A feltétel a változó hiányát is elutasításnak veszi, különben beállítatlan titok mellett a `Bearer undefined` fejléccel bárki elindíthatná az exportot. A `@/lib/tarhely` bármelyik `tarcajs/storage` adapter lehet, például a [PDF mentése](/docs/receptek/pdf-mentese) recept R2 tárhelye.
+
+## Melyik hónap?
+
+A `todayPeriod()` azt a naptári hónapot adja, amelybe a mai budapesti dátum esik, a `billingPeriod(…, index - 1)` az előzőt. 2026. november 1-jén ez `2026-10-01` és `2026-10-31`. A határokat a tárca budapesti naptári napokban számolja, így éjfél körül sem csúszik el egy napot, ahogy a `toISOString()` UTC dátuma tenné.
+
+Az `anchor` az első időszak kezdete, és az indexek tőle számítanak. A `2020-01-01` azért ilyen korai, mert az anchor hónapjában az előző hónap indexe `-1` lenne, és a `billingPeriod()` erre hibát dob.
+
+A `queryType: 'invoice_date'` a kiállítás dátuma szerint szűr. Ha a könyvelő a teljesítés dátuma szerint kéri, használd a `fulfillment_date` értéket. Egy számlatömbre a `documentBlockId` szűkít.
+
+## Mit ad vissza a Billingo
+
+<Example slug="export" operation="Download" />
+
+Az export aszinkron: a `POST /document-export` egy azonosítót ad, a tárca ezután 1, 1, 2 és 4 másodperces szünetekkel, majd 5 másodpercenként lekérdezi az állapotát, és `success` vagy `warning` állapotnál letölti. Élőben egy egynapos CSV export 1,7 másodperc alatt elkészült, egy havi tovább is tarthat.
+
+A `simple_csv` fájl UTF-8 BOM-mal kezdődik, a mezőket pontosvessző választja el, és magyar fejlécsora van. A magyar területi beállítású Excel így oszlopokra bontva, ékezethelyesen nyitja meg. A fájlnév a Billingo `Content-Disposition` fejlécéből jön, például `2026_11_15_15_06_59_export.csv`. A hamis Billingo csak a fejlécsort adja, adatsor nélkül.
+
+## Ha nem készül el időben
+
+Ha a `maxWaitMs` alatt az export nem készül el, a `run` `not_ready` hibát dob. Az export a Billingo oldalán ettől tovább készül, a hiba üzenete és `hint` mezője megnevezi az azonosítóját. Új exportot ne indíts, hanem töltsd le a meglévőt:
+
+```ts twoslash title="lib/export-folytatasa.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+// @filename: export-folytatasa.ts
+// ---cut---
+import { tarca } from '@/lib/tarca'
+
+export async function folytasdAzExportot(id: string) {
+  const allapot = await tarca.exports.poll(id)
+  if (allapot.state === 'success' || allapot.state === 'warning') {
+    return tarca.exports.download(id)
+  }
+  return undefined
+}
+```
+
+## Hibák
+
+| Hiba | Mikor? | Mit tegyél |
+| --- | --- | --- |
+| `validation` | Hibás vagy lehetetlen dátum (`2026-02-30`). A tárca a kérés előtt jelzi, `fieldErrors`-szal. | Javítsd a dátumot. |
+| `not_ready` | A `maxWaitMs` letelt, az export még fut. | A `hint` szerinti azonosítóval `poll`, majd `download`. |
+| `server` | Az export `fail` állapotba került, a hiba a Billingo üzenetét hordozza. | Indíts új exportot később. |
+
+<Callout type="info" title="Az export olvasás, nem írás">
+  Az export nem hoz létre bizonylatot, ezért nyugodtan újraindítható. Egy elakadt cron után a
+  következő futás vagy egy kézi indítás ugyanarra a kulcsra menti a fájlt, és felülírja a
+  korábbit.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Export" href="/docs/export">
+    Az exports.create, poll, download és run kérése és válasza.
+  </Card>
+  <Card title="Ismétlődő időszakok" href="/docs/kiegeszitok/ismetlodo-idoszakok">
+    A billingPeriod és a todayPeriod hónap- és negyedéves időszakai.
+  </Card>
+  <Card title="Bizonylatok listája" href="/docs/bizonylatok/lista">
+    Ha nem fájl kell, hanem a számlák adatai a saját kódodban.
+  </Card>
+</Cards>

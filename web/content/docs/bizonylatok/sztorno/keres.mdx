@@ -1,0 +1,50 @@
+---
+title: Kérés
+description: A documents.cancel() bemenete. Az opcionális ok és címzettek, a dróton küldött cancellation_reason és cancellation_recipients, és miért POST a kérés, nem PUT.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CancelDocument
+---
+
+```ts
+tarca.documents.cancel(id: number, input?: CancelInput, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+```
+
+A tárca `POST /documents/{id}/cancel` kérést küld. A Billingo útmutatója `PUT`-ot ír, élőben az 405-öt ad.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+const sztorno = await tarca.documents.cancel(szamlaId, {
+  reason: 'A vevő elállt a vásárlástól.',
+  recipients: ['vevo@example.hu', 'konyveles@example.hu'],
+})
+
+console.log(sztorno.invoiceNumber, sztorno.grossTotal)
+```
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `reason` | `cancellation_reason` | – | A sztornó oka. Ha megadod, nem lehet üres. |
+| `recipients` | `cancellation_recipients` | – | Erre a címekre megy értesítés a sztornóról. Legalább egy, érvényes e-mail cím. |
+
+A Billingo a címzetteket egyetlen szövegként várja, ezért a tárca vesszővel fűzi össze őket. A fenti hívás törzse a hamis Billingóban:
+
+```json
+{
+  "cancellation_reason": "A vevő elállt a vásárlástól.",
+  "cancellation_recipients": "vevo@example.hu,konyveles@example.hu"
+}
+```
+
+Ha sem okot, sem címzettet nem adsz meg, a tárca törzs nélkül küldi a kérést. Élőben ez is működik.
+
+## Helyi ellenőrzés
+
+Üres ok vagy hibás e-mail cím kérés nélkül `validation` hibát ad, a `reason` vagy a `recipients.0` mezővel. A címet a tárca alakra nézi (szóköz, vessző és pontosvessző nélküli `név@domain.tld`), a többit a Billingo ellenőrzi.
+
+## Ismétlés
+
+A sztornó írás, a tárca hiba után nem ismétli meg. Hogy egy bizonytalan sztornó lefutott-e, az eredeti számla `cancelled` mezője mutatja meg, lásd [Válasz](/docs/bizonylatok/sztorno/valasz#bizonytalan-kimenet).

@@ -1,0 +1,65 @@
+---
+title: Válasz
+description: A bankAccounts.create() 201-es válasza a teljes bankszámlával, az élőben ellentmondásos üres törzs esete és a létrehozás hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/CreateBankAccount
+---
+
+A Billingo 201-gyel és a mentett bankszámlával válaszol, a tárca `Billingo.BankAccount` objektumként adja vissza. A mezőket a [Lekérés](/docs/bankszamlak/lekeres) írja le. A meg nem adott `accountNumberIban` és `swift` `''`, a `needQr` `false`.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | Az új bankszámla azonosítója, ezt adod át `bankAccountId`-ként a számlának. |
+| `accountNumberIban`, `swift` | `string` | Megadás nélkül `''`. |
+| `needQr` | `boolean` | Alapból `false`. |
+
+<Callout type="warning" title="Üres törzs is előfordulhat">
+  A tárca élő e2e futása (2026. november 15.) 201-et és teljes bankszámlát kapott. A hivatalos
+  Billingo MCP egy korábbi mérése (2026. október 14.) ugyanerre üres törzset rögzített. Ha ez
+  előjön, a tárca `unexpected_response` hibát dob, a bankszámla viszont ilyenkor már létezik:
+  keresd meg a listában, mielőtt újra létrehoznád.
+</Callout>
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 422 | `validation` | Hiányzik a név, a számlaszám vagy a pénznem. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs. |
+| 2xx | `unexpected_response` | Üres vagy nem JSON törzs. A bankszámla létrejött. |
+| 5xx | `server` | Billingo hiba. Nem tudni, létrejött-e a bankszámla. |
+| – | `network`, `timeout` | Nincs válasz. Nem tudni, létrejött-e a bankszámla. |
+
+A hamis Billingo hiányzó névre és számlaszámra ezt adja, a Billingo 422-es alakjában:
+
+```json
+{
+  "message": "Validation Failed",
+  "errors": [
+    { "field": "name", "message": "The name field is required." },
+    { "field": "account_number", "message": "The account number field is required." }
+  ]
+}
+```
+
+Bizonytalan hiba után a számlaszám alapján keresd meg a listában:
+
+```ts twoslash
+import { type BankAccountInput, createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+
+async function bankszamlaLetrehozasa(input: BankAccountInput) {
+  try {
+    return (await tarca.bankAccounts.create(input)).id
+  } catch (error) {
+    if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+    for await (const szamla of tarca.bankAccounts.all()) {
+      if (szamla.accountNumber === input.accountNumber) return szamla.id
+    }
+    return (await tarca.bankAccounts.create(input)).id
+  }
+}
+```

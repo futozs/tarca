@@ -1,0 +1,71 @@
+---
+title: Törlés
+description: Termék törlése a products.delete() hívással, a 204-es válasz, a törlés utáni 404 és a teendő bizonytalan hiba után.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/DeleteProduct
+---
+
+<Operation id="DeleteProduct" methods={['products.delete']} />
+
+## Kérés
+
+```ts
+tarca.products.delete(id: number, options?: { signal?: AbortSignal }): Promise<void>
+```
+
+Az egyetlen bemenet a termék azonosítója: `DELETE /v3/products/{id}`, törzs nélkül. Írás, ezért a tárca nem ismétli magától.
+
+## Válasz
+
+A Billingo 204-gyel, üres törzzsel válaszol (élőben nagyjából 1,1 másodperc alatt), a `delete()` `undefined`-dal teljesül. Utána a `get()` 404-et ad `Product is not found.` üzenettel.
+
+A már kiállított számlák tételei nem változnak: a bizonylat a kiállításkor lemásolja a termék adatait.
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 404 | `not_found` | A terméket már törölték. |
+| 403 | `forbidden` | Csak olvasó kulcs, vagy ismeretlen azonosító. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| – | `network`, `timeout` | Nincs válasz. Kérd le a terméket: ha 404 jön, a törlés lefutott. |
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function torol(id: number): Promise<void> {
+  try {
+    await tarca.products.delete(id)
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'not_found') return
+    throw error
+  }
+}
+```
+
+## Minta
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+const termek = await tarca.products.create({
+  name: 'Kávé 250 g',
+  currency: 'HUF',
+  vat: '27%',
+  unit: 'db',
+  netUnitPrice: 1_000,
+})
+
+await tarca.products.delete(termek.id ?? 0)
+console.log(await nullIfNotFound(tarca.products.get(termek.id ?? 0)))
+```
+
+A törlés a hamis Billingo felvétele szerint:
+
+```text
+DELETE /v3/products/1
+204, üres törzs
+```

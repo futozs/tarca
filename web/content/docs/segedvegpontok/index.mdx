@@ -1,0 +1,38 @@
+---
+title: Segédvégpontok
+description: A Billingo kisebb végpontjai a tárcában. A profil adatai, a kulcs ellenőrzése, adószám-ellenőrzés a NAV-on át, a Billingo szerverideje és a régi v2-es azonosítók átváltása.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Ezek a végpontok semmit nem állítanak ki és nem rögzítenek. Induláskor ellenőrizheted velük, hogy jó kulccsal és jó profillal dolgozol-e. A NAV-nál megnézheted egy vevő adószámát, egy régi v2-es integráció azonosítóit pedig átválthatod v3-asra.
+
+```ts
+const ervenyes = await tarca.verifyCredentials()
+```
+
+<Cards>
+  <Card title="Szervezet" href="/docs/segedvegpontok/szervezet">
+    `organization.get()`: adószám, előfizetés, NAV-kapcsolat. Ebből látod, hogy teszt vagy éles profil.
+  </Card>
+  <Card title="Kulcs ellenőrzése" href="/docs/segedvegpontok/kulcs-ellenorzese">
+    `verifyCredentials()`: `false` rossz kulcsra, minden más hibát továbbdob.
+  </Card>
+  <Card title="Adószám-ellenőrzés" href="/docs/segedvegpontok/adoszam-ellenorzes">
+    `utils.checkTaxNumber()`: a NAV adatai egy adószámról. Élő NAV-kapcsolat kell hozzá.
+  </Card>
+  <Card title="Szerveridő" href="/docs/segedvegpontok/szerverido">
+    `utils.serverTime()`: a Billingo órája, budapesti időzónában.
+  </Card>
+  <Card title="Régi azonosító" href="/docs/segedvegpontok/regi-azonosito">
+    `utils.convertLegacyId()`: v2-es azonosítóból v3-as.
+  </Card>
+</Cards>
+
+| Metódus | Kérés | Billingo művelet |
+| --- | --- | --- |
+| `organization.get()`, `verifyCredentials()` | `GET /organization` | `GetOrganizationData` |
+| `utils.checkTaxNumber(taxNumber)` | `GET /utils/check-tax-number/{tax_number}` | `CheckTaxNumber` |
+| `utils.serverTime()` | `GET /utils/time` | `GetServerTime` |
+| `utils.convertLegacyId(legacyId)` | `GET /utils/convert-legacy-id/{id}` | `GetId` |
+
+Mind `GET` kérés: a tárca hálózati hibánál, 429-nél és 5xx-nél magától újrapróbálja őket, és te is bármikor megismételheted.

@@ -1,0 +1,77 @@
+---
+title: Kliens beállítása
+description: A createTarca() összes opciója. API kulcs, címe, saját fetch, időkorlát, újrapróbálás, alapértékek, hookok és a createOnce zárja, az alapértékekkel és a hibás értékek kezelésével.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A tárcát a `createTarca()` függvénnyel hozod létre. Egy folyamatban elég egyszer, és mindenhol ugyanazt a példányt használd: a számlatömb-gyorsítótár és a `createOnce()` folyamaton belüli védelme is a klienshez tartozik.
+
+```ts twoslash title="lib/tarca.ts"
+import { createTarca } from 'tarcajs'
+
+export const tarca = createTarca({
+  timeoutMs: 20_000,
+  maxAttempts: 3,
+  retryDelayMs: 1_000,
+  defaults: { dueInDays: 15, sendEmail: true },
+  hooks: {
+    onError: (event) => console.warn(event.operation, event.error.category, event.willRetry),
+  },
+})
+```
+
+## Opciók
+
+| Opció | Típus | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `apiKey` | `string` | `BILLINGO_API_KEY` | A V3 API kulcs. Nélküle `configuration` hiba. Lásd [Hitelesítés](/docs/alapok/hitelesites). |
+| `baseUrl` | `string` | `https://api.billingo.hu/v3` | Az API címe. Proxyhoz vagy saját átjáróhoz. |
+| `fetch` | `typeof fetch` | `globalThis.fetch` | Saját `fetch`, például teszthez a hamis Billingo. |
+| `timeoutMs` | `number` | `30000` | Egy kérés időkorlátja ezredmásodpercben, 1 és 2 147 483 647 közötti egész. |
+| `maxAttempts` | `number` | `3` | Hány kérést küldhet egy lekérdezés összesen. Legalább 1 egész, legfeljebb 5 (nagyobb értéket a tárca 5-re vág). Írásra mindig 1. |
+| `retryDelayMs` | `number` | `1000` | Az első ismétlés előtti várakozás, utána duplázódik. Nemnegatív szám. |
+| `defaults` | `TarcaDefaults` | – | A bizonylatok alapértékei. Lásd [Alapértékek](/docs/alapok/alapertekek). |
+| `hooks` | `TarcaHooks` | – | Naplózás, metrikák, bizonylatnapló. Lásd [Hookok](/docs/alapok/hookok). |
+| `createOnceLock` | `KeyValueStore` | – | Közös zár a `createOnce()`-hoz több szerver között. Lásd [Pontosan egyszer](/docs/alapok/pontosan-egyszer#több-szerver-között). |
+
+Hibás opcióra (negatív időkorlát, tört `maxAttempts`, ismeretlen `defaults.currency`) a `createTarca()` azonnal `configuration` hibát dob, nem az első kérésnél. Ugyanez történik, ha nincs `fetch` a futtatókörnyezetben, és nem adtál meg sajátot.
+
+## Időkorlát és megszakítás
+
+A `timeoutMs` kérésenként érvényes, az ismétlések saját időkorlátot kapnak. Lejártakor `timeout` kategóriájú hiba jön.
+
+Minden metódus utolsó, opcionális paramétere egy `{ signal }` objektum. A saját `AbortSignal`-od és a `timeoutMs` közül az hat, amelyik előbb lejár:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const oldal = await tarca.partners.list({ query: 'Vevő' }, { signal: AbortSignal.timeout(5_000) })
+
+console.log(oldal.total)
+```
+
+A megszakítás az újrapróbálás várakozását is megszakítja. Írásnál a megszakítás nem vonja vissza a már elküldött kérést: ha a `POST` kiment, a számla elkészülhetett.
+
+## Saját fetch
+
+A `fetch` opció bármit elfogad, ami a szabványos `fetch` aláírását követi: naplózó csomagolót, proxyt, vagy a tesztekben a hamis Billingót.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
+
+const billingo = createFakeBillingoFetch()
+const tarca = createTarca({ apiKey: 'teszt-kulcs', fetch: billingo.fetch, retryDelayMs: 0 })
+
+const { taxCode } = await tarca.organization.get()
+
+console.log(taxCode, billingo.count('GetOrganizationData'))
+```
+
+A tesztekhez a `createMockTarca()` ennél kényelmesebb: [Tesztek](/docs/tesztek).
+
+## Több kliens
+
+Egy kulcs egy Billingo cégprofil. Több céghez több `createTarca()` kell, ezek egymástól függetlenek. Ugyanahhoz a fiókhoz két kliens is létrehozható (például más alapértékekkel), de a `createOnce()` folyamaton belüli közös kérése csak azonos fióknál és azonos `fetch`-nél működik.

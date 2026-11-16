@@ -1,0 +1,56 @@
+---
+title: Mi a tárca?
+description: A tárca nulla függőségű TypeScript kliens a Billingo API v3-hoz. Mit tud, mit nem, kinek szól, és miben más, mint a nyers REST API vagy a többi Billingo csomag.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A tárca egy npm csomag (`tarcajs`), amellyel TypeScriptből vagy JavaScriptből számlázol a Billingóban. A Billingo API v3 mind az 57 műveletét ismeri: számla, díjbekérő, előleg- és végszámla, nyugta, sztornó, módosító számla, befizetés, PDF, partnerek, termékek, készlet, számlatömbök, bankszámlák, költségek, export és árfolyam.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { document } = await tarca.documents.createOnce({
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+})
+
+console.log(document.invoiceNumber)
+```
+
+## Amit a tárca hozzátesz
+
+A Billingo REST API-t `fetch`-csel is hívhatod. A tárca azokat a részeket végzi el, amelyeket egy számlázó integrációban mindenkinek meg kell írnia:
+
+- **Pontosan egyszeri kiállítás.** A `createOnce()` a `vendorId` alapján dönt: ha a számla már elkészült, visszaadja, ha bizonytalan hiba után nem tudni, visszakeresi. Írást a tárca soha nem küld újra magától. Lásd [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
+- **Ellenőrzés a kérés előtt, magyarul.** A hibás áfakulcsot, a nem létező dátumot vagy a hiányzó árfolyamot a tárca jelzi, mezőnként, mielőtt bármi a Billingóhoz érne.
+- **Alapértékek.** Számlatömb, fizetési mód, határidő, nyelv, pénznem: egyszer megadod, vagy a tárca kitölti. A partnert adatokból megkeresi vagy létrehozza.
+- **Az élő API ismerete.** Ahol a Billingo másképp válaszol, mint a spec (403 a 404 helyett, 201 a 200 helyett, `null` mezők, a POS PDF tartalomtípusa), a tárca és a típusai a valódi viselkedést követik. Lásd [Élő eltérések](/docs/alapok/eles-elteresek).
+- **Egy hibatípus.** Minden hiba `BillingoError`, kategóriával, magyar üzenettel és javítási tippel. Lásd [Hibakezelés](/docs/alapok/hibakezeles).
+- **Hamis Billingo a tesztjeidhez.** A `tarcajs/testing` memóriában futó Billingót ad mind az 57 művelettel, ugyanazokkal a szabályokkal. Lásd [Tesztek](/docs/tesztek).
+
+A Billingón túl: fizetési webhookból bizonylat (Stripe, SimplePay, Barion, Revolut, PayPal), PDF mentése tárhelyre, bizonylatnapló, tömeges kiállítás, parancssor és MCP szerver AI asszisztenseknek. Ezek külön alcsomagok, a fő csomag nem húzza be őket: [Kiegészítők](/docs/kiegeszitok).
+
+## Amit a tárca nem csinál
+
+- **A bizonylat összegét nem a tárca számolja.** A nettó, áfa és bruttó értéket a Billingo adja; a tárca az egységárat és az áfakulcsot küldi. Előre csak a tömeges kiállítás próbafuttatása becsül, a Billingo kerekítési modelljével. Lásd [Kerekítés](/docs/bizonylatok/kiallitas/szabalyok/kerekites).
+- **Nem küld semmit máshová.** Csak a Billingo API-hoz beszél, telemetriát nem gyűjt.
+- **Nem kezeli a Billingo fiókodat.** Kulcsot, előfizetést, NAV összekötést a Billingo felületén állítasz be.
+- **Nem helyettesíti a könyvelőt.** Hogy egy ügyletre milyen bizonylat és áfakulcs jár, azt neked kell tudnod.
+
+## Futtatókörnyezetek
+
+Node.js 22-től, Bun, Deno és Cloudflare Workers alatt ugyanaz a kód fut, ESM és CommonJS buildként. Futásidejű függősége nincs, a natív `fetch`-et és a Web Crypto API-t használja. Kivétel a parancssor és a fájlrendszeres tárhely (`tarcajs/storage/fs`): ezek csak Node alatt futnak.
+
+## Független projekt
+
+A tárca nyílt forráskódú, MIT licencű projekt. Nem a Billingo fejleszti, és nem áll kapcsolatban vele. A Billingo saját MCP szervere (`@billingo/billingo-mcp`) AI asszisztenseknek szól, nem importálható könyvtár; a különbségeket az [MCP szerver](/docs/kiegeszitok/mcp-szerver) oldal írja le.
+
+A testvérprojektje a [kassza](https://kasszajs.hu), ugyanez a Számlázz.hu-hoz. Aki a kasszát ismeri, a tárcában ugyanazt a szerkezetet találja: `createOnce()`, alapértékek, hookok, hamis szolgáltatás a tesztekhez.
+
+A következő lépés: [Telepítés és az első számla](/docs/alapok/telepites).

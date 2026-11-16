@@ -1,0 +1,15 @@
+---
+title: Minta
+description: createOnce kétszer ugyanarra a rendelésre, majd egy elveszett válasz a hamis Billingóval. A második hívás és a visszakeresés is a meglévő számlát adja vissza.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/GetDocumentByVendorId
+---
+
+Az első hívás kiállítja a számlát, a második csak egy `GET /documents/vendor/RENDELES-1001` kérést küld. Az **Elküldött kérések** fülön látod, hogy `POST /documents` csak egyszer ment ki.
+
+<Example slug="pontosan-egyszer" />
+
+## Elveszett válasz
+
+Itt a hamis Billingo kiállítja a számlát, de a válasz helyett hálózati hibát ad. A `createOnce()` egy másodperc múlva visszakeresi a `vendorId` alapján, és `created: true` értékkel adja vissza. A kérések között ott a sikertelen `POST` és utána a visszakeresés.
+
+<Example slug="elveszett-valasz" />

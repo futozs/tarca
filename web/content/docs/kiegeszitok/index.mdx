@@ -1,0 +1,47 @@
+---
+title: Kiegészítők
+description: A tárca alcsomagjai a számlázás körüli munkához. Fizetési webhookok, hamis Billingo tesztekhez, PDF tárhely, közös tárolók, bizonylatnapló, tömeges számlázás, naplók és metrikák, Node adapter, parancssor és MCP szerver.
+---
+
+A fő `tarcajs` modul a Billingo API v3 hívásait intézi. A körülötte lévő feladatokra külön alcsomagok vannak, amelyeket csak akkor importálsz, ha kellenek. Egyiknek sincs futásidejű függősége, a gyökér egyiket sem húzza be, és a `tarcajs/storage/fs`, a `tarcajs/node` és a parancssor kivételével mind fut Node.js-en kívül is: Bunban, Denóban, Cloudflare Workersben és Vercel Edge-en.
+
+| Alcsomag | Mire való? |
+| --- | --- |
+| `tarcajs/payments` és szolgáltatónként `…/stripe`, `…/simplepay`, `…/barion`, `…/revolut`, `…/paypal` | [Fizetésből bizonylat](/docs/fizetesek): webhookok, `issueForPayment`, visszatérítés |
+| `tarcajs/testing` | [Mock kliens és hamis Billingo](/docs/tesztek) API kulcs és hálózat nélküli tesztekhez |
+| `tarcajs/storage`, `tarcajs/storage/fs` | [PDF tárhely](/docs/kiegeszitok/pdf-tarhely): a bizonylat PDF-je S3-ba, R2-be, Vercel Blobba, Supabase-be, UploadThingre vagy lemezre |
+| `tarcajs/stores` | [Tárolók](/docs/kiegeszitok/tarolok) a `createOnce` zárjához, a naplóhoz, a webhook ismétlés-szűrőhöz és a visszatérítés ledgeréhez |
+| `tarcajs/journal` | [Bizonylatnapló](/docs/kiegeszitok/bizonylatnaplo): minden kiállított bizonylat egy helyen, egyeztetés a Billingóval |
+| `tarcajs/batch` | [Tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas) és [ismétlődő időszakok](/docs/kiegeszitok/ismetlodo-idoszakok) |
+| `tarcajs/observe` | [Megfigyelhetőség](/docs/kiegeszitok/megfigyelhetoseg): kitakart naplók, OpenTelemetry spanok, Prometheus metrikák |
+| `tarcajs/node` | [Node, Express](/docs/kiegeszitok/node-express): webes kezelők Node `http`, Express, NestJS és Fastify alatt |
+| `tarcajs/mcp` | [MCP szerver](/docs/kiegeszitok/mcp-szerver) AI asszisztenseknek, és [HTTP kezelő](/docs/kiegeszitok/mcp-http) edge-re |
+
+A csomag egy `tarcajs` parancsot is ad (`npx tarcajs`), lásd [Parancssor](/docs/kiegeszitok/parancssor).
+
+<Cards>
+  <Card title="Parancssor" href="/docs/kiegeszitok/parancssor">
+    tarcajs doctor, verify, document get és az MCP szerver stdio-n.
+  </Card>
+  <Card title="MCP szerver" href="/docs/kiegeszitok/mcp-szerver">
+    21 eszköz, írás csak előnézettel és megerősítő kóddal.
+  </Card>
+  <Card title="AI asszisztensek" href="/docs/kiegeszitok/ai-asszisztensek">
+    Claude, Cursor és Copilot beállítása, és miben más, mint a Billingo saját MCP-je.
+  </Card>
+  <Card title="PDF tárhely" href="/docs/kiegeszitok/pdf-tarhely">
+    storeDocumentPdf, dátum szerinti kulcsok és hét adapter.
+  </Card>
+  <Card title="Tárolók" href="/docs/kiegeszitok/tarolok">
+    Redis, Upstash, Durable Object, Cloudflare KV, és melyik mire jó.
+  </Card>
+  <Card title="Bizonylatnapló" href="/docs/kiegeszitok/bizonylatnaplo">
+    record, track, settle és reconcile.
+  </Card>
+  <Card title="Tömeges számlázás" href="/docs/kiegeszitok/tomeges-szamlazas">
+    runBatch: ütemezve, pontosan egyszer, próbafutással.
+  </Card>
+  <Card title="Serverless és edge" href="/docs/kiegeszitok/serverless-es-edge">
+    Vercel, Cloudflare Workers, Deno és Bun: zár, időkorlát, webhookok.
+  </Card>
+</Cards>

@@ -1,0 +1,78 @@
+---
+title: Hitelesítés
+description: A Billingo V3 API kulcs létrehozása, az olvasó és az író jogosultság, a BILLINGO_API_KEY változó, egy kulcs egy cégprofil, több fiók egy folyamatban, és az előfizetés szerepe.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A Billingo API v3 egyetlen kulccsal hitelesít: a tárca minden kérésben elküldi az `X-API-KEY` fejlécben. Más hitelesítés nincs, token sem jár le.
+
+## Kulcs létrehozása
+
+1. A Billingo felületén: Beállítások → API kulcsok → Új API kulcs. A fejlesztői portál útvonala: Beállítások → Integrációk → API-kulcsok.
+2. Adj neki nevet, például a webshopod nevét. Minden integráció kapjon saját kulcsot, így egyenként visszavonhatod.
+3. Válaszd a **V3** változatot. A V2 kulcs (nyilvános és privát kulcspár) a tárcával nem működik.
+4. Válassz jogosultságot: **olvasás** vagy **olvasás és írás**.
+
+A kulcs azonnal működik, és bármikor szerkesztheted vagy törölheted. Kulcsot minden díjcsomagban korlátlanul hozhatsz létre, az ingyenesben is.
+
+| Jogosultság | Mire jó? | Írásra |
+| --- | --- | --- |
+| Olvasás | Lekérdezés, lista, PDF letöltése | `forbidden` (403) |
+| Olvasás és írás | Számlázás, partnerek, befizetések | működik |
+
+## A kulcs a tárcában
+
+A tárca sorrendben ezt nézi:
+
+1. a `createTarca({ apiKey })` opció,
+2. a `BILLINGO_API_KEY` környezeti változó (ha van `process.env`).
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca({ apiKey: process.env.BILLINGO_API_KEY })
+
+console.log(await tarca.verifyCredentials())
+```
+
+Ha egyik sincs, vagy üres, a `createTarca()` azonnal `configuration` hibát dob. A tárca a kulcsot nem naplózza: a hookok eseményeiben nincs benne, és a hamis Billingo `requests` naplója sem rögzíti.
+
+## Egy kulcs, egy cég
+
+A kulcs egy Billingo cégprofilhoz tartozik. Egy másik cég partner-, számlatömb- vagy bankszámla-azonosítójára a Billingo 403-at ad. Több céghez több kliens kell, mindegyik a saját kulcsával:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+declare const kulcsok: { bolt: string; etterem: string }
+
+const bolt = createTarca({ apiKey: kulcsok.bolt })
+const etterem = createTarca({ apiKey: kulcsok.etterem })
+
+const [boltRendben, etteremRendben] = await Promise.all([
+  bolt.verifyCredentials(),
+  etterem.verifyCredentials(),
+])
+
+console.log(boltRendben, etteremRendben)
+```
+
+A két kliens független: saját alapértékek, saját számlatömb-gyorsítótár, és a `createOnce()` is fiókonként véd.
+
+## Előfizetés és keret
+
+- Éles profilon az API-n keresztüli számlázáshoz a Billingo fizetős „API + Tömeges számlagenerálás” kiegészítője kell. A díjbekérőhöz, az e-számlához és a piszkozathoz emellett legalább Basic alapcsomag.
+- Ha hiányzik, a Billingo 402-t ad, a tárca `subscription` kategóriát.
+- A havi API keretbe csak az írások számítanak, a lekérdezések nem. A keret az előfizetés kezdőnapjától számított hónapra szól.
+- A fejlesztői teszt profilon előfizetés nélkül is működik az API: [Teszt profil](/docs/alapok/teszt-profil).
+
+## Hibák
+
+| Státusz | Kategória | Mit jelent? |
+| --- | --- | --- |
+| 401 | `auth` | Hiányzó vagy érvénytelen kulcs. A `verifyCredentials()` ilyenkor `false`. |
+| 401 | `nav_unavailable` | A kulcs jó, de a funkcióhoz élő NAV kapcsolat kell (például az adószám-ellenőrzés a teszt profilon). |
+| 402 | `subscription` | Nincs meg a szükséges előfizetés. Hogy az elfogyott havi keretre is ezt adja-e, a Billingo nem dokumentálja. |
+| 403 | `forbidden` | Csak olvasó kulcs írásnál, vagy másik cég azonosítója. |
+
+Hibabejelentéskor a Billingo ügyfélszolgálata a kulcs első hét karakterét kéri. A teljes kulcsot ne küldd el senkinek, és ne kerüljön naplóba vagy verziókezelőbe.

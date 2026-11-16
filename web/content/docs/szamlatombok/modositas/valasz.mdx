@@ -1,0 +1,63 @@
+---
+title: Válasz
+description: A documentBlocks.update() által visszaadott tömb a teljes csere után, a kiürülő mezők, a null e-mailre adott 422 és a módosítás hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/ListDocumentBlock
+---
+
+A Billingo 200-zal és a csere utáni teljes tömbbel válaszol, a tárca `Billingo.DocumentBlockSchema` objektumként adja vissza. A mezőket a [Lekérés](/docs/szamlatombok/lekeres) oldal írja le.
+
+## Mi ürül ki?
+
+Élőben a csak `name`, `prefix` és `type` mezőt tartalmazó PUT után:
+
+| Mező | Értéke a csere után |
+| --- | --- |
+| `customField1`, `customField2` | `''` |
+| `senderName` | `''` |
+| `senderEmail`, `bccEmail`, `bankAccountId` | `null` |
+| a jelzők | `false`, a `financialFulfillmentHighlight` `'basic'` |
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Üres név, vagy nem csak betűből, számból és szóközből áll. Nincs kérés. |
+| 422 | `validation` | Hiányzik a `prefix` vagy a `type`, vagy érvénytelen e-mail cím a `senderEmail`-ben vagy a `bccEmail`-ben. |
+| 403 | `forbidden` | Ismeretlen vagy törölt tömb, vagy csak olvasó kulcs. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 5xx | `server` | Billingo hiba. Nem tudni, lefutott-e a csere. |
+| – | `network`, `timeout` | Nincs válasz. |
+
+Élőben a `null` e-mail mezőkre ez a 422 jött; a tárca ezért hagyja ki őket:
+
+```json
+{
+  "message": "Validation Failed",
+  "errors": [
+    { "field": "sender_email", "message": "The Sender email must be a valid email address." },
+    { "field": "bcc_email", "message": "The Bcc email must be a valid email address." }
+  ]
+}
+```
+
+A PUT ugyanazzal a törzzsel megismételve ugyanazt az állapotot adja. Bizonytalan hiba után kérd le a tömböt, és ha még nem a kívánt állapotban van, küldd újra:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+
+async function egyediMezo(tombId: number, ertek: string) {
+  const tomb = await tarca.documentBlocks.get(tombId)
+  try {
+    return await tarca.documentBlocks.update(tombId, { ...tomb, customField1: ertek })
+  } catch (error) {
+    if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+    const most = await tarca.documentBlocks.get(tombId)
+    if (most.customField1 === ertek) return most
+    return tarca.documentBlocks.update(tombId, { ...most, customField1: ertek })
+  }
+}
+```

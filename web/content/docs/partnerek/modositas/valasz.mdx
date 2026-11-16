@@ -1,0 +1,70 @@
+---
+title: Válasz
+description: A partners.update() által visszaadott partner a teljes csere után, az élőben mért kiürülő mezők és a módosítás hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/UpdatePartner
+---
+
+A Billingo 200-zal és a csere utáni teljes partnerrel válaszol, a tárca `Billingo.Partner` objektumként adja vissza. A mezőket a [Lekérés](/docs/partnerek/lekeres) oldal írja le.
+
+## Mi ürül ki?
+
+Minden mező, amit a `replacement` nem tartalmaz, visszaáll a Billingo alapértékére. Élőben mértük:
+
+| Kihagyott mező | Értéke a csere után |
+| --- | --- |
+| `phone` | `''` |
+| `emails` | `[]` |
+| `iban` | `''` |
+
+A válaszban rögtön látod, mi ürült ki. Ha egy mezőnek meg kellett volna maradnia, itt derül ki:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const uj = await tarca.partners.create({
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  emails: ['vevo@example.hu'],
+})
+
+const csere = await tarca.partners.update(uj.id ?? 0, {
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+})
+
+console.log(csere.emails?.length ? 'rendben' : 'az e-mail címek elvesztek')
+```
+
+A már kiállított bizonylatokat a módosítás nem érinti: azok a kiállításkor lemásolták a partner adatait.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 422 | `validation` | Hiányzik a név vagy a cím egyik kötelező mezője. |
+| 404 | `not_found` | Nincs ilyen partner, vagy törölték. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs. |
+| 5xx | `server` | Billingo hiba. Nem tudni biztosan, lefutott-e a csere. |
+| – | `network`, `timeout` | Nincs válasz. |
+
+A PUT ugyanazzal a törzzsel megismételve ugyanazt az állapotot adja, ezért bizonytalan hiba után a cserét megismételheted. A tárca ezt nem teszi meg magától, mert írást soha nem ismétel:
+
+```ts twoslash
+import { createTarca, isBillingoError, type PartnerReplacement } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+
+async function cserel(id: number, uj: PartnerReplacement) {
+  try {
+    return await tarca.partners.update(id, uj)
+  } catch (error) {
+    if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+    return tarca.partners.update(id, uj)
+  }
+}
+```

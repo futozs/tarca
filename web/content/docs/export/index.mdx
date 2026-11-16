@@ -1,43 +1,36 @@
 ---
-title: Költségek és export
-description: Bejövő számlák rögzítése költségként, és a kiállított bizonylatok exportja CSV-be a tárcával. Az export elindítása, kivárása és letöltése egy hívásban.
+title: Export
+description: A kiállított bizonylatok exportja CSV-be vagy könyvelőprogram formátumába a tárcával. Az export elindítása, kivárása és letöltése egy exports.run() hívásban.
 official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentExport/Create
 ---
 
-## Export
+Az export egy időszak kiállított bizonylatainak listája, olyan formában, amit a könyvelőd vagy a könyvelőprogramja be tud olvasni. A Billingo nem azonnal adja a fájlt: elindítod az exportot, megvárod, amíg elkészül, aztán letöltöd. Ez három művelet, a tárca `exports.run()` metódusa egy hívásban elvégzi.
 
-<Example slug="export" />
-
-- Az `exports.run()` elindítja az exportot, megvárja, amíg elkészül (alapból legfeljebb 60 másodpercig), és letölti. Ha addig nem készül el, `not_ready` hibát ad az export azonosítójával, és később a `poll()` és a `download()` folytatja.
-- A `simple_csv` UTF-8 BOM-mal kezdődik, a mezőket pontosvessző választja el.
-
-<OperationTable pathPrefix="/document-export" />
-
-## Költségek
-
-```ts twoslash
-import { createTarca } from 'tarcajs'
-
-const tarca = createTarca()
-
-const koltseg = await tarca.spendings.create({
-  category: 'service',
-  currency: 'HUF',
-  conversionRate: 1,
-  totalGross: 12_700,
-  totalGrossHuf: 12_700,
-  totalVatAmount: 2_700,
-  totalVatAmountHuf: 2_700,
-  invoiceNumber: 'SZLA-2026-42',
-  invoiceDate: '2026-11-10',
-  fulfillmentDate: '2026-11-10',
-  dueDate: '2026-11-18',
-  paymentMethod: 'wire_transfer',
-})
-
-const fizetetlen = await tarca.spendings.list({ paymentStatus: 'unpaid' })
+```ts
+const fajl = await tarca.exports.run({ queryType: 'invoice_date', startDate, endDate, exportType: 'simple_csv' })
 ```
 
-A spec szerint opcionális `conversionRate`, `invoiceNumber`, `invoiceDate` és `dueDate` mezőt a Billingo megköveteli (forintnál az árfolyam `1`), ezért a tárca típusa is kötelezőnek írja. A forintos összegeket úgy tárolja, ahogy küldöd.
+<Operation id="Create" methods={['exports.create', 'exports.run']} />
+<Operation id="Poll" methods={['exports.poll', 'exports.run']} />
+<Operation id="Download" methods={['exports.download', 'exports.run']} />
 
-<OperationTable pathPrefix="/spendings" />
+<Cards>
+  <Card title="Kérés" href="/docs/export/keres">
+    Az ExportInput mezői, a run() várakozása, és hogyan hívd a három lépést külön.
+  </Card>
+  <Card title="Válasz" href="/docs/export/valasz">
+    A letöltött fájl, a simple_csv felépítése, az állapotok és a not_ready hiba kezelése.
+  </Card>
+  <Card title="Minta" href="/docs/export/minta">
+    Egy havi CSV export indítása, kivárása és letöltése a hamis Billingo ellen.
+  </Card>
+</Cards>
+
+<Callout type="info" title="Lejárt várakozás után ne indíts újat">
+  Ha az export a `maxWaitMs` alatt (alapból 60 másodperc) nem készül el, a `run()` `not_ready`
+  hibát dob, és az üzenetben megadja az export azonosítóját. Az export a Billingónál tovább készül,
+  a `poll()` és a `download()` hívással később letöltheted. Élőben egy egynapos CSV export 1,7
+  másodperc alatt elkészült.
+</Callout>
+
+A havi könyvelői exportot a [Havi export](/docs/receptek/havi-export) recept írja le lépésről lépésre. A költségek a [Költségek](/docs/koltsegek) fejezetben vannak.

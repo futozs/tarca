@@ -1,0 +1,42 @@
+---
+title: "subscription: az előfizetés nem engedi"
+description: "A subscription kategória: a Billingo 402-vel jelzi, hogy a díjcsomag nem engedi a műveletet, vagy lejárt az előfizetés. Mit nézz meg a Billingo fiókban, és mit nem lehet olvasással ellenőrizni."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | 402 |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false` |
+
+## Mikor jön elő
+
+- Éles profilon az API-n keresztüli kiállításhoz a fizetős „API + Tömeges” kiegészítő kell, a díjbekérőhöz és az e-számlához legalább a Basic csomag.
+- Lejárt az előfizetés.
+
+A havi API keretbe csak az írások számítanak. Hogy a keret kimerülésekor milyen választ ad a Billingo, az nincs dokumentálva, és élőben sem mértük. A Billingo saját MCP szervere szerint a napi írási kvóta kimerülése 400-as válasz, ezt a tárca `validation` kategóriának adja, lásd [Hibás adat](/docs/hibak/validation).
+
+A Billingo üzenete:
+
+```text
+402 {"error":{"message":"You do not have subscription for this operation"}}
+```
+
+A tárca üzenete `A Billingo előfizetés nem engedi ezt a műveletet.`, a `hint` az előfizetés adataihoz irányít. A fejlesztői teszt profil előfizetése élőben mérve a következő napig érvényes, ott ez a hiba nem jött elő.
+
+## Mi a teendő
+
+Újrapróbálni nincs értelme, a díjcsomagot vagy a kiegészítőt a Billingo felületén kell rendezni. A 402 végleges válasz: a bizonylat nem készült el, így a `createOnce` nem keres utána, hanem továbbadja a hibát. A [tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas) ennél a hibánál megáll.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const profil = await tarca.organization.get()
+
+console.log(profil.subscription?.expirationDate, profil.subscription?.features)
+```
+
+Olvasással nem lehet bebizonyítani, hogy egy éles profilon megvan-e az „API + Tömeges” kiegészítő, ezt csak egy 402-t adó írás mutatja meg. A `npx tarcajs doctor` ezért az előfizetés lejáratát és az `api_limit_*` funkciót nézi, és kimondja, hogy a hiány csak írásnál derül ki, lásd [Parancssor](/docs/kiegeszitok/parancssor).

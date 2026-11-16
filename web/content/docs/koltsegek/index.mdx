@@ -1,0 +1,52 @@
+---
+title: Költségek
+description: Bejövő számlák rögzítése költségként a Billingóban a tárca spendings erőforrásával. Lista és szűrés, létrehozás, lekérés, teljes cserés módosítás és törlés.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingList
+---
+
+A költség egy beérkezett számla adatai a Billingóban: a szállító számlaszáma, a bruttó összeg és az áfa, a dátumok és a fizetés módja. A Billingo erről nem állít ki bizonylatot, ezért a kiállított számlával ellentétben bármikor módosíthatod vagy törölheted. A tárcában a `tarca.spendings` kezeli.
+
+```ts
+const koltseg = await tarca.spendings.create(adatok)
+```
+
+<OperationTable pathPrefix="/spendings" />
+
+<Cards>
+  <Card title="Lista és szűrés" href="/docs/koltsegek/lista/keres">
+    Dátum, kategória, fizetési állapot és pénznem szerint, oldalanként vagy az `all()` bejárással.
+  </Card>
+  <Card title="Létrehozás" href="/docs/koltsegek/letrehozas/keres">
+    A kötelező mezők, a forintos összegek és a devizás költség árfolyammal.
+  </Card>
+  <Card title="Lekérés" href="/docs/koltsegek/lekeres">
+    Egy költség azonosító alapján, a `createdByNav` mezővel.
+  </Card>
+  <Card title="Módosítás" href="/docs/koltsegek/modositas/keres">
+    Teljes csere: a teljes költséget kell újraküldeni, a kihagyott mező kiürül.
+  </Card>
+  <Card title="Törlés" href="/docs/koltsegek/torles">
+    Végleges törlés, 204-es válasszal.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Négy mező kötelező, bár a spec nem írja">
+  A Billingo élőben 422-vel utasítja el a költséget `conversionRate`, `invoiceNumber`, `invoiceDate`
+  és `dueDate` nélkül, forintos költségnél is (ott az árfolyam `1`). A spec ezeket opcionálisnak
+  jelöli, a tárca `SpendingInput` típusa kötelezőnek, így a hiányukat már a fordító jelzi.
+</Callout>
+
+## Az összegek
+
+Egy költségnek két összegpárja van: az eredeti pénznemben (`totalGross`, `totalVatAmount`) és forintban (`totalGrossHuf`, `totalVatAmountHuf`). A Billingo a forintos értékeket úgy tárolja, ahogy elküldöd, nem számolja át az árfolyammal. A válaszban ezek `totalGrossLocal` és `totalVatAmountLocal` néven jönnek vissza. Forintos költségnél a két pár ugyanaz. Devizásnál a forintos értéket te számolod ki, például a [Billingo árfolyamával](/docs/arfolyam).
+
+## Élő eltérések röviden
+
+| Művelet | Eltérés a spectől | Hol olvashatsz róla? |
+| --- | --- | --- |
+| `create()`, `update()` | Négy mező élőben kötelező; a `partner` `null`, ha nincs `partnerId` | [Létrehozás, kérés](/docs/koltsegek/letrehozas/keres) |
+| `get()` | A mező neve `created_by_nav`, a spec `is_created_by_nav`-ot ír; a létrehozás válaszában nincs ilyen mező | [Lekérés](/docs/koltsegek/lekeres) |
+| `update()` | Teljes csere: a kihagyott `comment` üres szöveg lesz | [Módosítás, kérés](/docs/koltsegek/modositas/keres) |
+| `list()` | A `q` a számlaszámra nem talál | [Lista, kérés](/docs/koltsegek/lista/keres) |
+
+A tárca típusai ezeket már tartalmazzák (`Billingo.SpendingShow.createdByNav`, `partner: SpendingPartner | null`). Az összes mért eltérés az [Élő eltérések](/docs/alapok/eles-elteresek) oldalon van.

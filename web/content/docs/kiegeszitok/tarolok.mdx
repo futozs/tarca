@@ -1,0 +1,120 @@
+---
+title: Tárolók
+description: A tarcajs/stores kulcs-érték tárolói a createOnce zárjához, a bizonylatnaplóhoz, a webhook ismétlés-szűrőhöz és a visszatérítés ledgeréhez. Upstash, Redis, Durable Object, Cloudflare KV, atomikus műveletek és diagnoseStore.
+---
+
+A tárca több funkciója közös tárolót használ, és mindegyik ugyanazt a `KeyValueStore` felületet várja, mint a kassza:
+
+| Funkció | Hol állítod be | Mi kell hozzá |
+| --- | --- | --- |
+| A `createOnce` zárja több folyamat között | `createTarca({ createOnceLock })` | `setIfAbsent` |
+| A visszatérítés ledgere | `issueForPayment(…, { ledger })` | `setIfAbsent` |
+| A bizonylatnapló | `kvJournal(store)` | `increment` |
+| A webhook ismétlés-szűrő | `stripeWebhook({ dedupe })` és a többi | megbízható olvasás és írás |
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { diagnoseStore, type UpstashRedisLike, upstashRedisStore } from 'tarcajs/stores'
+
+declare const redis: UpstashRedisLike
+
+const store = upstashRedisStore(redis, { prefix: 'bolt:', timeoutMs: 2_000 })
+const tarca = createTarca({ createOnceLock: store })
+
+const allapot = await diagnoseStore(store)
+console.log(allapot.ok, allapot.suitableFor, allapot.problems)
+```
+
+A `redis` az `@upstash/redis` kliense (`Redis.fromEnv()`). Az adapter szerkezeti típust vár, így a tárca nem függ a csomagtól.
+
+## Adapterek
+
+| Adapter | Kliens | Atomikus műveletek |
+| --- | --- | --- |
+| `memoryStore()` | egy folyamaton belül (tesztek, egy példány) | igen |
+| `upstashRedisStore(redis)` | `@upstash/redis` | igen, ha a kliens tud `eval`-t |
+| `ioredisStore(redis)` | `ioredis` | igen, ha a kliens tud `eval`-t |
+| `nodeRedisStore(client)` | `redis` (node-redis) | igen, ha a kliens tud `eval`-t |
+| `durableObjectStore(stub)` | Cloudflare Durable Object | igen |
+| `cloudflareKvStore(namespace)` | Cloudflare KV | **nem** |
+| `customStore(store)` | a saját `get` / `set` / `delete` tárolód | amennyit a sajátod tud |
+
+A Vercel KV megszűnt (2024 decemberében átkerült az Upstash Redisbe, a `@vercel/kv` elavult): Vercelen a Marketplace Redist használd az `upstashRedisStore()`-ral. Az `upstashRedisStore()` az Upstash automatikus deszerializálását is visszafordítja, így a szám, a logikai érték és a JSON objektum szövegként jön vissza, ahogy a tárca eltárolta.
+
+## Atomikus műveletek
+
+A `get`, `set(key, value, ttlSeconds)` és `delete` mellett a felület három nem kötelező, atomikus műveletet ismer:
+
+| Művelet | Mire kell |
+| --- | --- |
+| `setIfAbsent(key, value, ttl)` | A `createOnce` zárja és a visszatérítés ledgere. Nélküle egyik sem működik. |
+| `increment(key, ttl)` | A bizonylatnapló napi indexe. |
+| `deleteIfEquals(key, value)` | A zár biztonságos feloldása: csak a saját zárát törli. |
+
+A Redis alapú adapterek ezeket Lua szkripttel valósítják meg a kliens `eval` függvényén keresztül. A TTL egész másodperc, legalább 1. A `storeCapabilities(store)` megmondja, melyik atomikus művelet érhető el.
+
+A Cloudflare KV-ben nincs atomikus írás, és a változás néhány másodperc alatt ér el minden helyre. Ismétlés-szűrőnek jó, a zárhoz, a naplóhoz és a ledgerhez nem. A legkisebb TTL-je 60 másodperc (`CLOUDFLARE_KV_MIN_TTL_SECONDS`).
+
+## Durable Object (Cloudflare Workers)
+
+```ts twoslash title="src/tarca-store.ts"
+import { type DurableObjectStorageLike, handleDurableObjectStoreRequest } from 'tarcajs/stores'
+
+export class TarcaStore {
+  constructor(private readonly state: { storage: DurableObjectStorageLike }) {}
+
+  fetch(request: Request): Promise<Response> {
+    return handleDurableObjectStoreRequest(this.state.storage, request)
+  }
+}
+```
+
+```ts twoslash title="src/index.ts"
+import { createTarca } from 'tarcajs'
+import { type DurableObjectStubLike, durableObjectStore } from 'tarcajs/stores'
+
+interface Env {
+  BILLINGO_API_KEY: string
+  TARCA_STORE: { idFromName(name: string): unknown; get(id: unknown): DurableObjectStubLike }
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const store = durableObjectStore(env.TARCA_STORE.get(env.TARCA_STORE.idFromName('tarca')))
+    const tarca = createTarca({ apiKey: env.BILLINGO_API_KEY, createOnceLock: store })
+    const profil = await tarca.organization.get()
+    return Response.json({ taxCode: profil.taxCode, url: request.url })
+  },
+}
+```
+
+A Durable Object egyszerre egy kérést dolgoz fel, ezért mind a hat művelete atomikus. A lejárt kulcsokat olvasáskor törli. A valódi Workers kódban az osztály a `cloudflare:workers` `DurableObject` osztályából származik, és a `this.ctx.storage`-ot adja át.
+
+## Hibakezelés
+
+Az adapterek közös opciói (`StoreAdapterOptions`):
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `prefix` | nincs | Minden kulcs elé, ha több alkalmazás osztozik egy tárolón. |
+| `timeoutMs` | nincs | Ennél lassabb művelet hibát ad. 1 és 2 147 483 647 közötti egész, más érték `configuration` hiba. |
+| `onError({ operation, key, error })` | nincs | Minden hiba ide is jön. |
+| `resilient` | `false` | `false`: minden hiba továbbmegy, így a zár `store_unavailable`-t ad, és nem készül bizonylat. `true`: a `get`, `set` és `delete` hibáját elnyeli (a `get` `undefined`-ot ad), az atomikus műveletekét nem. |
+
+A `resilientStore(store, { onError?, timeoutMs? })` ugyanez a burkoló; `onError` nélkül a konzolra figyelmeztet.
+
+<Callout type="warning" title="Hibatűrő tároló csak ismétlés-szűrőnek">
+  A `resilient: true` tároló a hibát csendben elnyeli. A webhook ismétlés-szűrőnek ez belefér, mert
+  a `createOnce` amúgy is megvéd a dupla bizonylattól. A zárhoz, a naplóhoz és a ledgerhez viszont
+  `resilient: false` kell: egy elnyelt hiba ott dupla bizonylathoz vezethet.
+</Callout>
+
+## Melyik tároló mire jó?
+
+A `diagnoseStore(store, { keyPrefix?, now? })` egy ideiglenes `tarca:diagnose:<véletlen>` kulccsal kipróbálja az írást, az olvasást, a törlést és minden atomikus műveletet, majd feltakarít. Az eredmény:
+
+```ts
+{ ok, capabilities, suitableFor: { createOnceLock, journal, webhookDedupe, refundLedger }, latencyMs, problems }
+```
+
+A `createOnceLock` és a `refundLedger` működő `setIfAbsent`-et, a `journal` működő `increment`-et, a `webhookDedupe` megbízható olvasást és írást kíván. A hibákat elnyelő tároló a visszaolvasáson bukik el. Egy `memoryStore()` mind a négyre alkalmas.

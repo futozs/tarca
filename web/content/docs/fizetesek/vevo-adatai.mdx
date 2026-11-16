@@ -1,0 +1,81 @@
+---
+title: Vevő adatai
+description: A partnerFromCustomer() a fizetés vevőadataiból Billingo partnert készít számlához. Belföldi, uniós és külföldi adószám, magánszemély, és mikor kell saját partnert megadnod.
+---
+
+Számlához partner kell. Az `issueForPayment()` alapból a fizetés `customer` mezőjéből készíti a `partnerFromCustomer()` függvénnyel, majd a `documents.createOnce` a [`partners.findOrCreate`](/docs/partnerek) segítségével megkeresi vagy létrehozza a Billingóban. Nyugtához nem kell partner: a tárca partner nélkül állítja ki, és a Billingo a közös `Magánszemély` partnert teszi rá.
+
+```ts twoslash
+import { partnerFromCustomer } from 'tarcajs/payments'
+
+console.log(
+  partnerFromCustomer({
+    name: 'Vevő Kft.',
+    email: 'vevo@example.hu',
+    taxNumber: '12345678-2-42',
+    address: { country: 'HU', zip: '1111', city: 'Budapest', line1: 'Fő utca 1.' },
+  }),
+)
+```
+
+```json
+{
+  "name": "Vevő Kft.",
+  "address": { "countryCode": "HU", "postCode": "1111", "city": "Budapest", "address": "Fő utca 1." },
+  "emails": ["vevo@example.hu"],
+  "taxcode": "12345678-2-42",
+  "taxType": "HAS_TAX_NUMBER"
+}
+```
+
+## A szabályok
+
+- **Kötelező:** név, irányítószám, város és utca (`line1`, a `line2` vesszővel hozzáfűzve). Ha bármelyik hiányzik, vagy az országkód nem kétbetűs, az eredmény `undefined`, és a számlához saját `partner` kell.
+- **Ország:** kétbetűs kód, nagybetűsítve. Ha nincs megadva, a Billingo alapértéke (`HU`) érvényes.
+- **Magyar adószám** (`12345678-1-23`, kötőjel nélkül is): `taxcode` a kötőjeles alakban, `taxType: 'HAS_TAX_NUMBER'`.
+- **Uniós vagy külföldi adószám** (`euTaxNumber`, vagy egy nem magyar formátumú `taxNumber`): `taxcode` az adószám, `taxType: 'FOREIGN'`.
+- **Nincs adószám:** `taxType: 'NO_TAX_NUMBER'`, magánszemély.
+- **Cég adószám nélkül** (`isBusiness: true`): `taxType` nélkül. Ilyenkor a Billingo a partner mentésekor dönti el.
+- **E-mail:** ha van, egyelemű `emails` lista.
+
+<Callout type="warning" title="Magyar vevő csak közösségi adószámmal">
+  Ha a vevő országa `HU`, vagy az adószáma `HU12345678` alakú, és nincs mellette belföldi adószám,
+  a tárca `validation` hibát ad: a magyar számlához és a NAV-hoz a belföldi adószám kell, a
+  közösségiből nem állítható vissza. Add meg a vevőt a `partner` opcióban a belföldi adószámmal.
+</Callout>
+
+## Melyik szolgáltató mit ad?
+
+| Szolgáltató | Név | Cím | Adószám |
+| --- | --- | --- | --- |
+| Stripe | Checkout `customer_details` (cégnév, ha van) | igen, ha bekéred | `hu_tin` → `taxNumber`, `eu_vat` → `euTaxNumber` |
+| SimplePay | `invoice.company` vagy név | igen | nincs |
+| Barion | a fizető neve vagy cégneve | nincs | nincs |
+| Revolut | `customer.full_name` | a számlázási vagy szállítási cím | nincs |
+| PayPal | a fizető neve | a fizető vagy a szállítási cím | nincs |
+
+A Barion nem ad címet, így belőle `partnerFromCustomer()` nem készít partnert. Ha mégis számla jár (a vevő számlát kér, vagy az összeg eléri a 900 000 Ft-ot), add meg a partnert a saját rendelésedből.
+
+## Saját partner
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { issueForPayment, type PaymentEvent } from 'tarcajs/payments'
+
+declare const payment: PaymentEvent
+
+const tarca = createTarca()
+
+const eredmeny = await issueForPayment(tarca, payment, {
+  vat: 27,
+  invoiceRequested: true,
+  partner: {
+    name: 'Vevő Kft.',
+    taxcode: '12345678-2-42',
+    taxType: 'HAS_TAX_NUMBER',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+})
+```
+
+A `partner` lehet egy meglévő Billingo partner azonosítója is. A `buyerIsBusiness: true` partner nélkül csak a döntést befolyásolja: számlát kér, de címet nem pótol.

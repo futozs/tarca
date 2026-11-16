@@ -1,0 +1,70 @@
+---
+title: Lekérés
+description: Egy bankszámla lekérése azonosító alapján a bankAccounts.get() hívással, a BankAccount hét mezője és a hibák.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/GetBankAccount
+---
+
+<Operation id="GetBankAccount" methods={['bankAccounts.get']} />
+
+## Kérés
+
+```ts
+tarca.bankAccounts.get(id: number, options?: { signal?: AbortSignal }): Promise<Billingo.BankAccount>
+```
+
+Az egyetlen bemenet a bankszámla azonosítója: `GET /v3/bank-accounts/{id}`, törzs nélkül. Olvasás, ezért a tárca 429, 5xx, hálózati hiba és időtúllépés után újrapróbálja.
+
+## Válasz
+
+A Billingo 200-zal és a bankszámlával válaszol.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A bankszámla azonosítója. |
+| `name` | `string` | Megnevezés. |
+| `accountNumber` | `string` | Belföldi bankszámlaszám. |
+| `accountNumberIban` | `string` | IBAN, élőben `''`, ha nincs megadva. |
+| `swift` | `string` | SWIFT kód, `''`, ha nincs megadva. |
+| `currency` | `Billingo.Currency` | Pénznem. |
+| `needQr` | `boolean` | Elavult jelző, alapból `false`. |
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 403 | `forbidden` | Ismeretlen vagy törölt bankszámla. A hamis Billingo így válaszol, ahogy az élő API a bizonylatokra és a számlatömbökre. Bankszámlára élőben nem mértük. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból összesen három kísérlettel. |
+
+Mivel ismeretlen azonosítóra 403 jöhet, a `nullIfNotFound()` itt nem ad `null`-t. Ha egy bankszámla létezését kell eldöntened, nézd meg a listában.
+
+## Minta
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const uj = await tarca.bankAccounts.create({
+  name: 'Fő számla',
+  accountNumber: '11111111-22222222-33333333',
+  currency: 'HUF',
+})
+
+const bankszamla = await tarca.bankAccounts.get(uj.id ?? 0)
+console.log(bankszamla.name, bankszamla.accountNumber, bankszamla.accountNumberIban)
+```
+
+A `get()` válasza a hamis Billingóból, a dróton ahogy jön:
+
+```json
+{
+  "id": 1,
+  "name": "Fő számla",
+  "account_number": "11111111-22222222-33333333",
+  "account_number_iban": "",
+  "swift": "",
+  "currency": "HUF",
+  "need_qr": false
+}
+```

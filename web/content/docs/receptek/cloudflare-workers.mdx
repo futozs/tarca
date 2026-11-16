@@ -1,0 +1,182 @@
+---
+title: Cloudflare Workers
+description: Cloudflare Worker, amely Stripe fizetésből pontosan egyszer állít ki bizonylatot, a createOnce zárat egy Durable Objectben tartja, a PDF-et pedig a válasz után R2-be menti.
+---
+
+Workersben egy kérést bármelyik példány kaphat, és a példányok nem osztoznak a memórián. A `createOnce` a `vendorId` visszakeresésével így is kivédi a második számlát, de ha két példány pontosan egyszerre kapja meg ugyanazt a Stripe eseményt, mindkettő elküldheti a `POST`-ot, mielőtt bármelyik megtalálná a másikét. Ezt egy közös zár zárja ki. Itt a zár egy Durable Object: egyszálú, és amíg a saját tárolójára vár, más kérést nem enged közbe, ezért a műveletei atomiak.
+
+Ez a Worker a Stripe webhookját fogadja, a fizetésből nyugtát vagy számlát állít ki, és a PDF-et a válasz elküldése után R2-be menti.
+
+## Beállítás
+
+```bash title="Terminál"
+npm install tarcajs
+npx wrangler r2 bucket create szamlak
+npx wrangler secret put BILLINGO_API_KEY
+npx wrangler secret put STRIPE_WEBHOOK_SECRET
+npx wrangler types
+```
+
+```json title="wrangler.jsonc"
+{
+  "name": "tarca-szamlazo",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [{ "name": "TARCA_ZAR", "class_name": "TarcaZar" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TarcaZar"] }],
+  "r2_buckets": [{ "binding": "SZAMLAK", "bucket_name": "szamlak" }]
+}
+```
+
+A tárca nem használ Node API-t, ezért a `nodejs_compat` jelző nem kell. A `DurableObjectNamespace`, `R2Bucket`, `ExecutionContext` és `ExportedHandler` típusokat a `wrangler types` generálja. Helyi fejlesztéshez a titkokat a `.dev.vars` fájlba írd, a fejlesztői teszt profil kulcsával.
+
+## A Worker
+
+```ts twoslash title="src/index.ts"
+// @filename: worker-configuration.d.ts
+declare module 'cloudflare:workers' {
+  export abstract class DurableObject<Env = unknown> {
+    protected ctx: DurableObjectState
+    protected env: Env
+    constructor(ctx: DurableObjectState, env: Env)
+    fetch?(request: Request): Response | Promise<Response>
+  }
+}
+interface DurableObjectState {
+  readonly storage: {
+    get(key: string): Promise<unknown>
+    put(key: string, value: unknown): Promise<void>
+    delete(key: string): Promise<boolean>
+  }
+}
+interface DurableObjectId {}
+interface DurableObjectStub {
+  fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>
+}
+interface DurableObjectNamespace<T = unknown> {
+  idFromName(name: string): DurableObjectId
+  get(id: DurableObjectId): DurableObjectStub
+}
+interface R2Bucket {
+  put(
+    key: string,
+    value: Uint8Array,
+    options: { httpMetadata: { contentType: string } },
+  ): Promise<{ key: string; size: number } | null>
+  get(key: string): Promise<{ key: string; size: number; arrayBuffer(): Promise<ArrayBuffer> } | null>
+  delete(key: string): Promise<void>
+}
+interface ExecutionContext {
+  waitUntil(promise: Promise<unknown>): void
+}
+interface ExportedHandler<Env> {
+  fetch?(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response>
+}
+// @filename: index.ts
+// ---cut---
+import { DurableObject } from 'cloudflare:workers'
+import { createTarca, type Tarca } from 'tarcajs'
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+import { r2BindingStorage, storeDocumentPdf } from 'tarcajs/storage'
+import { durableObjectStore, handleDurableObjectStoreRequest } from 'tarcajs/stores'
+
+interface Env {
+  readonly BILLINGO_API_KEY: string
+  readonly STRIPE_WEBHOOK_SECRET: string
+  readonly TARCA_ZAR: DurableObjectNamespace<TarcaZar>
+  readonly SZAMLAK: R2Bucket
+}
+
+export class TarcaZar extends DurableObject<Env> {
+  fetch(request: Request): Promise<Response> {
+    return handleDurableObjectStoreRequest(this.ctx.storage, request)
+  }
+}
+
+let tarca: Tarca | undefined
+
+export default {
+  async fetch(request, env, ctx): Promise<Response> {
+    const { pathname } = new URL(request.url)
+    if (request.method !== 'POST' || pathname !== '/webhooks/stripe') {
+      return new Response('Nincs ilyen útvonal', { status: 404 })
+    }
+
+    tarca ??= createTarca({ apiKey: env.BILLINGO_API_KEY })
+    const szamlazo = tarca
+    const zar = durableObjectStore(env.TARCA_ZAR.get(env.TARCA_ZAR.idFromName('tarca')))
+    const tarhely = r2BindingStorage(env.SZAMLAK)
+
+    const webhook = stripeWebhook({
+      secret: env.STRIPE_WEBHOOK_SECRET,
+      dedupe: zar,
+      onPayment: async (payment) => {
+        const eredmeny = await issueForPayment(szamlazo, payment, {
+          vat: 27,
+          lock: zar,
+          ledger: zar,
+        })
+        if (eredmeny.kind === 'receipt' || eredmeny.kind === 'invoice') {
+          const bizonylat = eredmeny.document
+          ctx.waitUntil(
+            storeDocumentPdf(szamlazo, tarhely, bizonylat).catch((error: unknown) => {
+              console.error('A PDF nem került az R2-be', bizonylat.id, error)
+            }),
+          )
+        }
+      },
+    })
+    return webhook(request)
+  },
+} satisfies ExportedHandler<Env>
+```
+
+## Mi miért van így
+
+**A kulcs az `env`-ből jön.** A `createTarca()` magától a `process.env.BILLINGO_API_KEY` változót olvasná, ez Workersben `nodejs_compat` nélkül nem létezik. Ezért a kulcsot az `apiKey` opció kapja az `env`-ből. Nélküle a `createTarca()` `configuration` hibát dobna.
+
+**A kliens izolátumonként egyszer készül.** A `tarca ??=` miatt egy Worker-izolátum minden kérése ugyanazt a klienst használja, így a számlatömbök lekérdezése is csak egyszer fut. A kliens létrehozása nem nyit kapcsolatot, kérést csak a hívásai küldenek.
+
+**Egy tároló, három szerep.** A Durable Object tároló minden műveletet tud, amit a tárca kér, a `setIfAbsent`-et is. Ugyanez szűri a Stripe ismételt kézbesítéseit (`dedupe`), ez tartja a `createOnce` zárat (`lock`), és ez a részleges visszatérítések főkönyve (`ledger`). A `durableObjectStore` csak a kérés idejére él, mert a Durable Object csonkját a kód kérésenként kéri el.
+
+**A PDF a válasz után.** A `ctx.waitUntil()` miatt a mentés a Stripe-nak küldött 200 után is folytatódik. Ha nem sikerül, csak a napló jelzi. A számla ettől még kész, a PDF a bizonylat azonosítójával később is menthető.
+
+## Buktatók
+
+<Callout type="warning" title="Cloudflare KV-t ne használj zárnak">
+  A KV csak idővel konzisztens, és nincs atomikus írása. Két példány ugyanabban a pillanatban
+  egyaránt „szabadnak” láthatja a kulcsot. Webhook-duplikációszűrésre jó (`cloudflareKvStore`), a
+  `createOnce` zárhoz, a bizonylatnaplóhoz és a visszatérítési főkönyvhöz nem. A
+  `diagnoseStore(tarolo)` megmondja, mire alkalmas egy tároló.
+</Callout>
+
+<Callout type="warning" title="A tároló hibája leállítja a kiállítást">
+  Ha a Durable Object nem válaszol, a `createOnce` `store_unavailable` hibát dob, és nem állít ki
+  semmit. A webhook 500-at ad, a Stripe később újraküldi. Ne kapcsold be a `resilient: true`
+  opciót a zárra: az elnyelné a hibát, és zár nélkül menne tovább.
+</Callout>
+
+<Callout type="info" title="Egy Durable Object minden zárnak">
+  Az `idFromName('tarca')` minden kérést ugyanahhoz a Durable Objecthez küld, így minden zár egy
+  helyen van. A lejárt bejegyzéseket a tároló olvasáskor törli.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Serverless és edge" href="/docs/kiegeszitok/serverless-es-edge">
+    A tárca Workersben, Vercel Edge-en, Denón és Bunon.
+  </Card>
+  <Card title="Tárolók" href="/docs/kiegeszitok/tarolok">
+    A durableObjectStore, az Upstash, a Redis és a KV adapter, a diagnoseStore.
+  </Card>
+  <Card title="PDF tárhely" href="/docs/kiegeszitok/pdf-tarhely">
+    Az r2BindingStorage és a többi tárhely adapter.
+  </Card>
+  <Card title="Stripe webhook" href="/docs/receptek/stripe-webhook">
+    Ugyanez Next.js útvonalként, a Stripe beállításával együtt.
+  </Card>
+</Cards>

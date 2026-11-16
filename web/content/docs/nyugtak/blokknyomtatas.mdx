@@ -1,0 +1,60 @@
+---
+title: Blokknyomtatás
+description: A nyugta PDF-je 58 vagy 80 mm széles pénztári blokknyomtatóra a documents.posPdf() metódussal. A válasz tartalomtípusa élőben application/octet-stream.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/PosPrint
+---
+
+A pénztárnál a nyugtát blokknyomtatón adod a vevőnek. A Billingo ehhez keskeny, 58 vagy 80 mm széles PDF-et ad: a `documents.posPdf()`. A művelet leírása, a hibák és az A4-es PDF a [PDF és link](/docs/bizonylatok/pdf) oldalon van.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { document } = await tarca.receipts.createOnce({
+  vendorId: 'POS-1001',
+  items: [{ name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 }],
+  paymentMethod: 'bankcard',
+})
+
+const blokk = await tarca.documents.posPdf(document.id ?? 0, { size: 80 })
+
+console.log(blokk.filename, blokk.contentType, blokk.bytes.length)
+```
+
+## Papírszélesség
+
+A `size` kötelező, `58` vagy `80`. Ez a nyomtató papírtekercsének szélessége milliméterben. Más érték kérés nélkül `validation` hibát ad. A dróton `GET /documents/{id}/print/pos?size=80` megy.
+
+## A válasz
+
+- A `bytes` egy PDF, `%PDF`-fel kezdődik. A tárca ezt ellenőrzi.
+- A `contentType` élőben `application/octet-stream`, nem `application/pdf`. Ha a fájlt böngészőnek vagy nyomtatási szolgáltatásnak adod tovább, a típust te állítsd `application/pdf`-re.
+- A `filename` a nyugta sorszáma: `NYT-2026-1.pdf`.
+
+Élőben a blokknyomtatós PDF nagyjából 1,3 másodperc alatt jött meg. A `posPdf()` nem várja ki a 202-es „még készül” választ, ahogy a `pdf()` teszi: ha ilyet kapsz, `not_ready` hibát dob.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const nyugtaId: number
+
+const blokk = await tarca.documents.posPdf(nyugtaId, { size: 58 })
+
+const valasz = new Response(blokk.bytes, {
+  headers: {
+    'content-type': 'application/pdf',
+    'content-disposition': `inline; filename="${blokk.filename ?? 'nyugta.pdf'}"`,
+  },
+})
+
+console.log(valasz.headers.get('content-type'))
+```
+
+## Minta
+
+A példa kiállít egy kétféle áfakulcsos nyugtát, és lekéri az 58 mm-es blokkját. A **Billingo válasz** fülön a `content-type: application/octet-stream` fejlécet és a rate limit fejléceket látod.
+
+<Example slug="nyugta-blokk" />

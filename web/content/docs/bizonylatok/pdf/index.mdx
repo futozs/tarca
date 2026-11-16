@@ -1,0 +1,37 @@
+---
+title: PDF és link
+description: A bizonylat PDF-je (documents.pdf), a blokknyomtatós változata 58 vagy 80 mm-re (documents.posPdf) és a nyilvános hivatkozása (documents.publicUrl). A 202-es várakozás és a POS tartalomtípusa.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/DownloadDocument
+---
+
+Három módon adhatod oda a vevőnek a bizonylatot: A4-es PDF-ként, blokknyomtatón, vagy egy linkkel, amely bejelentkezés nélkül megnyitja.
+
+<Operation id="DownloadDocument" methods={['documents.pdf']} />
+
+<Operation id="PosPrint" methods={['documents.posPdf']} />
+
+<Operation id="GetPublicUrl" methods={['documents.publicUrl']} />
+
+```ts
+const { bytes, filename } = await tarca.documents.pdf(szamla.id ?? 0)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/pdf/keres">
+    A maxWaitMs, a papírszélesség és a három kérés.
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/pdf/valasz">
+    A bájtok, a fájlnév, a tartalomtípus, a 202 és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/pdf/minta">
+    A4-es PDF, 80 mm-es blokk és nyilvános link a hamis Billingóval.
+  </Card>
+</Cards>
+
+<Callout type="info" title="A PDF néhány másodpercig készülhet">
+  Kiállítás után a Billingo 202-vel jelezheti, hogy a PDF még nincs kész. A `pdf()` ezt kivárja,
+  alapból legfeljebb 30 másodpercig. Élőben a PDF 1,6 másodperccel a kiállítás után már
+  letölthető volt.
+</Callout>
+
+A PDF tárhelyre mentéséhez lásd a [PDF tárhelyre](/docs/kiegeszitok/pdf-tarhely) kiegészítőt és a [PDF mentése](/docs/receptek/pdf-mentese) receptet.

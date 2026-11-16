@@ -1,0 +1,66 @@
+---
+title: Kérés
+description: A products.update() bemenete. A PUT teljes csere, pontosan egy árral, ezért a lekért termékből az egyik árat el kell hagyni.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/UpdateProduct
+---
+
+<Operation id="UpdateProduct" methods={['products.update']} />
+
+```ts
+tarca.products.update(id: number, input: ProductInput, options?: { signal?: AbortSignal }): Promise<Billingo.Product>
+```
+
+A bemenet ugyanaz a `ProductInput`, mint a [létrehozásnál](/docs/termekek/letrehozas/keres), a mezők táblájával együtt.
+
+<Callout type="warning" title="Teljes csere egy árral">
+  A Billingo a `PUT /products/{id}` törzsével felülírja a teljes terméket: élőben a kihagyott
+  `comment` `''` lett. Az árak közül pontosan egyet küldhetsz, két árra a Billingo ezt adja:
+  „You must specify only one price (net_unit_price or gross_unit_price)”. A tárca ezt kérés előtt
+  megfogja.
+</Callout>
+
+## Árváltozás a lekért termékből
+
+Kérd le a terméket, hagyd el az azonosítót és a nettó árat, és az új bruttó árral küldd vissza. A többi mező, köztük a megjegyzés és a cikkszám, így megmarad:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const uj = await tarca.products.create({
+  name: 'Kávé 250 g',
+  comment: 'Pörkölt szemes kávé',
+  currency: 'HUF',
+  vat: '27%',
+  unit: 'db',
+  netUnitPrice: 1_000,
+  sku: 'KAVE-250',
+})
+const termekId = uj.id ?? 0
+
+const { id: _, netUnitPrice: __, ...termek } = await tarca.products.get(termekId)
+const dragabb = await tarca.products.update(termekId, { ...termek, grossUnitPrice: 1_524 })
+
+console.log(dragabb.netUnitPrice, dragabb.comment, dragabb.sku)
+```
+
+## Helyi ellenőrzés
+
+Ugyanaz, mint a létrehozásnál: ár nélkül, két árral vagy nem véges árral a tárca `validation` hibát dob, és nem küld kérést. Mivel a `get()` mindkét árat visszaadja, a lekért termék változtatás nélküli visszaküldése is ide fut.
+
+## Ami a dróton megy
+
+A tárca a teljes `input`-ot snake_case-re alakítva küldi. Ha csak a kötelező mezőket és egy árat adsz meg, csak ezek mennek el, és a Billingo minden mást kiürít:
+
+```json
+{
+  "name": "Kávé 250 g",
+  "currency": "HUF",
+  "vat": "27%",
+  "unit": "db",
+  "net_unit_price": 3000
+}
+```
+
+A tárca a PUT-ot nem ismétli magától.

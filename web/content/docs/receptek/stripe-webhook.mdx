@@ -1,40 +1,129 @@
 ---
 title: Stripe webhook
-description: Next.js útvonal, amely a Stripe Checkout fizetéséből pontosan egyszer állít ki nyugtát vagy számlát a Billingóban, visszatérítéskor pedig sztornóz.
+description: Next.js útvonal, amely a Stripe fizetésből pontosan egyszer állít ki nyugtát vagy számlát a Billingóban, visszatérítéskor sztornóz vagy módosító számlát ad, Stripe SDK nélkül.
+official: https://docs.stripe.com/webhooks
 ---
+
+Ez a recept egy Next.js útvonal, amely a Stripe webhookját fogadja. Ellenőrzi az aláírást, a fizetésből nyugtát vagy számlát állít ki, visszatérítéskor pedig sztornóz, vagy módosító számlát készít. Stripe SDK nem kell hozzá, a Stripe API-t a tárca `fetch`-csel hívja.
+
+Az útvonal a [közös kliens](/docs/receptek/kozos-kliens) Vercel + Upstash változatát használja. A `tarolo` szűri ki a Stripe ismételt kézbesítéseit, és ez a főkönyv is, amely részleges visszatérítésnél kizárja a második módosító számlát.
+
+## Beállítás
+
+```dotenv title=".env.local"
+STRIPE_WEBHOOK_SECRET=whsec_a-vegpont-alairo-titka
+STRIPE_SECRET_KEY=sk_test_a-stripe-teszt-kulcsa
+```
+
+1. A Stripe Dashboardon a Developers → Webhooks alatt vegyél fel egy végpontot a `https://<a-te-domained>/api/stripe` címre.
+2. Iratkozz fel a `checkout.session.completed`, a `checkout.session.async_payment_succeeded`, a `charge.refunded` és a `charge.refund.updated` eseményre.
+3. A végpont aláíró titkát (`whsec_…`) tedd a `STRIPE_WEBHOOK_SECRET` változóba, a Stripe titkos kulcsát a `STRIPE_SECRET_KEY`-be.
+
+Helyi fejlesztéshez a Stripe CLI továbbítja az eseményeket: `stripe listen --forward-to localhost:3000/api/stripe`. Az aláíró titkot ilyenkor a CLI írja ki.
 
 ## Az útvonal
 
 ```ts twoslash title="app/api/stripe/route.ts"
-// @filename: tarca.d.ts
+// @filename: modulok.d.ts
 declare module '@/lib/tarca' {
   export const tarca: import('tarcajs').Tarca
+  export const tarolo: import('tarcajs').KeyValueStore
+}
+declare module '@/lib/ertesites' {
+  export function ertesitsdAKonyvelot(
+    eredmeny: import('tarcajs/payments').IssuedDocument,
+  ): Promise<void>
 }
 // @filename: route.ts
 // ---cut---
 import { issueForPayment } from 'tarcajs/payments'
 import { stripeWebhook } from 'tarcajs/payments/stripe'
-import { tarca } from '@/lib/tarca'
+import { ertesitsdAKonyvelot } from '@/lib/ertesites'
+import { tarca, tarolo } from '@/lib/tarca'
 
 export const POST = stripeWebhook({
   secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
   apiKey: process.env.STRIPE_SECRET_KEY,
-  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+  dedupe: tarolo,
+  onPayment: async (payment) => {
+    const eredmeny = await issueForPayment(tarca, payment, { vat: 27, ledger: tarolo })
+    if (eredmeny.kind === 'refund-proposal' || eredmeny.kind === 'refund-failed') {
+      await ertesitsdAKonyvelot(eredmeny)
+    }
+  },
 })
 ```
 
-## Beállítás a Stripe-ban
-
-1. A Stripe Dashboardon vegyél fel egy webhook végpontot a `https://<a-te-domained>/api/stripe` címre.
-2. Iratkozz fel a `checkout.session.completed`, a `checkout.session.async_payment_succeeded`, a `charge.refunded` és a `charge.refund.updated` eseményre.
-3. A végpont aláíró titkát tedd a `STRIPE_WEBHOOK_SECRET` változóba, a Stripe titkos kulcsát a `STRIPE_SECRET_KEY`-be.
-
-Az `apiKey` mellett a tárca lekéri a Checkout tételeit és a szállítási díjat, így a bizonylaton a valódi tételek szerepelnek. Nélküle egy tétel lesz a fizetett összegre.
+Az `ertesitsdAKonyvelot` a saját értesítő függvényed (e-mail, Slack, jegy). Csak akkor fut, ha egy visszatérítéshez embernek kell döntenie.
 
 ## Mi történik
 
 <Example slug="stripe-webhook" />
 
-- Hibás aláírásra 400 a válasz, és az `onPayment` nem fut.
-- Ha az `onPayment` dob (például a Billingo nem érhető el), 500 a válasz, és a Stripe később újraküldi. A bizonylat `vendorId`-ja a fizetés azonosítója (`STRIPE-pi_…`), ezért az újraküldés a meglévő bizonylatot adja vissza.
-- Visszatérítéskor a tárca sztornózza a bizonylatot. Részleges visszatérítéshez `ledger` kell: [Fizetésből bizonylat](/docs/fizetesek#visszatérítés).
+A sandbox ugyanazt az aláírt `checkout.session.completed` eseményt kétszer kézbesíti, harmadszor pedig hamis aláírással. Az Elküldött kérések fülön egyetlen `CreateReceipt` van, a második kézbesítésnél a tárca csak a `vendorId` alapján keres.
+
+- **Fizetés.** Az `issueForPayment` a fizetés azonosítójából képzi a `vendorId`-t (`STRIPE-pi_…`), és `createOnce`-szal állítja ki a bizonylatot. Nyugta lesz, kivéve ha a vevő adószámot adott meg, cégként vásárolt, vagy az összeg eléri a 900 000 Ft-ot: ilyenkor számla, amelyet a tárca a befizetéssel együtt fizetettnek jelöl. A döntés részletei: [Nyugta vagy számla](/docs/fizetesek/nyugta-vagy-szamla).
+- **Tételek.** Az `apiKey` mellett a tárca lekéri a Checkout tételeit és a szállítási díjat, így a bizonylaton a valódi tételek szerepelnek. Nélküle egy tétel lesz a fizetett összegre.
+- **Teljes visszatérítés.** A tárca egyszer sztornózza a bizonylatot. Nyugtánál a sztornó típusa `receipt_cancellation`.
+- **Részleges visszatérítés.** Ha a számlán egy áfakulcs van, módosító számla készül, visszatérítésenként pontosan egy, ezt a `ledger` biztosítja. Nyugtánál, vagy ha a számlán több áfakulcs van, a tárca `refund-proposal`-t ad: a jóváírás tételeiről embernek kell döntenie.
+- **Sikertelen visszatérítés.** Ha a Stripe a `charge.refunded` után mégsem tudja visszautalni a pénzt, a `charge.refund.updated` esemény `refund-failed`-et ad. A már kiállított sztornót vagy módosító számlát a tárca nem vonja vissza, ezt kézzel kell rendezni.
+
+## Válaszok a Stripe felé
+
+| Státusz | Mikor? | Mit tesz a Stripe |
+| --- | --- | --- |
+| 200 | Az `onPayment` lefutott, vagy az esemény már feldolgozott volt (`dedupe`). | Kész. |
+| 400 | Hibás aláírás, lejárt időbélyeg (5 percnél régebbi) vagy értelmezhetetlen törzs. Az `onPayment` nem fut. | Hibának veszi, és újraküldi, de amíg a titok rossz, a válasz ugyanez marad. |
+| 500 | Az ellenőrzés után valami hibát dobott: a Billingo nem érhető el, `in_progress`, hiányzó áfakulcs. | Később újraküldi, élő módban legfeljebb három napig. |
+
+Ha a kiállítás nem sikerült, az 500 a helyes válasz. Újraküldéskor a `createOnce` megtalálja a már elkészült bizonylatot, így egy fizetésből akkor sem lesz két nyugta, ha az első próbálkozás válasza veszett el.
+
+## Buktatók
+
+<Callout type="warning" title="Ne nyeld le a hibát az onPayment-ben">
+  Ha az `onPayment` elkapja és elnyeli a hibát, a webhook 200-at ad, a Stripe nem küldi újra, és a
+  fizetésnek nem lesz bizonylata. Embernek csak a `refund-proposal`, a `refund-failed` és a
+  `validation` hibát add át, minden más hibát engedj ki, hogy a webhook 500-at adjon.
+</Callout>
+
+<Callout type="warning" title="Az áfát a tárca nem találja ki">
+  A `vat: 27` minden tételre érvényes. Vegyes kulcsú kosárhoz a `vatFor(tetel)` függvénnyel add
+  meg tételenként. Ha egy tételnek nincs kulcsa, a tárca `validation` hibát dob, mielőtt bármit
+  küldene. A tételek bruttó összegének fillérre egyeznie kell a fizetett összeggel, különben szintén
+  `validation`, hacsak nem adod meg az `allowAmountMismatch: true` opciót.
+</Callout>
+
+<Callout type="info" title="Payment Element integráció">
+  Az `apiKey` nélkül a `payment_intent.succeeded` eseményből a tárca nem állít ki semmit: a
+  PaymentIntent nem hordoz vevőadatot, és a Checkout eseményhez képest nem garantált a sorrendje.
+  Checkout esetén ez rendben van, a munkamenet eseménye dönt. Ha Payment Elementet használsz,
+  az `apiKey` kötelező.
+</Callout>
+
+<Callout type="info" title="Visszatérítés a fizetés előtt">
+  Ha egy visszatérítés olyan fizetésre érkezik, amelynek még nincs bizonylata, a tárca
+  `in_progress` hibát dob, a webhook 500-at ad, és a Stripe a fizetés feldolgozása után újraküldi.
+  Így egy késve érkező fizetési esemény sem állít ki bizonylatot a már visszaadott pénzről.
+</Callout>
+
+<Callout type="info" title="A hiányzó titok a modul betöltésekor derül ki">
+  Üres `STRIPE_WEBHOOK_SECRET` mellett a `stripeWebhook()` már létrehozáskor `TypeError`-t dob.
+  Titokcseréhez tömböt is megadhatsz: `secret: [regi, uj]`.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Fizetésből bizonylat" href="/docs/fizetesek/bizonylat-fizetesbol">
+    Az issueForPayment összes opciója és eredménytípusa.
+  </Card>
+  <Card title="Stripe" href="/docs/fizetesek/stripe">
+    Az események, az aláírás és a Stripe API hívások részletei.
+  </Card>
+  <Card title="Részleges visszatérítés" href="/docs/fizetesek/reszleges-visszaterites">
+    Módosító számla, főkönyv és javaslat embernek.
+  </Card>
+  <Card title="Express, NestJS, Fastify" href="/docs/receptek/express-nestjs-fastify">
+    Ugyanez a webhook Node.js szerveren.
+  </Card>
+</Cards>

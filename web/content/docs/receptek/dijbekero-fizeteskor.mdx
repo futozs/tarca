@@ -1,0 +1,118 @@
+---
+title: Díjbekérő, majd számla fizetéskor
+description: Díjbekérő a megrendeléskor, belőle fizetett számla, amikor megérkezik az átutalás. A díjbekérő pontosan egyszer készül, és az átalakítás sem fut le kétszer.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Átutalásos fizetésnél előbb díjbekérőt küldesz, és csak a pénz megérkezése után állítasz ki számlát. A díjbekérő nem számviteli bizonylat, a NAV-hoz nem kerül, a belőle készült számla viszont igen. Ez a recept két függvény: az egyik a megrendeléskor küldi a díjbekérőt, a másik a bankszámlakivonat feldolgozásakor alakítja számlává.
+
+## A két függvény
+
+```ts twoslash title="lib/dijbekero.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+  export const tarolo: import('tarcajs').KeyValueStore
+}
+// @filename: dijbekero.ts
+// ---cut---
+import { type Billingo, type DocumentItemInput, isBillingoError, type PartnerInput } from 'tarcajs'
+import { tarca, tarolo } from '@/lib/tarca'
+
+const HARMINC_NAP = 30 * 24 * 60 * 60
+const BIZONYTALAN = new Set(['network', 'timeout', 'server', 'unexpected_response'])
+
+export async function dijbekerotKuldj(
+  rendelesId: number,
+  vevo: PartnerInput,
+  tetelek: readonly DocumentItemInput[],
+) {
+  const { document } = await tarca.documents.createOnce({
+    vendorId: `DIJBEKERO-${rendelesId}`,
+    type: 'proforma',
+    partner: vevo,
+    items: tetelek,
+    sendEmail: true,
+  })
+  return document
+}
+
+export async function atutalasMegerkezett(dijbekeroId: number): Promise<number> {
+  const kulcs = `dijbekero-szamla:${dijbekeroId}`
+  const meglevo = await tarolo.get(kulcs)
+  if (meglevo && meglevo !== 'folyamatban') return Number(meglevo)
+
+  const foglalt = await tarolo.setIfAbsent?.(kulcs, 'folyamatban', HARMINC_NAP)
+  if (!foglalt) {
+    throw new Error(`A(z) ${dijbekeroId} díjbekérő átalakítása elakadt, nézd meg a Billingóban.`)
+  }
+
+  let szamla: Billingo.Document
+  try {
+    szamla = await tarca.documents.createFromProforma(dijbekeroId, { dueInDays: 0 })
+  } catch (error) {
+    if (isBillingoError(error) && !BIZONYTALAN.has(error.category)) await tarolo.delete(kulcs)
+    throw error
+  }
+  await tarolo.set(kulcs, String(szamla.id), HARMINC_NAP)
+  await tarca.documents.archive(dijbekeroId)
+  return szamla.id ?? 0
+}
+```
+
+A `tarolo` a [közös kliens](/docs/receptek/kozos-kliens) Upstash tárolója. Bármelyik `setIfAbsent`-et tudó tároló jó, egy adatbázis-tábla egyedi kulccsal is.
+
+## Mi miért van benne
+
+**A díjbekérő `createOnce`-szal készül.** A `DIJBEKERO-1001` kulcs miatt egy megrendelésre akkor is egy díjbekérő lesz, ha a megrendelő kétszer kattint, vagy a feldolgozó újrafut. A díjbekérők külön számozást kapnak a Billingóban, az első sorszáma `000001`.
+
+**A számlát a Billingo a díjbekérőből készíti.** A `createFromProforma` a díjbekérő tételeivel állítja ki a számlát, a `dueInDays: 0` miatt mai fizetési határidővel. A számla már **fizetett** állapotban jön vissza (`paymentStatus: 'paid'`), a `relatedDocuments` mezőben a díjbekérővel. Befizetést ne rögzíts rá, mert az duplán számolná.
+
+**Az átalakításnak nincs `vendorId`-ja.** A `createFromProforma` nem kap kulcsot, és a Billingo nem utasítja el, ha valaki kétszer hívja. Ezért a recept előbb `folyamatban` értékkel lefoglalja a díjbekérőt, és csak utána küldi a kérést. Ha a Billingo egyértelműen elutasította a kérést (`validation`, `forbidden`, `subscription`), számla nem készült, a recept törli a foglalást, és a hiba elhárítása után újra hívhatod. Ha a válasz bizonytalan (`network`, `timeout`, `server`, `unexpected_response`), a foglalás megmarad, és a következő hívás nem küld új kérést, hanem hibát dob. Ilyenkor a Billingo felületén nézd meg, elkészült-e a számla, és az azonosítóját írd be kézzel a tárolóba.
+
+**Az archiválás eltünteti a díjbekérőt a listából.** Az `archive` után a díjbekérő nem jelenik meg a `documents.list()` találatai között. A Billingo a már számlává alakított díjbekérő archiválására is 204-et ad.
+
+## Mi megy a dróton
+
+<Example slug="dijbekero-szamla" operation="CreateDocumentFromProforma" />
+
+A `CreateDocumentFromProforma` kérés törzsében a tárca mindig elküldi a teljesítés napját és a fizetési határidőt, így a Billingo nem a saját alapértékét használja. A válaszban a számla `payment_status` mezője `paid`, a `related_documents` listában ott a díjbekérő.
+
+## Hibák
+
+| Kategória | Mikor? | Mit tegyél |
+| --- | --- | --- |
+| `subscription` (402) | Éles profilon a díjbekérőhöz legalább Basic alapcsomag és az „API + Tömeges” kiegészítő kell. | Előfizetés kell. Utána ugyanígy hívd újra. |
+| `validation` (400, 422) | Hibás bemenet: rossz áfakulcs, hiányzó tétel. A tárca a legtöbbet a kérés előtt, magyar `fieldErrors`-szal jelzi. | Javítsd a hívást. |
+| `forbidden` (403) | Ismeretlen vagy másik céghez tartozó azonosító. A Billingo bizonylatra 404 helyett 403-at ad. | Ellenőrizd az azonosítót. |
+| `network`, `timeout`, `server`, `unexpected_response` | Az átalakításnál bizonytalan: lehet, hogy a számla elkészült. | A foglalás megmarad, nézd meg kézzel. |
+
+<Callout type="warning" title="A sorrend számít">
+  Előbb a számla, utána az archiválás. Ha az archiválás nem sikerül, a számla már kész, és a
+  tárolóban is ott az azonosítója. Ilyenkor elég később az `archive`-ot megismételni. Az
+  `atutalasMegerkezett` újbóli hívása nem archivál, csak a meglévő számla azonosítóját adja vissza.
+</Callout>
+
+<Callout type="info" title="Melyik díjbekérőhöz tartozik az utalás?">
+  Az ügyfelek a közleménybe a díjbekérő sorszámát szokták írni, az `atutalasMegerkezett` viszont az
+  azonosítót várja. Mentsd el a díjbekérő `id`-ját és `invoiceNumber`-ét a megrendelés mellé,
+  amikor a `dijbekerotKuldj` visszatér, és a kivonat feldolgozásakor a saját adatbázisodban
+  keress. A Billingo bizonylatlistája 15–30 másodpercet késhet, párosításra nem megbízható.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Díjbekérő" href="/docs/bizonylatok/dijbekero">
+    A createFromProforma kérése, válasza és élő viselkedése.
+  </Card>
+  <Card title="Befizetés rögzítése" href="/docs/bizonylatok/befizetes">
+    Ha nem díjbekérővel dolgozol, így jelölheted fizetettnek a számlát.
+  </Card>
+  <Card title="Részletfizetés" href="/docs/receptek/reszletfizetes">
+    Részletekben érkező átutalás egy kiállított számlára.
+  </Card>
+  <Card title="Pontosan egyszer" href="/docs/alapok/pontosan-egyszer">
+    Miért kell kulcs minden írásnak, és mi a teendő bizonytalan hibánál.
+  </Card>
+</Cards>

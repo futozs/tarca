@@ -1,0 +1,82 @@
+---
+title: Típusok
+description: A Billingo hivatalos OpenAPI specifikációjából generált típusok camelCase alakban, import type { Billingo } formában. Az élő eltérésekkel javított mezők, a tárca saját bemeneti típusai és a TypeScript beállítások.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14
+---
+
+A tárca a Billingo összes sémáját típusként adja, a hivatalos OpenAPI specifikációból (3.0.14 és 3.0.15) generálva. Futásidejű kódot nem húznak be, csak típusok.
+
+```ts twoslash
+import type { Billingo } from 'tarcajs'
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+function lejart(szamla: Billingo.Document, ma: string): boolean {
+  return szamla.paymentStatus !== 'paid' && (szamla.dueDate ?? '') < ma
+}
+
+const afakulcs: Billingo.Vat = '27%'
+const fizetes: Billingo.PaymentMethod = 'wire_transfer'
+
+const oldal = await tarca.documents.list({ paymentStatus: 'outstanding' })
+
+const lejartak = oldal.data.filter((szamla) => lejart(szamla, '2026-11-16'))
+
+console.log(lejartak.length, afakulcs, fizetes)
+```
+
+## Ami a generált típusokban van
+
+- **camelCase mezőnevek.** A Billingo snake_case JSON-ja (`invoice_number`) a típusban és a futásidőben is camelCase (`invoiceNumber`). A tárca csak a határon alakít.
+- **Csak olvasható.** Minden mező `readonly`, a tömbök `readonly T[]`.
+- **Az élő API szerint javítva.** Ahol a valódi válasz eltér a spec-től, a típus a valóságot követi: a `null`-ként érkező mezők `| null` típusúak, a költség lekérésének mezője `createdByNav` (a spec `is_created_by_nav`-ot ír), az élőben kötelező mezők kötelezők. A teljes lista: [Élő eltérések](/docs/alapok/eles-elteresek).
+- **Felsorolások.** `Billingo.Vat`, `Billingo.PaymentMethod`, `Billingo.Currency`, `Billingo.DocumentLanguage`, `Billingo.DocumentType`, `Billingo.PaymentStatus`, `Billingo.Entitlement` és a többi szöveges unióként.
+
+A `null`-os mezőket `!= null`-lal vizsgáld, ne `!== undefined`-dal:
+
+```ts twoslash
+import type { Billingo } from 'tarcajs'
+
+declare const tetel: Billingo.DocumentItem
+
+if (tetel.sku != null) console.log('Cikkszám:', tetel.sku)
+```
+
+## A tárca saját típusai
+
+A metódusok bemenete nem mindig a nyers spec-típus: a tárca kényelmesebb alakot fogad, és abból építi a Billingo törzsét. Ezek is exportálva vannak:
+
+| Típus | Hol? |
+| --- | --- |
+| `DocumentInput`, `DocumentOnceInput`, `DraftFinalizeInput` | `documents.create()`, `createOnce()`, `finalizeDraft()` |
+| `DocumentItemInput` (`NetPricedItemInput`, `GrossPricedItemInput`, `ProductItemInput`), `VatInput` | tételek |
+| `ReceiptInput`, `ReceiptOnceInput`, `ReceiptFinalizeInput`, `ReceiptItemInput` | nyugták |
+| `CancelInput`, `SendInput`, `ModificationInput`, `ProformaConversionInput`, `PaymentInput` | bizonylatműveletek |
+| `DocumentListQuery`, `PartnerListQuery`, `ProductListQuery`, `SpendingListQuery`, `PageQuery` | listák |
+| `PartnerInput`, `PartnerReplacement`, `ProductInput`, `BankAccountInput`, `SpendingInput`, `DocumentBlockInput`, `ExportInput` | erőforrások |
+| `TarcaOptions`, `TarcaDefaults`, `TarcaHooks`, `CreateOnceOptions`, `PdfOptions`, `PosPdfOptions` | beállítások |
+| `Page`, `DocumentPdf`, `DocumentOnceResult`, `DocumentEvent` | eredmények |
+| `BillingoError`, `BillingoErrorCategory`, `FieldError`, `DocumentHookError` | hibák |
+
+```ts twoslash
+import type { DocumentInput, PartnerInput } from 'tarcajs'
+
+const vevo: PartnerInput = {
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+}
+
+export function szamlaRendelesbol(osszeg: number): DocumentInput {
+  return {
+    partner: vevo,
+    items: [{ name: 'Rendelés', quantity: 1, grossUnitPrice: osszeg, vat: 27 }],
+  }
+}
+```
+
+A `createRaw()` a nyers `Billingo.DocumentInsert`-et fogadja: [Nyers küldés](/docs/bizonylatok/kiallitas/szabalyok/nyers-kuldes).
+
+## Műveletek
+
+A `BILLINGO_OPERATIONS` export futásidőben is elérhető: minden Billingo művelet operationId-ja, HTTP metódusa, útvonala és az, hogy melyik spec írja le. Az `OperationId` típus ezekből az azonosítókból áll, a hookok eseményeiben is ez szerepel. Lásd [Műveletek](/docs/alapok/muveletek).

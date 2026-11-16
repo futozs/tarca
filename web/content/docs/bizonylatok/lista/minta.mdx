@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Három számla, majd a kifizetetlenek kettesével lapozva, végül az összes számla bejárása az all() iterátorral, a ténylegesen elküldött query paraméterekkel.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/ListDocument
+---
+
+A példa három számlát állít ki, majd lekéri a kifizetetleneket kettesével. Az első oldal a két legújabbat adja, a `lastPage` 2. Utána az `all()` végigmegy az összes számlán, és összeadja a bruttó végösszegeket. Az **Elküldött kérések** fülön a két `GET /documents` kérés query paramétereit látod: az elsőben `per_page=2`, az `all()` kérésében `per_page=100`.
+
+<Example slug="bizonylat-lista" />
+
+A hamis Billingo listája nem késik. Élőben a frissen kiállított számlák 15–30 másodpercig hiányozhatnak belőle.

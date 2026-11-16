@@ -1,0 +1,62 @@
+---
+title: Régi azonosító
+description: A Billingo API v2 azonosítóinak átváltása v3-as azonosítóra a utils.convertLegacyId() hívással. Bármely pozitív számra determinisztikus választ ad.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Util/GetId
+---
+
+Ha egy régi integrációd a Billingo API v2-vel dolgozott, az eltárolt azonosítók a v3-ban nem érvényesek. A `utils.convertLegacyId()` megadja egy v2-es azonosító v3-as párját.
+
+<Operation id="GetId" methods={['utils.convertLegacyId']} />
+
+## Kérés
+
+```ts
+tarca.utils.convertLegacyId(legacyId: number, options?: RequestOptions): Promise<Billingo.Id>
+```
+
+A `legacyId` a v2-es azonosító. Az útvonalban megy: `GET /utils/convert-legacy-id/{id}`, törzs nélkül.
+
+## Válasz
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A v3-as azonosító. |
+| `legacyId` | `number` | A kérésben küldött v2-es azonosító. |
+
+<Callout type="warning" title="Az id nem bizonyítja, hogy létezik">
+  Élőben a Billingo bármely pozitív számra 200-zal válaszolt, egy friss teszt profilon is: a `123`
+  és egy véletlen kilencjegyű szám is kapott azonosítót, és a `123` kétszer lekérve ugyanazt adta
+  (2026. november 15.). A válaszból tehát nem derül ki, hogy a v2-es azonosító valaha létezett-e
+  a cégnél. Az átváltott azonosítóval kérd le az erőforrást, és csak akkor tekintsd érvényesnek,
+  ha a lekérés sikerül.
+</Callout>
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { id } = await tarca.utils.convertLegacyId(987_654)
+const partner = id === undefined ? null : await nullIfNotFound(tarca.partners.get(id))
+
+console.log(partner?.name ?? 'Nincs ilyen partner a v3-ban.')
+```
+
+A kérésben nem adod meg, milyen erőforrásról van szó (bizonylat, partner, termék), ezt neked kell tudnod a régi azonosító forrásából. Bizonylatnál ne a `nullIfNotFound()`-ra hagyatkozz, mert a `documents.get()` ismeretlen azonosítóra élőben 403-at ad, nem 404-et.
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 404 | `not_found` | A hamis Billingo így válaszol nullára vagy negatív számra. Élőben ezt nem mértük. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból legfeljebb három próbálkozásig. |
+| – | `network`, `timeout` | Nem jött válasz. A tárca ezt is újrapróbálja. |
+
+A hamis Billingo a valódihoz hasonlóan minden pozitív számra determinisztikus azonosítót számol. Ha a tesztedben pontos párokra van szükség, a `legacyIds` opcióval rögzítheted őket: `createFakeBillingoFetch({ legacyIds: { 123: 41_330_552 } })`.
+
+## Minta
+
+A példa kétszer váltja át a `123`-at, és összeveti a két választ. A kiemelt kérések az átváltások:
+
+<Example slug="szerverido-es-azonosito" operation="GetId" />
+
+A konzolon a `true` azt jelenti, hogy a két `id` egyezik.

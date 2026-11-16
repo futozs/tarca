@@ -1,19 +1,10 @@
 ---
 title: Nyugták
-description: Nyugta kiállítása partnerrel vagy partner nélkül, bruttó árakkal, a nyugtatömbbe. Pontosan egyszeri kiállítás, piszkozat és sztornó a tárcával.
+description: Nyugta kiállítása bruttó árakkal a nyugtatömbbe, partnerrel vagy partner nélkül, pontosan egyszer, piszkozatból, sztornóval és blokknyomtatással a tárca receipts erőforrásával.
 official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceipt
 ---
 
-<Operation id="CreateReceipt" methods={['receipts.create', 'receipts.createOnce']} />
-
-<Example slug="nyugta" />
-
-- A nyugta a `defaults.receiptBlockId` vagy az első `receipt` típusú tömbbe kerül, fizetettként, a határidő a kiállítás napja.
-- A nyugta árai bruttók. Az áfa `5`, `18`, `27` vagy `'none'`, `'AAM'`, `'TAM'` lehet. A mennyiség alapból 1, az egység `db`.
-- Partner nélkül a Billingo a közös „Magánszemély” partnert teszi rá.
-- Fizetési mód nélkül a `defaults.paymentMethod` érvényes, ha az sincs, `cash`. Ha a számláid átutalásosak, a nyugtáidon pedig kártya szerepel, add meg minden nyugtán a `paymentMethod`-ot.
-
-## Pontosan egyszer, piszkozat, sztornó
+A nyugta a Billingóban külön bizonylattípus: a `receipt` típusú nyugtatömbbe kerül, az árai bruttók, és kiállításkor már fizetett. A tárcában a `tarca.receipts` állítja ki, a lekérés, a sztornó és a PDF pedig ugyanaz, mint a számláknál (`tarca.documents`).
 
 ```ts twoslash
 import { createTarca } from 'tarcajs'
@@ -21,18 +12,54 @@ import { createTarca } from 'tarcajs'
 const tarca = createTarca()
 
 const { document, created } = await tarca.receipts.createOnce({
-  vendorId: 'KASSZA-2026-0042',
-  items: [{ name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 }],
+  vendorId: 'POS-1001',
+  items: [
+    { name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 },
+    { name: 'Croissant', grossUnitPrice: 750, vat: 5 },
+  ],
   paymentMethod: 'bankcard',
 })
 
-if (document.id !== undefined) await tarca.documents.cancel(document.id)
+console.log(document.invoiceNumber, document.grossTotal, created)
 ```
 
-- A `receipts.createOnce()` ugyanúgy működik, mint a számláé: [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
-- Nyugta piszkozatból: `receipts.create({ type: 'draft', ... })`, majd `receipts.finalizeDraft(id, ...)`.
-- A nyugta sztornója a `documents.cancel()`, a sztornó típusa `receipt_cancellation`.
+<Cards>
+  <Card title="Kiállítás" href="/docs/nyugtak/kiallitas">
+    receipts.create() és receipts.createOnce(): tételek, nyugtatömb, fizetési mód, partner.
+  </Card>
+  <Card title="Piszkozat" href="/docs/nyugtak/piszkozat">
+    Nyugta piszkozat és véglegesítése a receipts.finalizeDraft() metódussal.
+  </Card>
+  <Card title="Sztornó" href="/docs/nyugtak/sztorno">
+    A nyugta sztornója receipt_cancellation típusú bizonylattal.
+  </Card>
+  <Card title="Blokknyomtatás" href="/docs/nyugtak/blokknyomtatas">
+    58 és 80 mm-es PDF a pénztári blokknyomtatóra.
+  </Card>
+</Cards>
+
+## Miben más, mint a számla?
+
+| | Nyugta | Számla |
+| --- | --- | --- |
+| Metódus | `receipts.create()`, `receipts.createOnce()` | `documents.create()`, `documents.createOnce()` |
+| Tömb | az első `receipt` típusú tömb vagy `defaults.receiptBlockId` | az első `invoice` típusú tömb vagy `defaults.blockId` |
+| Sorszám | `NYT-2026-1` | `2026-1` |
+| Ár | csak bruttó (`grossUnitPrice`) | nettó vagy bruttó |
+| Áfa | `5`, `18`, `27`, `'none'`, `'AAM'`, `'TAM'` | a teljes `Billingo.Vat` lista |
+| Partner | nem kötelező | kötelező |
+| Fizetési mód alapértéke | `defaults.paymentMethod`, különben `'cash'` | `defaults.paymentMethod`, különben `'wire_transfer'` |
+| Fizetési állapot | mindig `paid` | `outstanding`, amíg nem rögzítesz befizetést |
+| Határidő | a kiállítás napja | `dueDate` vagy `dueInDays` |
+
+A `vendorId` közös térben van: egy `POS-1001` nyugta után nem állíthatsz ki `POS-1001` számlát.
 
 ## Nyugta vagy számla?
 
-Fizetési webhookból a tárca dönt helyetted: számla jár, ha a vevő adószámot adott meg, ha az összeg eléri a 900 000 Ft-ot, vagy ha a vevő számlát kér; egyébként nyugta. Lásd [Fizetésből bizonylat](/docs/fizetesek).
+Magánszemélynek, pénztárnál vagy webshopban jellemzően nyugta jár, cégnek vagy kérésre számla. Fizetési webhookból a `tarcajs/payments` dönt helyetted a vevő adatai és az összeg alapján: [Nyugta vagy számla](/docs/fizetesek/nyugta-vagy-szamla).
+
+<Callout type="info" title="Nyugta-adatszolgáltatás">
+  2026. szeptember 1-jétől a nyugták adatai is a NAV-hoz kerülnek. A beküldést a Billingo végzi,
+  új API végpont nincs hozzá: a nyugta `kobakReceiptStatus` mezője mutatja az állapotát (`pending`,
+  `success`, `error_no_access`, `error_permanent`). A teszt profilon a nyugta `pending` marad.
+</Callout>

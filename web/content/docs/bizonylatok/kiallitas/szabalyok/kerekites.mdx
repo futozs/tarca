@@ -1,0 +1,65 @@
+---
+title: Kerekítés
+description: A Billingo számolja a számla összegeit, áfakulcsonként kerekítve. Bruttó egységárból hat tizedes nettó egységár, forintos és devizás számla, élőben mért példákkal.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A tárca nem számol összeget: az egységárat, a mennyiséget és az áfakulcsot küldi el, a nettó, áfa és bruttó értéket a Billingo számolja ki. Az alábbi szabályokat a fejlesztői teszt profilon mértük, és a hamis Billingo ugyanígy számol.
+
+## Forintos számla
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.create({
+  partner: 1,
+  items: [
+    { name: 'Szoftverlicenc', quantity: 1, netUnitPrice: 10_000, vat: 27 },
+    { name: 'Szakkönyv', quantity: 3, netUnitPrice: 1_000, vat: 5 },
+    { name: 'Póló', quantity: 3, grossUnitPrice: 1_270, vat: 27 },
+  ],
+})
+
+console.log(szamla.grossTotal, szamla.summary?.vatRateSummary)
+```
+
+| Áfakulcs | Nettó | Áfa | Bruttó |
+| --- | --- | --- | --- |
+| 27% | 13 000 | 3 510 | 16 510 |
+| 5% | 3 000 | 150 | 3 150 |
+| Összesen | 16 000 | 3 660 | 19 660 |
+
+A Billingo áfakulcsonként összesít és kerekít, nem tételenként. A forintos `*Local` mezők ugyanezek az értékek.
+
+## Bruttó egységár
+
+Bruttó egységárú tételnél a Billingo a nettó egységárat hat tizedesre számolja: a legkisebb hat tizedes szám, amely a bruttó / (1 + kulcs) fölött van. 1270 Ft bruttó 27%-kal: `netUnitAmount: 1000.000001`, 10 Ft bruttó 27%-kal: `7.874016`. A tétel bruttó értéke pontosan a megadott bruttó ár és a mennyiség szorzata marad, a nettó érték ebből vissza van osztva.
+
+Ezért a válaszban a nettó egységár nem kerek szám. Megjelenítéshez kerekítsd, összehasonlításhoz a tétel `grossAmount` mezőjét használd.
+
+## Devizás számla
+
+Élőben 389,17-es árfolyammal, euróban: 27% nettó 12,34 × 3 és 5% nettó 0,99 × 7.
+
+| | 27% | 5% | Összesen |
+| --- | --- | --- | --- |
+| Nettó | 37,02 | 6,93 | 43,95 |
+| Áfa | 10,00 | 0,35 | 10,34 |
+| Bruttó | 47,02 | 7,28 | 54,29 |
+| Áfa forintban (`vatRateVatAmountLocal`) | 3 890 | 135 | `vatAmountLocal`: 4 024 |
+
+- A devizás összegek két tizedesre kerekednek, áfakulcsonként.
+- A `netAmountLocal` és a `grossAmountLocal` nincs kerekítve: `17104.0215` és `21128.0393`.
+- A forintos áfa kulcsonként egészre kerekített (3 890 és 135, összesen 4 025), a `summary.vatAmountLocal` viszont a teljes devizás áfából számol: 10,34 × 389,17 = 4 024. A kettő 1 forinttal eltér.
+
+## Nyugta
+
+Nyugtán az ár bruttó, és a Billingo ugyanígy számol: élőben egy 1270 Ft-os, 27%-os nyugtatétel nettó egységára is `1000.000001` lett. A hamis Billingóban két kávé 600 Ft-ért és egy croissant 750 Ft-ért (27% és 5%) 1 950 Ft, ebből áfa 255,12 és 35,71, a forintos áfa kulcsonként 255 és 36.
+
+## Kerekítés készpénznél
+
+A `settings.round` (`'none'`, `'one'`, `'five'`, `'ten'`) a végösszeg kerekítése készpénzes fizetéshez. A tárca alapból nem küldi, a Billingo `none`-t tárol. Lásd [Értesítés és rendelésszám](/docs/bizonylatok/kiallitas/szabalyok/ertesites-es-rendelesszam#nyers-settings).
+
+Előnézetet a Billingo nem ad: összeget csak kiállított bizonylatról kapsz. A tömeges kiállítás próbafuttatása (`runBatch({ dryRun: true })`) ugyanezzel a modellel becsül: [Tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas).

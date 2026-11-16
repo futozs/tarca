@@ -1,0 +1,152 @@
+---
+title: Kérés
+description: A documents.create() bemenete mezőről mezőre, a Billingo snake_case mezőivel és az alapértékekkel. Mit ellenőriz a tárca a kérés előtt, és pontosan mit küld a POST /documents kérésben.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+```ts
+tarca.documents.create(input: DocumentInput, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+```
+
+Kötelező csak a `partner` és legalább egy tétel (`items`). Minden más mezőnek van alapértéke, vagy elhagyható. A tárca a camelCase bemenetet a Billingo snake_case JSON-jává alakítja, és `POST /documents` kérésben küldi el.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.create({
+  vendorId: 'WEB-1001',
+  partner: 1,
+  blockId: 1,
+  items: [
+    { name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 },
+    { name: 'Tankönyv', quantity: 2, grossUnitPrice: 4_200, vat: 5 },
+  ],
+  fulfillmentDate: '2026-11-16',
+  dueDate: '2026-12-01',
+  comment: 'Köszönjük a megrendelést.',
+  orderNumber: 'ORDER-1001',
+})
+
+console.log(szamla.invoiceNumber, szamla.grossTotal)
+```
+
+## Fejléc
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `partner` | `partner_id` | – | **Kötelező.** Egy meglévő partner azonosítója, vagy a partner adatai (`PartnerInput`). Az adatokat a `partners.findOrCreate()` alakítja azonosítóvá, lásd [Partner megadása](/docs/bizonylatok/kiallitas/szabalyok/partner-megadasa). |
+| `items` | `items` | – | **Kötelező**, legalább egy tétel. Lásd lent. |
+| `type` | `type` | `'invoice'` | `'invoice'`, `'proforma'` (díjbekérő), `'advance'` (előlegszámla) vagy `'draft'` (piszkozat). |
+| `vendorId` | `vendor_id` | – | A te azonosítód, például a rendelésszám. A Billingo fiókon belül egyedi, és kereshető vele. A `createOnce()`-hoz kötelező. |
+| `blockId` | `block_id` | `defaults.blockId`, különben az első `invoice` típusú tömb | A számlatömb. Lásd [Fizetés és megjelenés](/docs/bizonylatok/kiallitas/szabalyok/fizetes-es-megjelenes). |
+| `bankAccountId` | `bank_account_id` | `defaults.bankAccountId` | A számlán megjelenő bankszámla. Elhagyható, átutalásos számlánál is. |
+| `fulfillmentDate` | `fulfillment_date` | ma, Budapesten | A teljesítés napja: `Date` vagy `'YYYY-MM-DD'`. |
+| `dueDate` | `due_date` | ma + `dueInDays` | A fizetési határidő. A `dueInDays`-szel együtt nem adható meg. |
+| `dueInDays` | (a `due_date`-be számolva) | `defaults.dueInDays`, alapból `8` | A határidő napokban, a mai budapesti naptól. |
+| `paymentMethod` | `payment_method` | `defaults.paymentMethod`, különben `'wire_transfer'` | Fizetési mód, a `Billingo.PaymentMethod` egyik értéke. |
+| `language` | `language` | `defaults.language`, alapból `'hu'` | A számla nyelve. |
+| `currency` | `currency` | `defaults.currency`, alapból `'HUF'` | Pénznem. |
+| `conversionRate` | `conversion_rate` | – | Árfolyam. Nem forintos számlához kötelező, lásd [Deviza](/docs/bizonylatok/kiallitas/szabalyok/deviza). |
+| `electronic` | `electronic` | `defaults.electronic`, alapból `false` | E-számla legyen-e. |
+| `comment` | `comment` | – | Megjegyzés a számlán. |
+| `sendEmail` | `settings.should_send_email` | `defaults.sendEmail`, alapból `false` | A Billingo kiküldje-e a számlát a partner e-mail címeire. |
+| `orderNumber` | `settings.order_number` | – | Rendelésszám a számlán. |
+| `settings` | `settings` | – | A nyers `Billingo.DocumentSettings`. A `sendEmail` és az `orderNumber` felülírja a benne lévő értéket. |
+| `advanceInvoiceIds` | `advance_invoice` | – | Végszámlán a levonandó előlegszámlák azonosítói, lásd [Előleg- és végszámla](/docs/bizonylatok/elolegszamla). |
+| `discountPercent` | `discount: { type: 'percent', value }` | – | Bizonylatszintű százalékos kedvezmény. Élőben nem próbáltuk, lásd [Tételek és áfa](/docs/bizonylatok/kiallitas/szabalyok/tetelek-es-afa#kedvezmény). |
+
+A `defaults` a `createTarca()` opciója, egyszer adod meg a kliensnek: [Alapértékek](/docs/alapok/alapertekek).
+
+## Tételek
+
+Egy tétel háromféle lehet: nettó árú, bruttó árú vagy a Billingóban tárolt termék.
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező**, nem lehet üres. |
+| `quantity` | `quantity` | – | **Kötelező**, véges szám. Módosító számlán negatív is lehet. |
+| `netUnitPrice` | `unit_price`, `unit_price_type: 'net'` | – | Nettó egységár. |
+| `grossUnitPrice` | `unit_price`, `unit_price_type: 'gross'` | – | Bruttó egységár. A kettő közül pontosan az egyik kell. |
+| `vat` | `vat` | – | **Kötelező.** Szám (`27` → `'27%'`, `5.5` → `'5,5%'`) vagy Billingo kód (`'AAM'`, `'TAM'`, `'EU'` …). |
+| `unit` | `unit` | `'db'` | Mennyiségi egység. |
+| `comment` | `comment` | – | Megjegyzés a tételhez. |
+| `entitlement` | `entitlement` | – | Áfamentesség jogcíme (`Billingo.Entitlement`). |
+| `sku` | `sku` | – | Cikkszám. |
+| `productId` | `product_id` | – | Tárolt termék. Ilyenkor csak `quantity` és `comment` adható mellé, a nevet, az árat és az áfát a termék adja. |
+
+A részletek, az áfakódok listája és a termékes tétel: [Tételek és áfa](/docs/bizonylatok/kiallitas/szabalyok/tetelek-es-afa).
+
+## Amit a tárca a kérés előtt ellenőriz
+
+A hibás bemenetre a tárca kérés nélkül dob `validation` kategóriájú `BillingoError`-t. A `fieldErrors` minden hibás mezőt felsorol, magyar üzenettel:
+
+| `field` | Mikor? |
+| --- | --- |
+| `type` | A típus nem `invoice`, `proforma`, `advance` vagy `draft`. |
+| `vendorId` | Üres, vagy `.` és `..` (ezek a Billingo útvonalában útvonal-lépésnek számítanának). |
+| `partner`, `partner.name`, `partner.address` | Nem pozitív egész azonosító, vagy a partner neve üres, a címe hiányzik. |
+| `blockId`, `bankAccountId` | Nem pozitív egész. |
+| `items` | Üres vagy hiányzó tétellista. |
+| `items.0` | Egyik ár sincs megadva, vagy mindkettő. |
+| `items.0.name`, `items.0.quantity`, `items.0.netUnitPrice`, `items.0.vat` | Üres név, nem véges szám, ismeretlen áfakulcs. |
+| `fulfillmentDate`, `dueDate` | Nem létező dátum (`2026-02-30`), rossz formátum, vagy a `dueDate` és a `dueInDays` együtt. |
+| `dueInDays` | Nem nemnegatív egész. |
+| `paymentMethod`, `language`, `currency` | Ismeretlen Billingo érték. |
+| `conversionRate` | Nem forintos számla árfolyam nélkül, vagy nem pozitív szám. |
+| `electronic`, `sendEmail` | Nem `true` vagy `false`. |
+| `advanceInvoiceIds.0` | Nem pozitív egész. |
+| `discountPercent` | Nem 0-nál nagyobb, legfeljebb 100 szám. |
+
+A hibaüzenet `hint` mezője ilyenkor azt mondja: a tárca a kérést el sem küldte. Semmi nem jött létre a Billingóban, a hívás javítva megismételhető.
+
+## Mi megy a dróton
+
+A fenti példa egyetlen kérést küld, mert a partner és a számlatömb azonosítója is megvan. A hamis Billingo ezt a törzset rögzítette:
+
+```json
+{
+  "vendor_id": "WEB-1001",
+  "type": "invoice",
+  "fulfillment_date": "2026-11-16",
+  "due_date": "2026-12-01",
+  "payment_method": "wire_transfer",
+  "language": "hu",
+  "currency": "HUF",
+  "electronic": false,
+  "items": [
+    {
+      "name": "Webfejlesztés",
+      "quantity": 10,
+      "unit": "óra",
+      "vat": "27%",
+      "unit_price": 15000,
+      "unit_price_type": "net"
+    },
+    {
+      "name": "Tankönyv",
+      "quantity": 2,
+      "unit": "db",
+      "vat": "5%",
+      "unit_price": 4200,
+      "unit_price_type": "gross"
+    }
+  ],
+  "comment": "Köszönjük a megrendelést.",
+  "settings": { "should_send_email": false, "order_number": "ORDER-1001" },
+  "block_id": 1,
+  "partner_id": 1
+}
+```
+
+A tárca mindig elküldi a `type`, a dátumok, a `payment_method`, a `language`, a `currency`, az `electronic` és a `settings.should_send_email` mezőt, akkor is, ha nem adtad meg őket. Így a számla nem a Billingo fiók pillanatnyi beállításaitól függ.
+
+Ha a partnert adatokkal adod meg, és nincs `blockId` sem, a kérések sorrendje:
+
+1. `GET /document-blocks?type=invoice&per_page=100`: az első számlatömb. Kliensenként egyszer fut, utána a tárca megjegyzi.
+2. `GET /partners?query=<név>`: a partner keresése, legfeljebb három oldalon.
+3. `POST /partners`: csak akkor, ha nincs pontosan ilyen partner.
+4. `POST /documents`: maga a számla.
+
+Az első három kérés hibája után számla nem ment ki, a hívás biztonságosan megismételhető. A negyedik kérést a tárca sosem ismétli meg.

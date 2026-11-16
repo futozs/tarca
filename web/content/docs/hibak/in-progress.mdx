@@ -1,0 +1,55 @@
+---
+title: "in_progress: egy másik folyamat dolgozik rajta"
+description: "Az in_progress kategória: a createOnce zárját egy másik folyamat tartja ugyanarra a vendorId-ra, vagy egy visszatérítéshez még nincs bizonylat. Nem kell kézzel kiállítani, később hívd újra."
+---
+
+| | |
+| --- | --- |
+| HTTP | nincs |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false`, de később ugyanúgy hívd újra |
+
+## Mikor jön elő
+
+**A `createOnce` zárja.** Ha `createOnceLock` (vagy a hívás `lock` opciója) be van állítva, a `createOnce` a kiállítás előtt lefoglalja a `vendorId`-t a közös tárolóban. Ha egy másik folyamat tartja, a tárca legfeljebb `lockWaitMs` ideig vár (alapból 10 000 ms), utána `in_progress` hibát ad: `Egy másik folyamat éppen kiállítja ezt a bizonylatot (vendorId: …), 10 másodperc várakozás után sem végzett.` Egy folyamaton belül ez nem fordul elő: az azonos `vendorId`-ra érkező hívások egy kérést osztanak meg.
+
+**Visszatérítés bizonylat nélkül.** Az `issueForPayment()` visszatérítésnél `in_progress` hibát ad, ha a fizetésnek még nincs bizonylata, ha egy módosított számla módosítója a lassú listában még nem látszik, vagy ha egy másik folyamat tartja a visszatérítés ledger kulcsát. Lásd [Visszatérítés](/docs/fizetesek/visszaterites).
+
+**Tömeges számlázás.** A `runBatch()` az `in_progress` tételt kihagyja (`skipped`), a többit folytatja.
+
+## Mi a teendő
+
+Ne állítsd ki kézzel. Néhány másodperc múlva hívd újra ugyanúgy: a zár felszabadulása után a `createOnce` a `vendorId` alapján megtalálja a bizonylatot. Webhookban adj vissza 5xx választ, hogy a küldő később újrapróbálja.
+
+```ts twoslash
+import { createTarca, isBillingoError, type KeyValueStore } from 'tarcajs'
+
+declare const store: KeyValueStore
+
+const tarca = createTarca({ createOnceLock: store })
+
+export async function POST(request: Request): Promise<Response> {
+  const rendeles: { id: string } = await request.json()
+  try {
+    await tarca.documents.createOnce(
+      {
+        vendorId: `ORDER-${rendeles.id}`,
+        partner: {
+          name: 'Vevő Kft.',
+          address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+        },
+        items: [{ name: 'Webfejlesztés', quantity: 10, netUnitPrice: 15_000, vat: 27 }],
+      },
+      { lockWaitMs: 5_000 },
+    )
+    return new Response('OK')
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'in_progress') {
+      return new Response('Folyamatban', { status: 503, headers: { 'retry-after': '10' } })
+    }
+    throw error
+  }
+}
+```
+
+A zár a `lockTtlSeconds` (alapból 600) után magától lejár, ha a tartó folyamat összeomlott. Melyik tároló alkalmas zárnak: [Tárolók](/docs/kiegeszitok/tarolok).

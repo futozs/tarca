@@ -1,0 +1,33 @@
+---
+title: Válasz
+description: A products.list() által visszaadott Page, a termékek mezői a listában és a lista hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/ListProduct
+---
+
+A `list()` egy `Page<Billingo.Product>` objektumot ad vissza, az `all()` ugyanezeket a termékeket egyenként.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `data` | `readonly Billingo.Product[]` | Az oldal termékei, mindkét árral. |
+| `total` | `number` | Az összes találat száma. |
+| `perPage` | `number` | Oldalméret. |
+| `currentPage` | `number` | Az aktuális oldal sorszáma. |
+| `lastPage` | `number` | Az utolsó oldal sorszáma. |
+
+A listaelem a teljes `Product` objektum, a mezőit a [Lekérés](/docs/termekek/lekeres) oldal írja le.
+
+## Élő eltérések
+
+- A `purchasePrice` a listában `0`, ha nincs beszerzési ár; a létrehozás és a módosítás válasza ugyanerre `null`-t ad.
+- Az `entitlement` és a `connectProductId` `null` lehet, holott a spec nem engedi. Vizsgáld `!= null` feltétellel.
+- A Billingo a lapozó borítékban `null` `prev_page_url` és `next_page_url` értéket küld az első és az utolsó oldalon. A tárca ezeket a mezőket nem adja tovább.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `RangeError` | Hibás `page` vagy `perPage`. Nincs kérés. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429 | `rate_limit` | Túl sok kérés. A tárca a `Retry-After` szerint újrapróbálja. |
+| 5xx | `server` | Billingo hiba. A tárca újrapróbálja, alapból összesen három kísérlettel. |
+| – | `network`, `timeout` | Nincs válasz. A tárca ezt is újrapróbálja. |

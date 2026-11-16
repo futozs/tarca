@@ -1,0 +1,45 @@
+---
+title: "forbidden: megtagadott művelet"
+description: "A forbidden kategória: a Billingo 403-mal utasította el a kérést. Csak olvasási jogú kulcs, másik cég azonosítója, vagy ismeretlen bizonylat és számlatömb, amelyre a Billingo 404 helyett 403-at ad."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | 403 |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false` |
+
+## Mikor jön elő
+
+- **Csak olvasási jogú kulcs** bármelyik írásnál.
+- **Másik cég azonosítója:** egy kulcs egy Billingo céghez tartozik, a másik cég bizonylatát, partnerét nem éri el.
+- **Ismeretlen vagy törölt bizonylat és számlatömb.** Élőben mérve a `documents.get` és a `documentBlocks.get` ismeretlen azonosítóra nem 404-et, hanem 403-at ad. A partner, a termék és a költség ezzel szemben 404-et ad.
+
+```text
+403 {"error":{"message":"You do not have permission for this operation. Or any ID in request is invalid or you do not have permission."}}
+```
+
+A tárca üzenete `A Billingo megtagadta a műveletet.`, utána a Billingo üzenete.
+
+## Mi a teendő
+
+Mivel a Billingo ugyanazt a 403-at adja a jogosultsághiányra és az ismeretlen azonosítóra, a `nullIfNotFound()` ezt nem alakítja `null`-lá. Bizonylatot ezért ne azonosítóval keress, hanem a `vendorId` alapján: a `findByVendorId()` ismeretlen `vendorId`-ra `null`-t ad.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.findByVendorId('ORDER-1001')
+console.log(szamla === null ? 'Nincs ilyen számla.' : szamla.invoiceNumber)
+
+try {
+  await tarca.documents.get(999_999)
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'forbidden') throw error
+  console.log('Ismeretlen bizonylat, vagy a kulcs nem érheti el.')
+}
+```
+
+Ha írásnál kapod, nézd meg a kulcs jogosultságát a Billingo **Beállítások → API kulcsok** oldalán: olvasás vagy olvasás és írás. Olvasással nem derül ki, melyik a kulcs, ezért a `npx tarcajs doctor` sem tudja megmondani. A [tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas) `forbidden` hibánál megáll.

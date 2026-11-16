@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Termék nettó és bruttó egységárral a hamis Billingo ellen, a kiszámolt második árral, és egy érvénytelen ár, amelyet a tárca el sem küld.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/CreateProduct
+---
+
+A példa két terméket hoz létre, az egyiket nettó, a másikat bruttó árral, és kiírja a Billingo által kiszámolt másik árat. A harmadik hívás ára `NaN`, ezt a tárca `validation` hibával megállítja.
+
+<Example slug="termek-letrehozas" />
+
+Az **Elküldött kérések** fülön csak két `CreateProduct` kérés van: a harmadik nem ment el. A **Billingo válasz** fülön a `purchase_price` mindkét terméknél `null`.

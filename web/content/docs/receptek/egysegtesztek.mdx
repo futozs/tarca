@@ -1,0 +1,153 @@
+---
+title: Egységtesztek
+description: Vitest tesztek a saját számlázó kódodhoz a tarcajs/testing mock kliensével, hálózat és kulcs nélkül. Dupla webhook, elveszett válasz, Billingo 503 és üres kosár.
+---
+
+A számlázó kódot minden commitnál érdemes tesztelni, és ehhez nem kell a teszt profil. A `createMockTarca()` a valódi tárca kliens egy memóriában futó, hamis Billingón. Ugyanúgy ellenőriz, ugyanúgy számoz és kerekít, és ugyanazokat a hibaüzeneteket adja, mint élőben, csak hálózat és kulcs nélkül.
+
+## A tesztelt kód
+
+A klienst paraméterként kapja, így a teszt a mockot adhatja át, az alkalmazás pedig a [közös klienst](/docs/receptek/kozos-kliens).
+
+```ts twoslash title="lib/szamlazas.ts"
+import type { Tarca } from 'tarcajs'
+
+export interface Rendeles {
+  readonly id: number
+  readonly tetelek: readonly { readonly nev: string; readonly db: number; readonly brutto: number }[]
+}
+
+export async function fizetettRendeles(tarca: Tarca, rendeles: Rendeles) {
+  const { document } = await tarca.documents.createOnce({
+    vendorId: `WEB-${rendeles.id}`,
+    partner: {
+      name: 'Vevő Kft.',
+      address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+    },
+    items: rendeles.tetelek.map((tetel) => ({
+      name: tetel.nev,
+      quantity: tetel.db,
+      grossUnitPrice: tetel.brutto,
+      vat: 27,
+    })),
+  })
+  return document
+}
+```
+
+## A tesztek
+
+```ts twoslash title="lib/szamlazas.test.ts"
+// @filename: vitest.d.ts
+declare module 'vitest' {
+  export function test(name: string, run: () => Promise<void>): void
+  export function expect(value: unknown): any
+}
+// @filename: szamlazas.ts
+import type { Tarca } from 'tarcajs'
+export interface Rendeles {
+  readonly id: number
+  readonly tetelek: readonly { readonly nev: string; readonly db: number; readonly brutto: number }[]
+}
+export declare function fizetettRendeles(
+  tarca: Tarca,
+  rendeles: Rendeles,
+): Promise<import('tarcajs').Billingo.Document>
+// @filename: szamlazas.test.ts
+// ---cut---
+import { isBillingoError } from 'tarcajs'
+import { createMockTarca } from 'tarcajs/testing'
+import { expect, test } from 'vitest'
+import { fizetettRendeles, type Rendeles } from './szamlazas'
+
+const rendeles: Rendeles = { id: 1001, tetelek: [{ nev: 'Póló', db: 2, brutto: 6_350 }] }
+
+test('egy rendelésre egy számla, akkor is, ha a webhook kétszer jön', async () => {
+  const tarca = createMockTarca({ defaults: { dueInDays: 8 } })
+
+  await fizetettRendeles(tarca, rendeles)
+  await fizetettRendeles(tarca, rendeles)
+
+  expect(tarca.billingo.count('CreateDocument')).toBe(1)
+  const [rekord] = [...tarca.billingo.data.documents.values()]
+  expect(rekord?.document.grossTotal).toBe(12_700)
+})
+
+test('elveszett válasz után sincs második számla', async () => {
+  const tarca = createMockTarca()
+  tarca.failNext('documents.createOnce', undefined, { afterSuccess: true })
+
+  await expect(fizetettRendeles(tarca, rendeles)).rejects.toThrow()
+  await fizetettRendeles(tarca, rendeles)
+
+  expect(tarca.billingo.data.documents.size).toBe(1)
+})
+
+test('a Billingo 503-ja után a createOnce megtalálja a kész számlát', async () => {
+  const tarca = createMockTarca()
+  tarca.billingo.fail({ status: 503 }, { operation: 'CreateDocument', afterSuccess: true })
+
+  const szamla = await fizetettRendeles(tarca, rendeles)
+
+  expect(szamla.grossTotal).toBe(12_700)
+  expect(tarca.billingo.count('CreateDocument')).toBe(1)
+})
+
+test('üres kosárnál kérés sem megy ki', async () => {
+  const tarca = createMockTarca()
+
+  const hiba = await fizetettRendeles(tarca, { id: 1002, tetelek: [] }).catch((error) => error)
+
+  expect(isBillingoError(hiba) && hiba.category).toBe('validation')
+  expect(tarca.billingo.requests).toEqual([])
+})
+```
+
+```bash title="Terminál"
+npm install --save-dev vitest
+npx vitest run lib/szamlazas.test.ts
+```
+
+## Mit tud a mock
+
+- **Hívásnapló.** A `tarca.calls` a kliens metódushívásait sorolja (`documents.createOnce`), a `tarca.billingo.requests` a dróton menő kéréseket, snake_case törzzsel. A kulcsot egyik sem tartalmazza.
+- **Állapot.** A `tarca.billingo.data` a hamis Billingo adatai: `documents`, `partners`, `products`, `documentBlocks` és a többi, csak olvasható `Map`-ként. A `count('CreateDocument')` egy művelet kéréseit számolja.
+- **Egyszeri hiba a kliensben.** A `failNext(metódus)` a következő hívást egyszer elbuktatja, alapból `network` hibával, kérés nélkül. Az `afterSuccess: true` előbb lefuttatja a műveletet, és csak utána dob: ez az elveszett válasz.
+- **Hiba a dróton.** A `tarca.billingo.fail(...)` a hamis Billingóval ad hibát: `{ status: 503 }`, `'timeout'`, `'network'` vagy `'notReady'` (a PDF még készül, 202). Az `operation` opció egy műveletre szűkít, a `times` többször egymás után ismétli.
+- **Rossz kulcs.** A `createMockTarca({ credentialsValid: false })` minden kérésre 401-et ad, a `verifyCredentials()` pedig `false`-t.
+
+A harmadik teszt a valódi helyreállítást futtatja: a Billingo elkészíti a számlát, de 503-at válaszol, a `createOnce` pedig 1 másodperc várakozás után a `vendorId` alapján megtalálja. Ezért ez a teszt nagyjából egy másodpercig tart.
+
+## Buktatók
+
+<Callout type="warning" title="Ne a lib/tarca.ts klienst importáld a tesztben">
+  A közös kliens a betöltéskor `BILLINGO_API_KEY`-t keres, és ha nincs, `configuration` hibát dob.
+  Ha van, a teszt a valódi Billingót hívná. Add át a klienst paraméterként, vagy a
+  tesztkeretrendszer modulcseréjével (Vitestben `vi.mock`) tegyél a helyére egy `createMockTarca()`
+  példányt.
+</Callout>
+
+<Callout type="info" title="NAV állapot a teszt elején">
+  A hamis Billingo az élő API-hoz hasonlóan a kiállítás utáni első 10 másodpercben nem ad NAV
+  állapotot, a `documents.navStatus()` ilyenkor `null`. Ha a teszted azonnal olvasná, add meg a
+  `createMockTarca({ navRecordDelayMs: 0 })` opciót.
+</Callout>
+
+<Callout type="info" title="Ugyanazok a defaults">
+  A `createMockTarca({ defaults })` ugyanazt a `TarcaDefaults`-ot fogadja, mint a `createTarca()`.
+  Add át ugyanazt az objektumot, és a mock pontosan úgy állítja ki a számlát, mint az éles kliens.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Mock tárca" href="/docs/tesztek/mock-tarca">
+    A createMockTarca opciói, a calls, a failNext és a reset.
+  </Card>
+  <Card title="Hamis Billingo" href="/docs/tesztek/hamis-billingo">
+    A createFakeBillingoFetch, ha a saját createTarca() hívásodat teszteled.
+  </Card>
+  <Card title="Hibák szimulálása" href="/docs/tesztek/hibak-szimulalasa">
+    Minden hibafajta, amit a hamis Billingo elő tud idézni.
+  </Card>
+</Cards>

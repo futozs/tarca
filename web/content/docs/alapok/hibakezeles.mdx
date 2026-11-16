@@ -1,6 +1,7 @@
 ---
 title: Hibakezelés
-description: Minden hiba BillingoError, magyar üzenettel, kategóriával, mezőhibákkal, a Billingo nyomkövetési azonosítójával és javítási tippel. Mikor ismétel a tárca, és mikor nem.
+description: Minden hiba BillingoError, magyar üzenettel, kategóriával, mezőhibákkal, a Billingo nyomkövetési azonosítójával és javítási tippel. A három Billingo hibaforma, a bizonytalan kimenet és a RangeError.
+official: https://developers.billingo.hu/post/api-v3
 ---
 
 A tárca minden hibát `BillingoError`-ként dob. Ugyanazt kapod, akár a tárca utasította el a bemenetet a kérés előtt, akár a Billingo válaszolt hibával, akár a hálózat szakadt meg.
@@ -10,10 +11,11 @@ A tárca minden hibát `BillingoError`-ként dob. Ugyanazt kapod, akár a tárca
 ## A hiba mezői
 
 ```ts twoslash
-import { createTarca, isBillingoError } from 'tarcajs'
+import { createTarca, type DocumentInput, isBillingoError } from 'tarcajs'
 
 const tarca = createTarca()
-declare const szamla: Parameters<typeof tarca.documents.create>[0]
+
+declare const szamla: DocumentInput
 
 try {
   await tarca.documents.create(szamla)
@@ -26,28 +28,67 @@ try {
 }
 ```
 
-- `error.fieldErrors`: a mezőnkénti hibák, a Billingo 422-es válaszából vagy a tárca saját ellenőrzéséből (például `items.0.vat`).
-- `error.hint`: magyar javítási tipp, ha van.
-- `error.traceId`: a Billingo nyomkövetési azonosítója, hibabejelentéshez hasznos.
-- `error.retryable`: igaz, ha a hiba átmeneti (`rate_limit`, `server`, `not_ready`, `network`, `timeout`).
-- `error.status`, `error.operation`, `error.apiMessage`, `error.retryAfterMs`, `error.rateLimit`: a válasz további részletei.
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `category` | `BillingoErrorCategory` | A hiba fajtája, erre építsd a kezelést. Lásd lent. |
+| `message` | `string` | Magyar üzenet. Billingo hibánál a végén zárójelben az eredeti szöveg áll, 422-nél helyette a mezőhibák listája. |
+| `status` | `number \| undefined` | A HTTP státusz, ha volt válasz. |
+| `operation` | `OperationId \| undefined` | A Billingo művelet, amelyiknél a hiba történt (`CreateDocument`). |
+| `apiMessage` | `string \| undefined` | A Billingo saját üzenete változatlanul, például `Duplicate vendor id. (id:ORDER-1001)`. |
+| `fieldErrors` | `{ field, message }[]` | Mezőnkénti hibák. A tárca saját ellenőrzésénél camelCase mezőnévvel (`items.0.vat`), a Billingo 422-es válaszánál a Billingo snake_case nevével (`partner_id`). |
+| `hint` | `string \| undefined` | Magyar javítási tipp, ha van. |
+| `traceId` | `string \| undefined` | A Billingo nyomkövetési azonosítója 5xx hibánál. Hibabejelentéshez add meg. |
+| `retryable` | `boolean` | Igaz, ha a hiba átmeneti: `rate_limit`, `server`, `not_ready`, `network`, `timeout`. |
+| `retryAfterMs` | `number \| undefined` | A `Retry-After` fejlécből, ha a Billingo küldte. |
+| `rateLimit` | `{ limit, remaining, resetAt } \| undefined` | A rate limit fejlécek, ha voltak. |
+| `requestId` | `string \| undefined` | A tárca saját azonosítója a híváshoz, a hookok eseményeiben is ez szerepel. |
+| `isNotFound` | `boolean` | `category === 'not_found'`. |
+| `cause` | `unknown` | Az eredeti hiba, például a `fetch` `TypeError`-ja. |
 
 ## Kategóriák
 
 <ErrorCategoryTable />
 
-## Újrapróbálás
+Kategóriánként külön oldal írja le a teendőt: [Hibák](/docs/hibak).
 
-<Callout type="warning" title="Írást a tárca soha nem küld újra magától">
-  Újrapróbálás csak a lekérdezéseknél (GET) történik: 429-es válasz, szerverhiba, időtúllépés vagy
-  hálózati hiba után, a `Retry-After` fejlécet betartva. Egy lekérdezés összesen legfeljebb háromszor
-  megy ki (az első kérés és két ismétlés). Ha a Billingo egy percnél hosszabb várakozást kér, a tárca
-  nem vár, hanem `rate_limit` hibát ad.
+## Honnan jön a hiba?
+
+**A tárca ellenőrzéséből, kérés nélkül.** Hibás bemenetre (`items.0.vat`, `dueDate`, `conversionRate`) `validation` kategória jön, a `hint` szerint „a tárca a kérést el sem küldte a Billingónak, így semmi nem jött létre”. Hibás kliensbeállításra (`timeoutMs`, `defaults`) `configuration`.
+
+**A Billingo válaszából.** A Billingo háromféle hibatörzset használ, a tárca mindhármat felismeri. Az alábbiakat a hamis Billingo adta, a Billingo élő alakjai szerint:
+
+```json
+{ "error": { "message": "Duplicate vendor id. (id:ORDER-1001)" } }
+```
+
+```json
+{ "error": { "message": "Internal Server Error.", "trace_id": "1c096109793c4bd6a6c6205a8d7b8f69" } }
+```
+
+```json
+{ "message": "Validation Failed", "errors": [{ "field": "partner_id", "message": "The selected partner id is invalid." }] }
+```
+
+Az első a 4xx hibák alakja, a második az 5xx-é a nyomkövetési azonosítóval, a harmadik a 422-es mezőhibáké. A tárca a státuszból és az üzenetből választ kategóriát: a 401 és 403 NAV kapcsolatról szóló üzenettel például `nav_unavailable`, nem `auth`.
+
+**A hálózatból.** Ha nem jött válasz, `network` vagy `timeout` kategória jön, `status` nélkül. Ha sikeres (2xx) válasz jött, de a törzse üres vagy nem JSON, `unexpected_response`.
+
+## Rossz argumentum: RangeError
+
+Ha nem a bizonylat adata, hanem egy hívás argumentuma hibás (`page: 0`, `perPage: 101`, `maxWaitMs: -1`, üres `vendorId` a lekérésnél, rossz alakú `lastModifiedDate`), a tárca `RangeError`-t dob, kérés nélkül. Ez programozási hiba, nem a felhasználó adata.
+
+## Bizonytalan kimenet
+
+A `server`, `network`, `timeout` és `unexpected_response` hiba után egy írásról nem tudni, lefutott-e. Írást a tárca soha nem küld újra magától, mert egy második `POST /documents` második számlát jelentene.
+
+<Callout type="warning" title="Írást ne ismételj vakon">
+  Lekérdezést a tárca magától újrapróbál, alapból összesen legfeljebb három kérésig. Írás után bizonytalan hibánál
+  előbb nézd meg, lefutott-e. Számlánál és nyugtánál a `createOnce()` ezt elvégzi helyetted.
+  Sztornónál a `cancelled` mező, befizetésnél a befizetések listája dönt. Az egyes műveletek
+  Válasz oldala megmutatja, hogyan.
 </Callout>
 
-Egy POST, PUT vagy DELETE kérés hálózati hibája után nem tudhatod, hogy a Billingo megkapta-e. Számlánál ezért a `createOnce()`-t használd: bizonytalan hiba után visszakeresi a bizonylatot, és csak akkor adja tovább a hibát, ha tényleg nem készült el. Lásd [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
-
-A Billingo kulccsal percenként 300 kérést enged. A `rate_limit` hibában a `retryAfterMs` a `Retry-After` fejlécből jön, ha a Billingo küldi.
+A részletek: [Pontosan egyszer](/docs/alapok/pontosan-egyszer) és [Újrapróbálás és korlátok](/docs/alapok/ujraprobalas-es-korlatok).
 
 ## Ha nincs ilyen erőforrás
 
@@ -61,4 +102,8 @@ const partner = await nullIfNotFound(tarca.partners.get(1234))
 if (partner === null) console.log('Nincs ilyen partner.')
 ```
 
-A `nullIfNotFound()` csak a `not_found` hibát alakítja `null` értékké, minden más hibát továbbdob. A Billingo törölt vagy ismeretlen bizonylatra és számlatömbre 403-at ad, ezt a `nullIfNotFound()` nem nyeli el. Bizonylathoz a `findByVendorId()` való.
+A `nullIfNotFound()` csak a `not_found` hibát alakítja `null` értékké, minden mást továbbdob. A Billingo törölt vagy ismeretlen bizonylatra és számlatömbre 403-at ad (`forbidden`), ezt a `nullIfNotFound()` nem nyeli el. Bizonylathoz a `findByVendorId()` való, amely ismeretlen `vendorId`-ra `null`-t ad: [Lekérés](/docs/bizonylatok/lekeres).
+
+## Naplózás
+
+A hibaüzenet tartalmazhat személyes adatot: egy `validation` üzenet idézhet e-mail címet vagy `vendorId`-t. Naplóba a `category`, az `operation`, a `status` és a `traceId` kerüljön, ne a teljes üzenet. A `tarcajs/observe` alapból így naplóz: [Megfigyelhetőség](/docs/kiegeszitok/megfigyelhetoseg).

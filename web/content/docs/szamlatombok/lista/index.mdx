@@ -1,0 +1,23 @@
+---
+title: Lista
+description: Számlatömbök listája a documentBlocks.list() és a documentBlocks.all() metódussal. Szűrés típus szerint, lapozás és a friss teszt profil két tömbje.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentBlock/ListDocumentBlock
+---
+
+A `documentBlocks.list()` egy oldalt ad vissza, a `documentBlocks.all()` minden oldalt bejár. Típus szerint is szűrhetsz, például csak a nyugtatömbökre.
+
+```ts
+const nyugtaTombok = await tarca.documentBlocks.list({ type: 'receipt' })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/szamlatombok/lista/keres">
+    A paraméterek, a típus szerinti szűrés és a lapozás.
+  </Card>
+  <Card title="Válasz" href="/docs/szamlatombok/lista/valasz">
+    A `Page` boríték, a növekvő sorrend és a friss teszt profil két tömbje.
+  </Card>
+  <Card title="Minta" href="/docs/szamlatombok/lista/minta">
+    Egy új tömb a két meglévő mellé, majd a lista típus szerint szűrve.
+  </Card>
+</Cards>

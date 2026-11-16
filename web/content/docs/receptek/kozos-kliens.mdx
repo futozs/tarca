@@ -1,0 +1,141 @@
+---
+title: Közös kliens
+description: Egyetlen szerveroldali tárca kliens alapbeállításokkal és hibanaplózással, amelyet a többi recept a @/lib/tarca modulból importál.
+---
+
+A tárca klienst egy folyamatban egyszer hozd létre, és mindenhol ugyanazt használd. Az alapbeállítások így egy helyen vannak, a kliens pedig megjegyzi, melyik az első számlatömböd, és nem kérdezi le minden számla előtt újra. A többi recept ezt a modult importálja `@/lib/tarca` néven.
+
+## Telepítés és kulcs
+
+```bash title="Terminál"
+npm install tarcajs server-only
+```
+
+```dotenv title=".env.local"
+BILLINGO_API_KEY=a-teszt-profil-v3-kulcsa
+```
+
+A kulcsot a Billingóban a Beállítások → API kulcsok menüben hozod létre. V3-as kulcs kell, olvasási és írási joggal. Fejlesztéshez a [fejlesztői teszt profil](/docs/alapok/teszt-profil) kulcsát használd. A `server-only` csomag build hibát ad, ha egy kliens komponens véletlenül importálná a modult, így a kulcs a szerveren marad.
+
+## A kliens
+
+Egy hosszan futó Node.js szerveren elég a kliens. Vercelen és más serverless platformon a példányok egymásról nem tudnak, ott a `createOnce` kap egy közös zárat is, hogy két példány ne küldje el egyszerre ugyanazt a rendelést.
+
+<Tabs items={['Node.js szerver', 'Vercel + Upstash Redis']} groupId="receptek-kliens">
+  <Tab value="Node.js szerver">
+    ```ts twoslash title="lib/tarca.ts"
+    // @filename: server-only.d.ts
+    declare module 'server-only' {}
+    // @filename: tarca.ts
+    // ---cut---
+    import 'server-only'
+    import { createTarca } from 'tarcajs'
+
+    export const tarca = createTarca({
+      defaults: { dueInDays: 8, paymentMethod: 'wire_transfer', electronic: true },
+      hooks: {
+        onError: ({ operation, attempt, error, willRetry }) => {
+          console.warn('Billingo hiba', {
+            operation,
+            attempt,
+            category: error.category,
+            status: error.status,
+            traceId: error.traceId,
+            willRetry,
+          })
+        },
+      },
+    })
+    ```
+  </Tab>
+  <Tab value="Vercel + Upstash Redis">
+    ```ts twoslash title="lib/tarca.ts"
+    // @filename: shims.d.ts
+    declare module 'server-only' {}
+    declare module '@upstash/redis' {
+      export class Redis {
+        static fromEnv(): Redis
+        get(key: string): Promise<unknown>
+        set(key: string, value: string, options: { ex: number }): Promise<unknown>
+        del(key: string): Promise<unknown>
+        eval(script: string, keys: string[], args: string[]): Promise<unknown>
+      }
+    }
+    // @filename: tarca.ts
+    // ---cut---
+    import 'server-only'
+    import { Redis } from '@upstash/redis'
+    import { createTarca } from 'tarcajs'
+    import { upstashRedisStore } from 'tarcajs/stores'
+
+    export const tarolo = upstashRedisStore(Redis.fromEnv(), { prefix: 'webshop:', timeoutMs: 2_000 })
+
+    export const tarca = createTarca({
+      createOnceLock: tarolo,
+      defaults: { dueInDays: 8, paymentMethod: 'wire_transfer', electronic: true },
+      hooks: {
+        onError: ({ operation, attempt, error, willRetry }) => {
+          console.warn('Billingo hiba', {
+            operation,
+            attempt,
+            category: error.category,
+            status: error.status,
+            traceId: error.traceId,
+            willRetry,
+          })
+        },
+      },
+    })
+    ```
+  </Tab>
+</Tabs>
+
+A `defaults` minden számlára érvényes, amíg a hívás mást nem mond: 8 napos fizetési határidő, átutalás, elektronikus számla. A tárca ezeket a `createTarca()` hívásakor ellenőrzi, így egy elírt fizetési mód már induláskor `configuration` hibát ad, nem az első számlánál. Az összes alapérték az [Alapértékek](/docs/alapok/alapertekek) oldalon van.
+
+A hook a műveletet, a próbálkozás sorszámát, a kategóriát, a státuszt és a Billingo `traceId`-ját naplózza. Az API kulcsot a hookok soha nem kapják meg. A hiba szövegét szándékosan kihagyjuk: egy `validation` üzenet idézhet e-mail-címet vagy `vendorId`-t. Strukturált naplóhoz és metrikákhoz a [Naplózás és metrikák](/docs/receptek/naplozas-es-metrikak) recept a folytatás.
+
+A Vercel változatban a `tarolo` a webhook-duplikációszűrőnek és a visszatérítési főkönyvnek is jó, ezért a modul azt is exportálja. Az Upstash helyett bármelyik `setIfAbsent`-et tudó tároló megfelel: [Tárolók](/docs/kiegeszitok/tarolok).
+
+## Buktatók
+
+<Callout type="warning" title="Ne hozz létre klienst kérésenként">
+  Ha a `createTarca()` egy route handleren belül fut, minden kérés új klienst kap, és a tárca
+  minden első számla előtt újra lekéri a számlatömbök listáját. Működik, de minden számla egy
+  kéréssel többe kerül a percenkénti 300-as keretből. A klienst modulszinten hozd létre, ahogy fent.
+</Callout>
+
+<Callout type="warning" title="A kulcs titok">
+  Ne adj a változónak `NEXT_PUBLIC_` előtagot, és ne importáld a `lib/tarca.ts` modult kliens
+  komponensből. Egy írási jogú kulccsal bárki számlát állíthat ki a nevedben, amelyet a Billingo
+  éles profilon automatikusan beküld a NAV-nak.
+</Callout>
+
+<Callout type="info" title="A hiányzó kulcs már a modul betöltésekor hibát dob">
+  A `createTarca()` azonnal `configuration` hibát dob, ha sem az `apiKey` opció, sem a
+  `BILLINGO_API_KEY` változó nincs megadva. CI-ban és tesztben ezért a `lib/tarca.ts` importja is
+  elbukik. Tesztben ne ezt a modult használd, hanem a `createMockTarca()`-t, ahogy az
+  [Egységtesztek](/docs/receptek/egysegtesztek) recept mutatja.
+</Callout>
+
+<Callout type="info" title="Külön profil fejlesztéshez">
+  A fejlesztői teszt profil soha nem kapcsolható élesre, ezért élesben külön profil és külön kulcs
+  kell. Hogy induláskor kiderüljön, melyik profilra csatlakozott a szerver, lásd a
+  [Kulcs ellenőrzése induláskor](/docs/receptek/kulcs-ellenorzes-indulaskor) receptet.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Kliens beállítása" href="/docs/alapok/kliens-beallitasa">
+    A createTarca() összes opciója, az időkorlát és az újrapróbálás.
+  </Card>
+  <Card title="Hookok" href="/docs/alapok/hookok">
+    Mit kap az onRequest, az onResponse, az onError és az onDocument.
+  </Card>
+  <Card title="Serverless és edge" href="/docs/kiegeszitok/serverless-es-edge">
+    A createOnce zár és a tárca Workersben, Vercelen, Denón.
+  </Card>
+  <Card title="Webshop rendelésből számla" href="/docs/receptek/webshop-rendeles">
+    A következő recept, amely ezt a klienst használja.
+  </Card>
+</Cards>

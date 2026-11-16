@@ -1,0 +1,88 @@
+---
+title: Mock kliens
+description: A createMockTarca() a valódi tárca kliens a hamis Billingón, hívásnaplóval, egyszeri hibával és visszaállítással. Beállítások, failNext, calls, reset, és egy teljes teszt node:test-tel.
+---
+
+A `createMockTarca()` a valódi `Tarca` klienst futtatja egy friss [hamis Billingón](/docs/tesztek/hamis-billingo). Ugyanaz a validáció, ugyanazok a hibák, ugyanaz a GET-ismétlés (várakozás nélkül), mint élesben. Mellé négy dolgot ad: `calls`, `billingo`, `failNext()` és `reset()`.
+
+```ts
+createMockTarca(options?: MockTarcaOptions): MockTarca
+```
+
+<Example slug="mock-kliens" />
+
+A `fizetesKezelo` kétszer fut ugyanarra a rendelésre, a hamis Billingo mégis egy kiállító kérést kap. Az `afterSuccess` hibánál a számla elkészül, a hívó mégis hibát kap, a következő hívás pedig megtalálja a bizonylatot: a hamis Billingóban két bizonylat van, nem három.
+
+## Beállítások
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `defaults` | nincs | Ugyanaz a `TarcaDefaults`, mint a `createTarca()`-nál. Add át az éles beállításodat, és a mock pontosan úgy állít ki, mint a kódod élesben. |
+| `hooks` | nincs | A valódi kliensnek adja tovább, így az `onDocument` és az `onDocumentError` is úgy viselkedik, mint élesben. |
+| `credentialsValid` | `true` | `false` esetén minden kérés 401-et kap, a `verifyCredentials()` `false`-t ad. |
+| a hamis Billingo opciói | | `taxCode`, `hasNavConnection`, `subscription`, `hufRates`, `stock`, `navRecordDelayMs`, `now`, `faults` … lásd [Hamis Billingo](/docs/tesztek/hamis-billingo). Az `apiKeys` kivétel. |
+
+## A hívásnapló
+
+A `calls` minden metódushívást rögzít a hívás sorrendjében: `{ method, args }`. A metódusnév pontokkal írt útvonal (`'documents.createOnce'`, `'documents.payments.add'`, `'verifyCredentials'`), a típusa `MockTarcaMethod`, így elírásnál a fordító szól. A `Tarca` minden metódusa magától bekerül, egy új erőforráshoz sem kell itt semmit módosítani.
+
+A `calls` azt mutatja, mit hívott a kódod. Hogy ebből milyen HTTP kérések lettek, azt a `billingo.requests` mutatja, lásd [Kérések és állapot](/docs/tesztek/keresek-es-allapot).
+
+## failNext()
+
+```ts
+failNext(method: MockTarcaMethod, error?: BillingoError, options?: { afterSuccess?: boolean }): void
+```
+
+- A megnevezett metódus **következő** hívása egyszer hibát dob, alapból `network` kategóriájú `BillingoError`-t, mielőtt kérés menne ki.
+- Saját hibát is adhatsz: `new BillingoError('…', { category: 'subscription', status: 402 })`.
+- `afterSuccess: true`: a hívás lefut (a hamis Billingo megtartja az eredményt), és csak utána dob. Így teszteled az elveszett választ egy írásnál.
+- Az `all()` iterátornál a hiba az első lépésnél jön, `afterSuccess` esetén az utolsó elem után.
+- Ismeretlen metódusnévre `TypeError`.
+
+A `failNext()` a kliens szintjén dob, a tárca ismétlése és helyreállítása nem látja. Ha azt tesztelnéd, mit kezd a tárca egy hálózati hibával, a drót szintjén szimulálj: `tarca.billingo.fail()`, lásd [Hibák szimulálása](/docs/tesztek/hibak-szimulalasa).
+
+## reset()
+
+Üríti a hívásnaplót, törli a függő `failNext` hibákat, és a hamis Billingót friss teszt profilra állítja vissza (az azonosítók és a sorszámok újra 1-ről indulnak). Tesztek között hívd, ha egy klienst használsz több tesztben.
+
+## Egy teljes teszt
+
+```ts twoslash
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import type { Tarca } from 'tarcajs'
+import { createMockTarca } from 'tarcajs/testing'
+
+async function rendelesSzamlaja(tarca: Pick<Tarca, 'documents'>, rendelesId: number) {
+  const { document } = await tarca.documents.createOnce({
+    vendorId: `ORDER-${rendelesId}`,
+    partner: {
+      name: 'Vevő Kft.',
+      address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+    },
+    items: [{ name: 'Póló', quantity: 2, grossUnitPrice: 6_350, vat: 27 }],
+  })
+  return document.invoiceNumber
+}
+
+test('egy rendelésre egy számla, újrafuttatáskor is', async () => {
+  const tarca = createMockTarca({ defaults: { dueInDays: 8 } })
+
+  assert.equal(await rendelesSzamlaja(tarca, 1001), '2026-1')
+  assert.equal(await rendelesSzamlaja(tarca, 1001), '2026-1')
+  assert.equal(tarca.billingo.count('CreateDocument'), 1)
+  assert.deepEqual(
+    tarca.calls.map((call) => call.method),
+    ['documents.createOnce', 'documents.createOnce'],
+  )
+})
+```
+
+A példa a Node beépített `node:test` moduljával fut (`node --test`). Vitesttel és Jesttel ugyanígy működik, csak az `expect` stílusát használod.
+
+<Callout type="info" title="A kódod a klienst paraméterként kapja">
+  A mock akkor a legkényelmesebb, ha a számlázó függvényed nem maga hívja a `createTarca()`-t,
+  hanem megkapja a klienst. Ha a kódod egy közös modulból importálja a klienst, a hamis Billingo
+  `fetch` függvényét add át neki teszt alatt, lásd [Hamis Billingo](/docs/tesztek/hamis-billingo).
+</Callout>

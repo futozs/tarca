@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Költség rögzítése, majd a fizetés napjának beírása teljes cserével, végül törlés, a ténylegesen elküldött JSON-nal és a Billingo válaszaival.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingUpdate
+---
+
+A példa egy hirdetési számlát rögzít, aztán ugyanazokkal az adatokkal és a `paidAt` mezővel felülírja, végül törli, és megpróbálja újra lekérni.
+
+<Example slug="koltseg-modositasa" />
+
+Az **Elküldött kérések** fülön a `PUT /spendings/1` törzsében a teljes költség van, a `comment` is, különben a Billingo kiürítené. A `DELETE` válasza 204 törzs nélkül. Az utolsó `GET`-re a hamis Billingo 404 `Spending is not found.` választ ad, ezt a `nullIfNotFound()` `null`-ra cseréli.

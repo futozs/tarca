@@ -1,0 +1,72 @@
+---
+title: Node, Express
+description: A tarcajs/node a webes Request → Response kezelőket (fizetési webhookok, MCP HTTP) csatolja Node http, Express, NestJS és Fastify alá, a nyers törzzsel, hogy az aláírás bájtra pontosan ellenőrizhető legyen.
+---
+
+A tárca webhookkezelői és az MCP HTTP kezelője webes függvények: `(request: Request) => Promise<Response>`. Next.js-ben, Workersben, Denóban és Bunban így közvetlenül futnak. Node `http` szerver, Express, NestJS vagy Fastify alatt a `toNodeHandler()` alakítja át őket.
+
+```ts twoslash
+import { createServer } from 'node:http'
+import { createTarca } from 'tarcajs'
+import { toNodeHandler } from 'tarcajs/node'
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+
+const tarca = createTarca()
+const webhook = toNodeHandler(
+  stripeWebhook({
+    secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+    onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+  }),
+  { onError: (error) => console.error('webhook hiba', error) },
+)
+
+createServer((request, response) => {
+  if (request.url === '/webhooks/stripe') return void webhook(request, response)
+  response.statusCode = 404
+  response.end()
+}).listen(3000)
+```
+
+Expressben ugyanez egy sor, az `express.json()` **előtt**:
+
+```ts
+app.post('/webhooks/stripe', toNodeHandler(stripeWebhook({ secret, onPayment })))
+```
+
+<Callout type="warning" title="Az express.json() után már késő">
+  Az aláírás a nyers törzsre szól. Ha az `express.json()` már objektummá alakította, az aláírás nem
+  ellenőrizhető, és a `toNodeHandler()` `NodeBodyError`-t ad, magyar üzenettel. Tedd a webhook
+  útvonalat az `express.json()` elé, vagy használd rajta az `express.raw({ type: '*/*' })`
+  middleware-t. NestJS-ben kapcsold be a `rawBody: true` beállítást.
+</Callout>
+
+## A törzs
+
+A `toNodeHandler()` a kérés törzsét folyamként adja tovább, így az aláírás bájtra pontosan ellenőrizhető. Ha egy middleware már beolvasta:
+
+| Mi van a kérésen | Mit csinál |
+| --- | --- |
+| `rawBody` (NestJS `rawBody: true`) | ezt használja |
+| `express.raw()` `Buffer`-e, `Uint8Array`, `ArrayBuffer` vagy szöveg | ezt használja változatlanul |
+| az Express 4 üres `{}` helyőrzője | az olvasatlan folyamra vált |
+| `express.json()` által feldolgozott objektum | `NodeBodyError` |
+| elolvasott, de tovább nem adott törzs | `NodeBodyError` |
+
+GET és HEAD kérésnek nincs törzse.
+
+## Hibák
+
+- **Express `next`-tel:** a kezelő hibája a `next(error)`-hoz megy, a te hibakezelő middleware-edhez.
+- **`next` nélkül:** az `onError`-t hívja, és 500-at ad `text/plain` törzzsel, ha a fejlécek még nem mentek ki. A dobó `onError`-t figyelmen kívül hagyja.
+- **`onError` nélkül:** a konzolra csak egy összefoglaló kerül: a hiba neve, `BillingoError`-nál a `category`, a `status` és az `operation`, `NodeBodyError`-nál az üzenete. Más hiba üzenete nem, mert idézhet e-mail címet vagy `vendorId`-t.
+
+A fizetési webhook a saját hibáit (hamis aláírás, `onPayment` hiba) maga alakítja 400-as és 500-as válasszá, a `toNodeHandler()` csak a csatolás hibáit kapja.
+
+## A kérés címe
+
+A `toWebRequest(request, { trustProxy? })` a kérés címét az `originalUrl`-ből (vagy `url`-ből), a `Host` fejlécből (HTTP/2-nél `:authority`) és a socket TLS állapotából rakja össze. Az `X-Forwarded-Proto` és `X-Forwarded-Host` fejlécet csak `trustProxy: true` mellett veszi figyelembe, egy megbízható proxy mögött. A HTTP/2 álfejléceket elhagyja, a többértékű fejléceket megtartja.
+
+A `writeWebResponse(response, target)` a webes választ írja a Node válaszba: státusz, fejlécek (a több `Set-Cookie` külön), törzs.
+
+A modul a `node:http`-ből csak típusokat importál, így maga nem függ a Node-tól. Fastify-ban a `request.raw` és a `reply.raw` objektumot add át. Egy Express, NestJS és Fastify összevetés: [Express, NestJS, Fastify recept](/docs/receptek/express-nestjs-fastify).

@@ -1,0 +1,34 @@
+---
+title: Válasz
+description: A documents.send() a címzettlistát adja vissza, a documents.reminders() a kiküldött és a tervezett emlékeztetőket és a postai leveleket. A hibák és a bizonytalan kiküldés.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/Document/GetDocumentReminderEventList
+---
+
+## send()
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `emails` | `string[]` | A címek, amelyekre a Billingo elküldte a bizonylatot. Élőben pontosan a megadott lista jött vissza. |
+
+A Billingo 200-zal válaszol. Hogy a levél tényleg kézbesült-e, az API nem mondja meg.
+
+## reminders()
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `sentReminders` | `Billingo.DocumentReminderEvent[]` | A már kiküldött fizetési emlékeztetők. |
+| `upcomingReminders` | `Billingo.DocumentReminderEvent[]` | A tervezett emlékeztetők. |
+| `sentPostalMail` | `…[]` | A postán küldött levelek. |
+
+Élőben egy friss számlára mindhárom lista üres volt: `{ sentReminders: [], upcomingReminders: [], sentPostalMail: [] }`.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Üres címlista vagy hibás cím, kérés előtt. |
+| 403 | `forbidden` | Ismeretlen azonosító, vagy csak olvasó kulcs a `send()`-nél. |
+| 422 | `validation` | A Billingo elutasított egy címet. |
+| – | `network`, `timeout`, `server`, `unexpected_response` | `send()`: nem tudni, kiment-e a levél. |
+
+Egy elveszett `send()` válasz után a levél kimehetett. Ha a második levél nem gond (egy számla kétszer a postafiókban), hívd újra; ha gond, a Billingo felületén nézd meg a bizonylat értesítési előzményeit. A bizonylat `notificationStatus` mezője is megmutatja az értesítés állapotát.

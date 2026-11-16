@@ -1,0 +1,57 @@
+---
+title: Összegek
+description: A PaymentAmount egész számként, a pénznem ISO 4217 szerinti váltóegységében tárolja az összeget. Átváltás a Stripe és más szolgáltatók formátumából, és az összegek ellenőrzése kiállítás előtt.
+---
+
+A fizetési szolgáltatók különbözően adják az összeget: a Stripe egész számként, váltóegységben (`1270000`), a PayPal és a Barion tizedes szövegként vagy számként (`"12700.00"`, `12700`). A tárca mindet egy alakra hozza:
+
+```ts
+interface PaymentAmount { readonly value: number; readonly minor: number; readonly currency: string }
+```
+
+A `minor` egész szám a pénznem ISO 4217 szerinti váltóegységében, a `value` ugyanez főegységben: `value = minor / 10^tizedesjegy`. Minden összevetés (a tételek összege a fizetett összeggel, a visszatérítések a bizonylat összegével) a `minor` mezőn megy, tűrés nélkül, így lebegőpontos kerekítés nem csúszhat be.
+
+```ts twoslash
+import {
+  currencyExponent,
+  fromMinorUnits,
+  isBillingoCurrency,
+  parseDecimalAmount,
+} from 'tarcajs/payments'
+
+console.log(fromMinorUnits(127_000, 'HUF', 'stripe'))
+console.log(fromMinorUnits(1_270, 'HUF'))
+console.log(parseDecimalAmount('12.70', 'EUR'))
+console.log(fromMinorUnits(500, 'JPY', 'stripe'))
+console.log(currencyExponent('HUF'), currencyExponent('JPY'), isBillingoCurrency('EUR'))
+```
+
+| Hívás | `value` | `minor` |
+| --- | --- | --- |
+| `fromMinorUnits(127_000, 'HUF', 'stripe')` | `1270` | `127000` |
+| `fromMinorUnits(1_270, 'HUF')` | `12.7` | `1270` |
+| `parseDecimalAmount('12.70', 'EUR')` | `12.7` | `1270` |
+| `fromMinorUnits(500, 'JPY', 'stripe')` | `500` | `500` |
+
+## Függvények
+
+| Függvény | Mire való |
+| --- | --- |
+| `fromMinorUnits(minor, currency, convention?)` | Egész váltóegységből `PaymentAmount`. A `convention` `'iso4217'` (alapértelmezett) vagy `'stripe'`. Nem egész vagy nem biztonságos egész szám `RangeError`. |
+| `parseDecimalAmount(value, currency)` | Tizedesponttal írt szövegből vagy számból. Ha több tizedesjegy van, mint amennyit a pénznem enged (`'12.705'` euróban), `RangeError`. |
+| `currencyExponent(currency, convention?)` | A pénznem tizedesjegyeinek száma: HUF, EUR, USD 2, JPY 0, BHD 3. |
+| `isBillingoCurrency(currency)` | Ismeri-e a Billingo a pénznemet. A kiállítás előtt a tárca is ezt nézi. |
+| `normalizeCurrency(currency)` | Nagybetűs, szóköz nélküli pénznemkód. |
+
+## A Stripe váltóegységei
+
+A forintnál nincs eltérés: a Stripe és az ISO 4217 is két tizedesjegyet ad neki, így a Stripe `127000` értéke 1 270 Ft. Néhány más pénznemet viszont a Stripe másképp kezel. Az izlandi koronát és az ugandai shillinget két tizedesjeggyel küldi, bár az ISO szerint nincs váltóegységük, a madagaszkári ariaryt pedig tizedesjegy nélkül, bár az ISO kettőt ad neki. A `'stripe'` konvenció ezeket átváltja, így a `PaymentEvent` összegei már az ISO szerinti váltóegységben vannak. A Stripe kezelője ezt magától elvégzi, a saját kódodban akkor kell, ha Stripe összeget dolgozol fel.
+
+## Mit ellenőriz az issueForPayment()?
+
+- A pénznem a Billingo pénznemei között van, különben `validation`.
+- A `value` és a `minor` egyezik: a `minor` nemnegatív egész, és a `value` pontosan a `minor` főegységben. Egy kézzel összerakott `{ value: 12_700, minor: 12_700, currency: 'HUF' }` ezért `validation` hiba, kérés nélkül.
+- A tételek bruttó összege a Billingo soronkénti kerekítésével egyezik a fizetett `minor` összeggel. Ha nem, `validation`, hacsak nem adtad meg az `allowAmountMismatch` opciót.
+- A 0 összegű fizetésből nem készül bizonylat (`skipped`).
+
+A tételek `totalGross` mezője is `PaymentAmount`, a visszatérítéseké (`refunds[].amount`, `refundedBefore`) szintén.

@@ -1,0 +1,9 @@
+---
+title: Minta
+description: Piszkozat, majd véglegesítés számlává ugyanazzal az azonosítóval, utána egy másik piszkozat törlése és a törölt piszkozat 403-as lekérése.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocumentFromDraft
+---
+
+A piszkozat az 1-es azonosítót kapja, sorszám nélkül. A `finalizeDraft()` után ugyanez az azonosító `invoice` típusú, `2026-1` sorszámmal. A második piszkozatot a példa törli, és a lekérésére a Billingo 403-at ad. Az **Elküldött kérések** fülön figyeld a `PUT /documents/1` törzsét: a teljes számla megy benne, nem csak a változás.
+
+<Example slug="piszkozat" />

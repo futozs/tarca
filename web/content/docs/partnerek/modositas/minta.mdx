@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Partner költöztetése a teljes partner visszaküldésével, majd egy csonka PUT, amely kiüríti a telefonszámot és az e-mail címeket.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/UpdatePartner
+---
+
+A példa két módosítást mutat. Az első lekéri a partnert, és csak a címét cseréli, így a telefonszám és az e-mail cím megmarad. A második csak a nevet és a címet küldi, ezért a Billingo kiüríti a többi mezőt.
+
+<Example slug="partner-modositas" />
+
+Az **Elküldött kérések** fülön hasonlítsd össze a két `UpdatePartner` törzset: az első a teljes partnert viszi, a második csak két mezőt. A **Billingo válasz** fülön a második csere után a `phone` `""`, az `emails` `[]`.

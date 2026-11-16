@@ -1,0 +1,59 @@
+---
+title: Válasz
+description: A bankAccounts.update() által visszaadott bankszámla a teljes csere után, a kiürülő IBAN és SWIFT, és a módosítás hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/UpdateBankAccount
+---
+
+A Billingo 200-zal és a csere utáni bankszámlával válaszol, a tárca `Billingo.BankAccount` objektumként adja vissza. A mezőket a [Lekérés](/docs/bankszamlak/lekeres) írja le.
+
+A kihagyott `accountNumberIban` és `swift` a válaszban `''`. Ha az IBAN eltűnt, a csere törzséből hiányzott:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const uj = await tarca.bankAccounts.create({
+  name: 'Euró számla',
+  accountNumber: '11111111-22222222-44444444',
+  accountNumberIban: 'HU00111111112222222244444444',
+  currency: 'EUR',
+})
+
+const csere = await tarca.bankAccounts.update(uj.id ?? 0, {
+  name: 'Euró számla',
+  accountNumber: '11111111-22222222-44444444',
+  currency: 'EUR',
+})
+
+console.log(csere.accountNumberIban === '' ? 'az IBAN elveszett' : 'rendben')
+```
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 422 | `validation` | Hiányzik a név, a számlaszám vagy a pénznem. |
+| 403 | `forbidden` | Csak olvasó kulcs, vagy ismeretlen bankszámla (ezt csak a hamis Billingóban mértük). |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 5xx | `server` | Billingo hiba. Nem tudni, lefutott-e a csere. |
+| – | `network`, `timeout` | Nincs válasz. |
+
+A PUT ugyanazzal a törzzsel megismételve ugyanazt az állapotot adja, ezért bizonytalan hiba után megismételheted. A tárca nem teszi meg helyetted:
+
+```ts twoslash
+import { type BankAccountInput, createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+
+async function cserel(id: number, input: BankAccountInput) {
+  try {
+    return await tarca.bankAccounts.update(id, input)
+  } catch (error) {
+    if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+    return tarca.bankAccounts.update(id, input)
+  }
+}
+```

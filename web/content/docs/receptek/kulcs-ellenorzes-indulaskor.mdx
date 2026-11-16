@@ -1,0 +1,111 @@
+---
+title: Kulcs ellenőrzése induláskor
+description: A szerver indulásakor ellenőrzi a Billingo API kulcsot és a profilt, hogy élesben ne fusson teszt profillal, fejlesztésben pedig ne éles profillal.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Egy rossz kulcs vagy egy rossz profil csak az első számlánál derülne ki, egy fizetett rendelés közepén. Ez a recept már a szerver indulásakor ellenőrzi a kulcsot, és megnézi, melyik Billingo profilhoz tartozik. Élesben a NAV-kapcsolat nélküli profil (a fejlesztői teszt profil ilyen) hiba, fejlesztésben a NAV-kapcsolt éles profil gyanús.
+
+## Az ellenőrzés
+
+```ts twoslash title="lib/billingo-ellenorzes.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+// @filename: billingo-ellenorzes.ts
+// ---cut---
+import { tarca } from '@/lib/tarca'
+
+export async function ellenorizdABillingot(eles: boolean): Promise<void> {
+  if (!(await tarca.verifyCredentials())) {
+    throw new Error('A Billingo nem fogadta el a BILLINGO_API_KEY kulcsot.')
+  }
+
+  const szervezet = await tarca.organization.get()
+  if (eles && szervezet.hasNavConnection !== true) {
+    throw new Error('Éles környezet, de a Billingo profilnak nincs NAV kapcsolata (teszt profil?).')
+  }
+  if (!eles && szervezet.hasNavConnection === true) {
+    console.warn('Fejlesztői környezet, de a Billingo profil NAV-kapcsolt éles profil.')
+  }
+
+  const vartAdoszam = process.env.BILLINGO_ADOSZAM
+  if (vartAdoszam && szervezet.taxCode !== vartAdoszam) {
+    throw new Error('A Billingo profil adószáma nem egyezik a BILLINGO_ADOSZAM értékével.')
+  }
+}
+```
+
+A `verifyCredentials()` egy `GET /organization` kérés. `false`-t csak akkor ad, ha a Billingo 401-gyel elutasította a kulcsot. Minden más hibát továbbdob, így egy hálózati hiba vagy egy 5xx nem úgy látszik, mintha a kulcs lenne rossz. Az `organization.get()` ugyanezt a végpontot kéri le még egyszer, és most az adatait is visszaadja: az adószámot, az előfizetést és a NAV-kapcsolatot.
+
+A `BILLINGO_ADOSZAM` opcionális. Ha megadod, egy másik cég kulcsa sem csúszhat be az éles környezetbe. Az adószámot a hibaüzenet nem írja ki.
+
+## Bekötés Next.js-ben
+
+A Next.js az `instrumentation.ts` `register()` függvényét a szerver indulásakor egyszer futtatja. A tárca Node.js alatt fut, ezért a modult csak a `nodejs` runtime-ban töltjük be.
+
+```ts twoslash title="instrumentation.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/billingo-ellenorzes' {
+  export function ellenorizdABillingot(eles: boolean): Promise<void>
+}
+// @filename: instrumentation.ts
+// ---cut---
+import { isBillingoError } from 'tarcajs'
+
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== 'nodejs') return
+
+  const { ellenorizdABillingot } = await import('@/lib/billingo-ellenorzes')
+  try {
+    await ellenorizdABillingot(process.env.VERCEL_ENV === 'production')
+  } catch (error) {
+    if (isBillingoError(error) && error.retryable) {
+      console.warn('A Billingo induláskor nem volt elérhető', error.category, error.status)
+      return
+    }
+    throw error
+  }
+}
+```
+
+Ha a Billingo épp nem érhető el (`network`, `timeout`, `server`, `rate_limit`), a szerver csak figyelmeztet, és elindul. Rossz kulcsra vagy rossz profilra a hiba az indulási naplóban jelenik meg, nem az első vásárlónál. Más platformon a `register()` helyett a szerver belépési pontjából hívd meg ugyanígy.
+
+## Mit ad vissza a Billingo
+
+<Example slug="kulcs-ellenorzes" operation="GetOrganizationData" />
+
+A hamis Billingo egy friss fejlesztői teszt profilt utánoz: `hasNavConnection: false`, üres `features` lista és holnapi lejárati dátum. Élőben a teszt profil ugyanígy néz ki. Külön „teszt profil” jelzőt a Billingo nem ad, ezért a NAV-kapcsolat a legbiztosabb jel.
+
+## Buktatók
+
+<Callout type="warning" title="Az írási jogot ez nem bizonyítja">
+  Egy csak olvasásra jogosult kulcs is átmegy a `verifyCredentials()`-en. Hogy ír-e, az csak az
+  első írásnál derül ki (`forbidden`, 403). Éles profilon az „API + Tömeges” kiegészítő hiányát is
+  csak egy írás mutatja meg (`subscription`, 402). Írást ellenőrzésképpen ne küldj: éles profilon
+  minden kiállított számla a NAV-hoz kerül.
+</Callout>
+
+<Callout type="info" title="Ugyanez parancssorból">
+  Az `npx tarcajs doctor` három GET kéréssel ellenőrzi a kulcsot, az órát, a profilt, a
+  NAV-kapcsolatot, az előfizetést, a számlatömböket és a bankszámlákat. Deploy előtti
+  ellenőrzésnek CI-ban is futtathatod: [Parancssor](/docs/kiegeszitok/parancssor).
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Hitelesítés" href="/docs/alapok/hitelesites">
+    V3 API kulcs, olvasási és írási jog, több profil több klienssel.
+  </Card>
+  <Card title="Szervezet adatai" href="/docs/segedvegpontok/szervezet">
+    Az organization.get() válasza mezőnként.
+  </Card>
+  <Card title="Kulcs ellenőrzése" href="/docs/segedvegpontok/kulcs-ellenorzese">
+    A verifyCredentials() pontos viselkedése.
+  </Card>
+  <Card title="Fejlesztői teszt profil" href="/docs/alapok/teszt-profil">
+    Mire jó a teszt profil, és mi hiányzik belőle.
+  </Card>
+</Cards>

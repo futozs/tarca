@@ -1,0 +1,75 @@
+---
+title: Visszatérítés
+description: Teljes visszatérítéskor az issueForPayment() egyszer sztornózza a fizetés bizonylatát. Mi történik, ha még nincs bizonylat, ha a számlát már módosították, ha a válasz elveszik, és ha több folyamat dolgozik egyszerre.
+---
+
+Egy `refunded` eseményre az `issueForPayment()` megkeresi a fizetés bizonylatát (ugyanazzal a `vendorId`-val, mint a kiállításkor), és egyszer sztornózza: `POST /documents/{id}/cancel`. A Billingo sztornó bizonylatot készít negatív összegekkel, az eredeti `cancelled: true` lesz.
+
+<Example slug="visszaterites" />
+
+Az eredmény:
+
+```ts
+{ kind: 'cancellation', vendorId, document: 'receipt' | 'invoice', originalId, cancellation, created }
+```
+
+A `cancellation` a sztornó bizonylat, a `created` azt mondja meg, hogy ez a hívás sztornózott-e. Az újraküldött visszatérítés a már sztornózott bizonylatot találja, és `created: false`-t ad, kérés nélkül.
+
+## Az esetek
+
+| Helyzet | Mit csinál a tárca? |
+| --- | --- |
+| A bizonylat még nincs sztornózva | Sztornózza (`created: true`). |
+| Már sztornózva van | Semmit, `created: false`. |
+| A fizetésnek még nincs bizonylata | `in_progress` hiba. Kivétel a Barion, lásd lent. |
+| A számlát már módosították (`correctionType: 'modified'`) | Nem sztornóz: a megmaradó összegre módosító számlát állít ki `teljes` visszatérítés-azonosítóval. |
+| A számla módosított, de a módosító a lassú listában még nem látszik | `in_progress` hiba, az újraküldés rendezi. |
+| A Billingo 400 `Cannot cancel the document…` választ ad | Mint a módosított számlánál: módosító számla a maradékra. |
+
+A módosított számlát a Billingo nem engedi sztornózni (400 `Cannot cancel the document (id:…)`), és a módosítót sem. A megmaradó összeg a számla tételei mínusz a hozzá kapcsolódó módosítók, ezeket a tárca a `documents.list` találataiból adja össze. Ha ehhez 5 oldalnál többet kellene átnéznie, `validation` hibát ad, és nem állít ki a teljes összegre szóló módosítót. A módosító itt is a [részleges visszatérítés](/docs/fizetesek/reszleges-visszaterites) szabályai szerint készül: `ledger` nélkül csak javaslatot kapsz.
+
+## Ha még nincs bizonylat
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+import { issueForPayment, type PaymentEvent } from 'tarcajs/payments'
+
+const tarca = createTarca()
+
+const visszaterites: PaymentEvent = {
+  provider: 'stripe',
+  kind: 'refunded',
+  id: 'pi_3QhB7e',
+  method: 'stripe',
+  amount: { value: 12_700, minor: 1_270_000, currency: 'HUF' },
+  refundedAmount: { value: 12_700, minor: 1_270_000, currency: 'HUF' },
+  raw: {},
+}
+
+try {
+  await issueForPayment(tarca, visszaterites, { vat: 27 })
+} catch (error) {
+  if (isBillingoError(error)) console.log(error.category, error.hint)
+}
+```
+
+Egy visszatérítés megelőzheti a fizetés eseményét, például ha a fizetés feldolgozása korábban elbukott, és újraküldésre vár. Ha a tárca ilyenkor nyugtázná a visszatérítést, a később megérkező fizetés bizonylatot állítana ki egy már visszaadott összegről. Ezért `in_progress` hibát dob, a webhook 500-at ad, és a szolgáltató később újraküldi a visszatérítést, amikor a bizonylat már megvan.
+
+Ha egy fizetéshez soha nem lesz bizonylat (például a tárca bevezetése előtti fizetés), az `onPayment`-ben ismerd fel ezt az `in_progress` hibát, és nyugtázd kézzel.
+
+**Barion.** A Barion callbackje a fizetés teljes állapotát hozza (`includesPayment: true`), és visszatérítés után nem jön külön fizetési esemény. Bizonylat hiányában a tárca ugyanebből az állapotból előbb kiállítja a fizetés bizonylatát, aztán sztornózza.
+
+## Pontosan egyszer
+
+- Egy folyamaton belül az azonos `vendorId`-ra érkező visszatérítések egymás után futnak, nem párhuzamosan.
+- Több folyamat (több szerverpéldány, serverless függvény) között a `ledger` opció véd: egy `setIfAbsent`-et ismerő `KeyValueStore`, amelyben a tárca 10 percre lefoglalja a `tarca:refund:` kulcsot. Aki a kulcsot megszerzi, a sztornó előtt újra elolvassa a bizonylatot, így egy elavult olvasás nem vezet kettős sztornóhoz. Aki foglaltnak találja, elolvassa a bizonylatot: ha már sztornózott, `created: false`, különben `in_progress`.
+- Bizonytalan hiba (hálózat, időtúllépés, 5xx) után a tárca `recoveryDelayMs` múlva újra elolvassa a bizonylatot, és a `cancelled` jelző dönt (`created: true`). Ha így sem dönthető el, az eredeti hiba megy tovább. Második sztornó kérés soha nem megy ki.
+- A ledger tároló hibája `store_unavailable`, kérés előtt.
+
+A `ledger` nélkül egyetlen folyamatban a teljes visszatérítés így is biztonságos. `setIfAbsent` nélküli ledger (Cloudflare KV, sima get/set tároló) viszont `configuration` hiba, mert az nem véd a versenyhelyzet ellen. Lásd [Tárolók](/docs/kiegeszitok/tarolok).
+
+## Meghiúsult visszatérítés
+
+A Stripe-nál egy visszatérítés a `charge.refunded` után is meghiúsulhat. A `charge.refund.updated` ilyenkor `refund-failed` eseményt ad. A tárca nem ír semmit, és `{ kind: 'refund-failed', vendorId, document, reason }` eredményt ad: a sztornó vagy a módosító már elkészült, ezt a könyvelőddel kézzel kell rendezni. Bizonylat nélkül az eredmény `skipped`.
+
+A sztornó részletei, a Billingo mezői és hibái: [Sztornó](/docs/bizonylatok/sztorno).

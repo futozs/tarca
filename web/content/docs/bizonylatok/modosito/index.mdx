@@ -1,0 +1,32 @@
+---
+title: Módosító számla
+description: Kiállított számla helyesbítése módosító számlával a documents.createModification() metódussal. A tételek a különbözetek, és utána sem az eredeti, sem a módosító nem sztornózható.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateModificationDocument
+---
+
+Ha egy számlán hibás az összeg vagy a mennyiség, de a számla egyébként érvényes, a sztornó helyett módosító számlát is kiállíthatsz. A módosító számla tételei a különbözetek: ha két órával kevesebb munkát számláztál volna, a tétel mennyisége −2.
+
+<Operation id="CreateModificationDocument" methods={['documents.createModification']} />
+
+```ts
+const modosito = await tarca.documents.createModification(szamla.id ?? 0, { items: [{ name: 'Webfejlesztés', quantity: -2, netUnitPrice: 15_000, vat: 27 }] })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/modosito/keres">
+    A különbözeti tételek, a határidő, a fizetési mód és a pénzügyi teljesítés.
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/modosito/valasz">
+    A módosító számla, az eredeti új állapota, és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/modosito/minta">
+    Két óra jóváírása, majd a sztornó elutasítása.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Utána nincs sztornó">
+  A módosító számla után a Billingo sem az eredeti számlát, sem a módosítót nem engedi
+  sztornózni (400 `Cannot cancel the document`). Ha később a teljes számlát érvényteleníteni
+  kell, azt is egy újabb módosító számlával teheted meg, a maradék teljes összegére. Ha a számla
+  teljesen hibás, inkább [sztornózd](/docs/bizonylatok/sztorno), és állíts ki újat.
+</Callout>

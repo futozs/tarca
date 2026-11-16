@@ -1,0 +1,39 @@
+---
+title: "rate_limit: túl sok kérés"
+description: "A rate_limit kategória: a Billingo 429-cel korlátozza a forgalmat. Kulccsal 300 kérés percenként, a tárca a GET-et a Retry-After szerint újrapróbálja, az írást nem."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | 429 |
+| Újrapróbálja a tárca? | GET kérést igen, írást nem |
+| `retryable` | `true` |
+
+## Mikor jön elő
+
+A Billingo kulccsal percenként 300 kérést enged, kulcs nélkül 60-at. Minden kérés számít, a GET is, és a webhookjaid ugyanabból a keretből fogyasztanak. A hiba üzenete `Túl sok kérés: a Billingo átmenetileg korlátozza a forgalmat.`, a Billingo üzenete `Too many requests`.
+
+A `retryAfterMs` a `Retry-After` fejlécből jön, ha a Billingo küldi. Az `x-ratelimit-limit` és `x-ratelimit-remaining` fejléc élőben csak a bináris válaszokon (PDF, blokknyomtatás, export letöltés) van, a JSON válaszokon egyik `X-RateLimit-*` fejléc sincs, így a hátralévő keretet előre nem látod.
+
+## Mit tesz a tárca
+
+- **GET:** újrapróbálja, összesen legfeljebb `maxAttempts` (alapból 3, legfeljebb 5) kérés, exponenciális várakozással (`retryDelayMs`, alapból 1 000 ms), vagy a `Retry-After` szerint, ha az hosszabb. Ha a Billingo egy percnél hosszabb várakozást kér, nem vár, hanem azonnal `rate_limit` hibát ad.
+- **POST, PUT, DELETE:** nem próbálja újra. A 429 azt jelenti, hogy a Billingo a kérést nem dolgozta fel, így a bizonylat nem készült el.
+
+## Mi a teendő
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca({ maxAttempts: 3, retryDelayMs: 1_000 })
+
+try {
+  await tarca.documents.list({ perPage: 100 })
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'rate_limit') throw error
+  console.log('Próbáld újra később:', error.retryAfterMs ?? 60_000, 'ms múlva')
+}
+```
+
+Sok bizonylatnál ne ciklusban hívd a `createOnce`-t, hanem a [tömeges számlázással](/docs/kiegeszitok/tomeges-szamlazas): alapból percenként 30 tételt indít, ami a legrosszabb esetben is 180 kérés, és `rate_limit` hibánál megáll. Újrafuttatáskor ugyanazokkal a kulcsokkal a már kiállított tételek `existing` állapotot kapnak.

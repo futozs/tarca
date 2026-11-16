@@ -1,0 +1,52 @@
+---
+title: Nyugta vagy számla
+description: A chooseDocument() a vevő, az összeg és a fizetés módja alapján dönt nyugta és számla között. A 900 000 Ft-os határ, a devizás összegek és a pénztárgép-köteles tevékenység.
+---
+
+Amikor az `issueForPayment()` új bizonylatot állít ki, a `chooseDocument()` függvénnyel dönt nyugta és számla között. A döntés és az indoklása az eredmény `decision` mezőjében van (`type`, `reasons`, `grossTotalHuf`), így naplózhatod, vagy megmutathatod a könyvelődnek. Ha a bizonylat már létezett (`created: false`), a `decision` `undefined`.
+
+```ts twoslash
+import { chooseDocument, RECEIPT_MAX_GROSS_HUF } from 'tarcajs/payments'
+
+console.log(RECEIPT_MAX_GROSS_HUF)
+console.log(chooseDocument({ grossTotal: 950_000 }).type)
+console.log(chooseDocument({ grossTotal: 2_000, currency: 'EUR', conversionRate: 390 }))
+console.log(chooseDocument({ grossTotal: 12_700, cashRegisterRequired: true }).type)
+```
+
+## A szabály
+
+Számla jár, ha legalább egy igaz:
+
+| Feltétel | Bemenet |
+| --- | --- |
+| A vevő adóalany vagy jogi személy | `buyer.taxNumber`, `buyer.euTaxNumber` vagy `buyer.isBusiness` |
+| Az ellenérték forintban eléri a 900 000 Ft-ot (`RECEIPT_MAX_GROSS_HUF`) | `grossTotal`, devizánál `conversionRate` |
+| A teljes ellenértéket nem fizetik meg legkésőbb a teljesítésig | `paidByFulfillment: false` |
+| A vevő számlát kér | `invoiceRequested: true` |
+
+Ha egyik sem igaz, nyugta adható. Pénztárgép-köteles tevékenységnél (`cashRegisterRequired: true`) a döntés `cash-register`: ilyenkor nyugtát csak online pénztárgép adhat, a Billingóból kiállított nyugta nem helyettesíti. Az `issueForPayment()` ezt `validation` hibaként adja tovább, kérés nélkül.
+
+| `type` | Mit csinál az `issueForPayment()`? |
+| --- | --- |
+| `receipt` | `receipts.createOnce`, partner nélkül, bruttó árakkal |
+| `invoice` | `documents.createOnce` partnerrel, utána a befizetés rögzítése |
+| `cash-register` | `validation` hiba, bizonylat nem készül |
+
+## Devizás fizetés
+
+A 900 000 Ft-os határt forintban kell nézni. A `chooseDocument()` devizás összegnél `conversionRate`-et vár, nélküle `validation` hibát ad. Az `issueForPayment()` ezt magától intézi: az árfolyamot az opcióból vagy a Billingótól veszi (`currencies.rate()`, a teljesítés napjára), és ugyanezt teszi a bizonylatra is. A fenti példában 2 000 euró 390 Ft-os árfolyamon 780 000 Ft, ezért nyugta jár.
+
+## Felülírás
+
+Az `issueForPayment()` `document` opciója felülírja a döntést: `'invoice'` mindig számlát, `'receipt'` mindig nyugtát kér. A `buyerIsBusiness`, az `invoiceRequested` és a `cashRegisterRequired` a döntés bemenetét egészíti ki.
+
+<Example slug="szamla-fizetesbol" />
+
+A példában a vevő adószámot adott meg, ezért a `decision.reasons` egyetlen indoka az, hogy a vevő adóalany.
+
+<Callout type="info" title="A tárca nem ad jogi tanácsot">
+  A `chooseDocument()` a gyakori webshopos esetet fedi le. Különleges helyzetben (például
+  közvetített szolgáltatás vagy külföldi magánszemély) egyeztess a könyvelőddel, és add meg a
+  `document` opciót.
+</Callout>

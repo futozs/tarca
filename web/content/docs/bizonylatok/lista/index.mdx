@@ -1,0 +1,30 @@
+---
+title: Lista és szűrés
+description: Bizonylatok listája szűrőkkel és lapozással a documents.list() és a documents.all() metódussal. Típus, partner, fizetési állapot, dátum és sorszám szerint, legújabb elöl.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/ListDocument
+---
+
+A `documents.list()` egy oldalt ad vissza, a `documents.all()` végigmegy az összes oldalon. Mindkettő a `GET /documents` szűrőit ismeri.
+
+<Operation id="ListDocument" methods={['documents.list', 'documents.all']} />
+
+```ts
+const oldal = await tarca.documents.list({ paymentStatus: 'outstanding', perPage: 50 })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/lista/keres">
+    A szűrők, a Billingo paraméternevei, a dátumok és a lapozás szabályai.
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/lista/valasz">
+    A Page boríték, a sorrend, a lista késése és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/lista/minta">
+    Kifizetetlen számlák oldalanként, majd az összes számla bejárása.
+  </Card>
+</Cards>
+
+<Callout type="info" title="A lista késik">
+  Élőben egy frissen kiállított számla 15–30 másodperc múlva jelent meg a listában. Közvetlenül a
+  kiállítás után ne a listából keresd: a `get(id)` és a `findByVendorId()` azonnal megtalálja.
+</Callout>

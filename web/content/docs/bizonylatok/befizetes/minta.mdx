@@ -1,0 +1,9 @@
+---
+title: Minta
+description: Két részletfizetés egy 127 000 Ft-os számlára. Az első után a számla részben fizetett, a második után fizetett, a ténylegesen elküldött befizetéslistával.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/UpdatePayment
+---
+
+A számla 127 000 Ft, két 63 500 Ft-os részlettel. Az első `add()` után a `paymentStatus` `partially_paid`, a második után `paid`. Az **Elküldött kérések** fülön figyeld a második `PUT /documents/1/payments` törzsét: mindkét befizetés benne van, mert a Billingo a teljes listát cseréli.
+
+<Example slug="befizetes" />

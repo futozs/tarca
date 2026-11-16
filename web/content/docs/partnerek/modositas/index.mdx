@@ -1,0 +1,23 @@
+---
+title: Módosítás
+description: Partner módosítása a partners.update() metódussal. A Billingo PUT kérése teljes csere, ezért a kihagyott telefonszám, e-mail lista és IBAN kiürül.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/UpdatePartner
+---
+
+A `partners.update()` PUT kéréssel a teljes partnert cseréli. Élőben a kihagyott `phone` `''`, az `emails` `[]` lett, ezért előbb kérd le a partnert, és az egészet küldd vissza.
+
+```ts
+const partner = await tarca.partners.update(id, ujAdatok)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/partnerek/modositas/keres">
+    A `PartnerReplacement`, és mit kell visszaküldeni.
+  </Card>
+  <Card title="Válasz" href="/docs/partnerek/modositas/valasz">
+    A partner a csere után, az élőben mért kiürülő mezők és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/partnerek/modositas/minta">
+    Költöztetés a teljes partnerrel, majd egy csonka PUT.
+  </Card>
+</Cards>

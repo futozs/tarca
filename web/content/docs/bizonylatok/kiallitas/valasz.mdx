@@ -1,0 +1,89 @@
+---
+title: Válasz
+description: A documents.create() a Billingo teljes Document objektumát adja vissza camelCase alakban. A fontos mezők, az élőben mért eltérések és a kiállításkor előforduló hibák biztonságos kezelése.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+```ts
+Promise<Billingo.Document>
+```
+
+A Billingo 201-gyel válaszol, a törzs a teljes bizonylat. A tárca a snake_case mezőneveket camelCase-re alakítja, más változtatás nincs: a sorszámot, az összegeket és a dátumokat a Billingo adja.
+
+## Mezők
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A bizonylat azonosítója. Ezzel hívod a `get()`, `pdf()`, `cancel()` és a többi metódust. |
+| `invoiceNumber` | `string` | A sorszám. Prefix nélküli tömbben `2026-1`, prefixszel `TRCE / 2026-000001`, díjbekérőn `000001`, piszkozaton `''`. |
+| `type` | `Billingo.DocumentType` | `invoice`, `proforma`, `advance`, `draft`, később `cancellation` vagy `modification`. |
+| `correctionType` | `Billingo.DocumentType` | Friss számlán a típusával egyezik (`invoice`); sztornó után `canceled`, módosító számla után `modified`. |
+| `cancelled` | `boolean` | Igaz, ha a bizonylatot sztornózták. |
+| `blockId` | `number` | A számlatömb. |
+| `paymentStatus` | `Billingo.PaymentStatus` | `outstanding` (kifizetetlen), `partially_paid`, `paid`, piszkozaton `none`. |
+| `paymentMethod` | `Billingo.PaymentMethod` | A fizetési mód. |
+| `grossTotal` | `number` | A bruttó végösszeg a bizonylat pénznemében. |
+| `currency`, `conversionRate` | `Billingo.Currency`, `number` | Pénznem és árfolyam; forintos számlán `1`. |
+| `invoiceDate` | `string` | A kelte, a kiállítás napja. Ezt a Billingo állítja be. |
+| `fulfillmentDate`, `dueDate` | `string` | Teljesítés és fizetési határidő, `YYYY-MM-DD`. |
+| `paidDate` | `string` | Élőben kifizetetlen számlán is ki van töltve, a kelte napjával. Fizetettségre a `paymentStatus`-t nézd. |
+| `organization` | `Billingo.DocumentOrganization` | A kiállító adatai. Bankszámla nélkül `organization.bankAccount.id` értéke `null`. |
+| `partner` | `Billingo.Partner` | A partner a kiállítás pillanatában tárolt adataival. |
+| `documentPartner` | `Billingo.DocumentPartner` | A számlára nyomtatott vevőadatok. |
+| `items` | `Billingo.DocumentItem[]` | A tételek, a Billingo által számolt `netUnitAmount`, `netAmount`, `vatAmount`, `grossAmount` értékekkel. |
+| `summary` | `Billingo.DocumentSummary` | Nettó, áfa és forintosított összegek, áfakulcsonként a `vatRateSummary`-ben. |
+| `settings` | `Billingo.DocumentSettings` | A beállítások, köztük `shouldSendEmail` és `orderNumber`. |
+| `relatedDocuments` | `{ id, invoiceNumber }[]` | Kapcsolódó bizonylatok: előleg a végszámlán, díjbekérő a belőle készült számlán. |
+| `onlineSzamlaStatus` | `string` | A NAV-beküldés állapota. Friss számlán `processing`, piszkozaton `not_checked`. Lásd [NAV-állapot](/docs/bizonylatok/nav-statusz). |
+| `notificationStatus` | `string` | Az e-mail értesítés állapota. |
+| `electronic`, `language`, `comment` | | Ahogy elküldted. |
+| `discount`, `recurringId` | `… \| null` | Kedvezmény és ismétlődés nélkül `null`. |
+
+## Élőben mért eltérések
+
+- Több mező `null`, amit a spec nem enged: a tételek `entitlement`, `sku`, `ean` és `dataEraserCodes` mezője, a `discount`, a `recurringId` és a partner `customBillingSettings.dueDays` és `documentCurrency` mezője. A `Billingo` típusok ezt már tudják, ezért `!= null`-lal vizsgáld őket.
+- Bruttó egységárú tételnél a `netUnitAmount` hat tizedesre számolt érték: 1270 Ft bruttó 27%-kal `1000.000001`. Lásd [Kerekítés](/docs/bizonylatok/kiallitas/szabalyok/kerekites).
+- A teszt profilon kiállított számla `onlineSzamlaStatus` mezője is `processing`. A bizonylaton nincs jelző, hogy teszt profilról jött, csak az `organization.taxNumber` (`00000000-0-00` a mi teszt profilunkon).
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | A tárca ellenőrzése a kérés előtt elbukott. Semmi nem jött létre. |
+| – | `configuration` | Nincs `invoice` típusú számlatömb a fiókban, és `blockId` sincs megadva. |
+| 400 | `validation` | `Duplicate vendor id. (id:…)`: ez a `vendorId` már foglalt, a számla egyszer már elkészült. Más 400-as üzenet is jöhet, például EU-s áfakód nem `FOREIGN` partnerrel. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 402 | `subscription` | Éles profilon nincs „API + Tömeges számlagenerálás” kiegészítő, vagy a bizonylattípushoz (díjbekérő, e-számla, piszkozat) kevés az alapcsomag. |
+| 403 | `forbidden` | Csak olvasó kulcs, vagy egy másik cég partner-, tömb- vagy bankszámla-azonosítója. |
+| 422 | `validation` | A Billingo elutasította a mezőket. A `fieldErrors` a Billingo snake_case mezőneveit adja (`partner_id`, `conversion_rate`). |
+| 429 | `rate_limit` | Túl sok kérés. A tárca a POST-ot nem ismétli. |
+| 5xx | `server` | Billingo hiba. Nem tudni, elkészült-e a számla. |
+| – | `network`, `timeout` | Nem jött válasz. Nem tudni, elkészült-e a számla. |
+| 2xx | `unexpected_response` | Üres vagy nem JSON válasz jött. A számla elkészülhetett. |
+
+A `server`, `network`, `timeout` és `unexpected_response` után a számla lehet, hogy elkészült. Ilyenkor ne hívd újra a `create()`-et, hanem keresd vissza a `vendorId` alapján:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = {
+  vendorId: 'ORDER-1001',
+  partner: 1,
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+}
+
+const UNCERTAIN = ['server', 'network', 'timeout', 'unexpected_response']
+
+try {
+  await tarca.documents.create(szamla)
+} catch (error) {
+  if (!isBillingoError(error) || !UNCERTAIN.includes(error.category)) throw error
+  const meglevo = await tarca.documents.findByVendorId(szamla.vendorId)
+  if (meglevo === null) throw error
+  console.log('A számla mégis elkészült:', meglevo.invoiceNumber)
+}
+```
+
+Ugyanezt, két visszakereséssel és a versenyhelyzet kezelésével, a `createOnce()` végzi el helyetted: [Pontosan egyszer](/docs/bizonylatok/pontosan-egyszer).

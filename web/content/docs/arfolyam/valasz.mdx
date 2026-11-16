@@ -1,0 +1,59 @@
+---
+title: Válasz
+description: A currencies.rate() ConversionRate eredménye, a Billingo conversation_rate mezője, a dátum a válaszban és a lekérdezésnél előforduló hibák.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Currency/GetConversionRate
+---
+
+A Billingo `200`-as válasza négy mező: `from_currency`, `to_currency`, `conversation_rate` és `date`. A tárca ebből egy rövidebb nevű `ConversionRate` objektumot készít.
+
+```ts
+const { rate, date } = await tarca.currencies.rate({ from: 'EUR', to: 'HUF' })
+```
+
+## ConversionRate
+
+| Mező | Típus | Billingo mező | Leírás |
+| --- | --- | --- | --- |
+| `from` | `Billingo.Currency` | `from_currency` | A forrás pénznem. Ha a válaszból hiányzik, a kérésben megadott érték. |
+| `to` | `Billingo.Currency` | `to_currency` | A cél pénznem, ugyanígy. |
+| `rate` | `number` | `conversation_rate` | Egy `from` egység hány `to` egység. EUR → HUF esetén több száz, HUF → EUR esetén egynél jóval kisebb szám. |
+| `date` | `string \| undefined` | `date` | Az árfolyam napja, `YYYY-MM-DD`. |
+
+<Callout type="info" title="conversation_rate, nem conversion_rate">
+  A Billingo a mezőt `conversation_rate` néven küldi, és a spec is így írja. Az élő válasz is ezt
+  hozta (a hivatalos Billingo MCP felvétele és a tárca e2e futása szerint). A tárca `rate` néven
+  adja tovább, így az elírás nem kerül a kódodba. A nyers típus `Billingo.ConversationRate`.
+</Callout>
+
+Ha a válaszban nincs szám típusú `conversation_rate`, a tárca `RangeError`-t dob a két pénznem nevével, nem ad vissza `undefined` árfolyamot.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `RangeError` | Érvénytelen `date` (kérés nem ment ki), vagy a válaszból hiányzik az árfolyam. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 402 | `subscription` | Az előfizetés nem engedi a műveletet. |
+| 422 | `validation` | A Billingo elutasította a paramétereket. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból legfeljebb három próbálkozásig. |
+| – | `network`, `timeout` | Nem jött válasz. A tárca ezt is újrapróbálja. |
+
+A lekérdezés nem módosít semmit, ezért bármikor megismételheted. Ha ugyanarra a napra sokszor kell, tárold el az eredményt, így kevesebb kérést küldesz.
+
+## Tesztekben
+
+A hamis Billingo (`tarcajs/testing`) nem hív külső szolgáltatást: az árfolyamot a `hufRates` opcióból számolja, amely megmondja, hány forint egy egység. Alapból `EUR: 390`, `USD: 360`, `GBP: 460`, `CHF: 410`. Két deviza közti árfolyam a két forintérték hányadosa, hat tizedesre kerekítve. Ismeretlen pénznemre 422-t ad, az üzenet megnevezi a hiányzó `hufRates` bejegyzést.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
+
+const billingo = createFakeBillingoFetch({ hufRates: { EUR: 385.5, PLN: 90 } })
+const tarca = createTarca({ apiKey: 'teszt-kulcs', fetch: billingo.fetch })
+
+const zloty = await tarca.currencies.rate({ from: 'PLN', to: 'EUR' })
+
+console.log(zloty.rate)
+```
+
+Itt a `rate` `0.233463`, vagyis 90 / 385,5 hat tizedesre. A hamis Billingo többi beállítása a [Hamis Billingo](/docs/tesztek/hamis-billingo) oldalon van.

@@ -1,0 +1,45 @@
+---
+title: Deviza
+description: Euróban, dollárban vagy más pénznemben kiállított számla a tárcával. Kötelező árfolyam, a Billingo árfolyam-lekérdezése, és hogyan számolja a Billingo a forintosított összegeket.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Currency/GetConversionRate
+---
+
+Nem forintos számlához két mező kell: a `currency` és a `conversionRate`. Az árfolyam nélküli devizás számlát a tárca kérés nélkül elutasítja (`conversionRate` mezőhiba), mert a Billingo 422-t adna rá („The conversion rate field is required unless currency is in HUF.”).
+
+<Example slug="devizas-szamla" />
+
+## Honnan jön az árfolyam?
+
+A `currencies.rate({ from: 'EUR', to: 'HUF' })` a Billingótól kéri le, opcionálisan egy adott napra (`date`). Lásd [Árfolyam](/docs/arfolyam). Saját árfolyamot is megadhatsz, a tárca csak azt ellenőrzi, hogy pozitív szám.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { rate } = await tarca.currencies.rate({ from: 'EUR', to: 'HUF', date: '2026-11-16' })
+
+const szamla = await tarca.documents.create({
+  partner: 1,
+  currency: 'EUR',
+  conversionRate: rate,
+  language: 'en',
+  items: [{ name: 'Consulting', quantity: 3, unit: 'hour', netUnitPrice: 120, vat: 27 }],
+})
+
+console.log(szamla.grossTotal, szamla.currency, szamla.summary?.grossAmountLocal)
+```
+
+## Forintosított összegek
+
+Devizás számlán az összegek a számla pénznemében vannak (`grossTotal`, `summary.netAmount`, `summary.vatAmount`), a forintos értékek a `Local` végű mezőkben. Élőben, 389,17-es árfolyammal mértük:
+
+- A `summary.netAmountLocal` és a `grossAmountLocal` nincs kerekítve: `17104.0215` és `21128.0393`.
+- A `summary.vatAmountLocal` a devizás áfa szorozva az árfolyammal, egészre kerekítve: 10,34 × 389,17 → `4024`.
+- Az áfakulcsonkénti `vatRateVatAmountLocal` kulcsonként kerekít: `3890` és `135`. A kettő összege `4025`, 1 forinttal több, mint a `vatAmountLocal`.
+
+Ha a könyvelésedben forintos áfát vezetsz, döntsd el, melyiket használod, és ne várd, hogy a kettő egyezzen. A teljes kerekítési modell: [Kerekítés](/docs/bizonylatok/kiallitas/szabalyok/kerekites).
+
+## Nyelv
+
+Külföldi vevőnek a `language` mezővel más nyelvű számlát állíthatsz ki: `'en'`, `'de'`, `'fr'`, `'hr'`, `'it'`, `'ro'`, `'sk'`, `'us'` vagy `'hu'`. A nyelv a pénznemtől független.

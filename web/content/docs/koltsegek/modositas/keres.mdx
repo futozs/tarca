@@ -1,0 +1,113 @@
+---
+title: Kérés
+description: A spendings.update() bemenete. Teljes csere PUT kéréssel, ugyanazokkal a kötelező mezőkkel, mint a létrehozásnál. A kihagyott comment kiürül.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingUpdate
+---
+
+<Operation id="SpendingUpdate" methods={['spendings.update']} />
+
+```ts
+tarca.spendings.update(id: number, input: SpendingInput, options?: RequestOptions): Promise<Billingo.Spending>
+```
+
+A módosítás `PUT` kérés, és teljes cserét jelent: a Billingo a küldött adatokkal felülírja a költséget. Ezért a teljes `SpendingInput`-ot kell elküldened, ugyanazokkal a kötelező mezőkkel, mint a [létrehozásnál](/docs/koltsegek/letrehozas/keres#mezők), nem csak a megváltozott mezőket.
+
+<Callout type="warning" title="Ami kimarad, az törlődik">
+  Ha a `comment` mezőt kihagyod, a Billingo üres szövegre állítja (élőben mérve 2026. november
+  15-én). A kihagyott `paidAt` és `partnerId` sorsát nem mértük, de teljes cserénél ne számíts rá,
+  hogy megmaradnak: ha meg akarod tartani őket, mindig küldd vissza őket is.
+</Callout>
+
+## Fizetés rögzítése
+
+A leggyakoribb módosítás a fizetés napjának beírása. Küldd el újra a létrehozáskor használt adatokat, és tedd hozzá a `paidAt` mezőt:
+
+```ts twoslash
+import { createTarca, type SpendingInput } from 'tarcajs'
+
+const tarca = createTarca()
+
+const adatok: SpendingInput = {
+  category: 'advertisement',
+  currency: 'HUF',
+  conversionRate: 1,
+  totalGross: 63_500,
+  totalGrossHuf: 63_500,
+  totalVatAmount: 13_500,
+  totalVatAmountHuf: 13_500,
+  invoiceNumber: 'HIRDETES-2026-7',
+  invoiceDate: '2026-11-03',
+  fulfillmentDate: '2026-11-03',
+  dueDate: '2026-11-11',
+  paymentMethod: 'wire_transfer',
+  comment: 'Novemberi kampány',
+}
+
+const koltseg = await tarca.spendings.create(adatok)
+const fizetett = await tarca.spendings.update(koltseg.id ?? 0, { ...adatok, paidAt: '2026-11-10' })
+
+console.log(fizetett.paidAt, fizetett.comment)
+```
+
+## A lekért költségből
+
+Ha az eredeti adatok már nincsenek meg, a `get()` válaszából állítsd össze a bemenetet. A válasz két helyen tér el a bemenettől: a forintos összegek `totalGrossLocal` és `totalVatAmountLocal` néven jönnek, a partner pedig objektumként, nem azonosítóként.
+
+```ts twoslash
+import { createTarca, type SpendingInput } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function fizetettnekJelol(id: number, nap: string) {
+  const koltseg = await tarca.spendings.get(id)
+  const { category, currency, paymentMethod } = koltseg
+  if (category === undefined || currency === undefined || paymentMethod === undefined) {
+    throw new Error(`A ${id} költség adatai hiányosak.`)
+  }
+  const adatok: SpendingInput = {
+    category,
+    currency,
+    conversionRate: koltseg.conversionRate ?? 1,
+    totalGross: koltseg.totalGross ?? 0,
+    totalGrossHuf: koltseg.totalGrossLocal ?? 0,
+    totalVatAmount: koltseg.totalVatAmount ?? 0,
+    totalVatAmountHuf: koltseg.totalVatAmountLocal ?? 0,
+    invoiceNumber: koltseg.invoiceNumber ?? '',
+    invoiceDate: koltseg.invoiceDate ?? nap,
+    fulfillmentDate: koltseg.fulfillmentDate ?? nap,
+    dueDate: koltseg.dueDate ?? nap,
+    paymentMethod,
+    paidAt: nap,
+    ...(koltseg.comment != null ? { comment: koltseg.comment } : {}),
+    ...(koltseg.partner?.id != null ? { partnerId: koltseg.partner.id } : {}),
+  }
+  return tarca.spendings.update(id, adatok)
+}
+```
+
+A `?? 0` és a `?? ''` csak a típus miatt kell: a generált típusban minden válaszmező opcionális, a Billingo élőben mindet kitöltötte.
+
+## Helyi ellenőrzés és a dróton
+
+A tárca ugyanúgy ellenőrzi a dátumokat, mint a létrehozásnál: érvénytelen naptári napra `validation` hibát dob `fieldErrors` listával, a hiba `operation` mezője `SpendingUpdate`, és kérés nem megy ki. A törzs ugyanaz a snake_case `SpendingSave`, mint a `POST`-nál, a `paidAt` `paid_at` néven:
+
+```json
+{
+  "category": "advertisement",
+  "currency": "HUF",
+  "conversion_rate": 1,
+  "total_gross": 63500,
+  "total_gross_huf": 63500,
+  "total_vat_amount": 13500,
+  "total_vat_amount_huf": 13500,
+  "invoice_number": "HIRDETES-2026-7",
+  "payment_method": "wire_transfer",
+  "comment": "Novemberi kampány",
+  "fulfillment_date": "2026-11-03",
+  "invoice_date": "2026-11-03",
+  "due_date": "2026-11-11",
+  "paid_at": "2026-11-10"
+}
+```
+
+A törzs a hamis Billingo felvétele. Az azonosító az útvonalban megy: `PUT /spendings/{id}`.

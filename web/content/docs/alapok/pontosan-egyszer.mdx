@@ -1,28 +1,66 @@
 ---
 title: Pontosan egyszer
 description: Számla webshopból és webhookból dupla kiállítás nélkül. A createOnce a vendorId alapján keres, bizonytalan hiba után visszakeres, és több szerver között zárral is véd.
+official: https://developers.billingo.hu/post/api-v3
 ---
 
-Egy webshop rendelése vagy egy fizetési webhook többször is megérkezhet: a szolgáltató újraküldi, a felhasználó kétszer kattint, a szerver újraindul a kérés közben. A `createOnce()` arra való, hogy ugyanabból a rendelésből akkor is egy számla legyen.
+Egy webshop rendelése vagy egy fizetési webhook többször is megérkezhet: a szolgáltató újraküldi az eseményt, a vevő kétszer kattint, vagy a szerver a kérés közben újraindul. Számlánál ebből adóügy lesz: egy második számla éles profilon a NAV-hoz kerül, és csak sztornózni lehet. A `createOnce()` arra való, hogy ugyanabból a rendelésből akkor is egy számla legyen.
 
 <Example slug="pontosan-egyszer" />
 
-## Hogyan dönt
+## A vendorId
 
-A `vendorId` a te azonosítód a bizonylaton, például `RENDELES-1001`. A Billingo eltárolja, és kereshető vele.
+A `vendorId` a te azonosítód a bizonylaton, például `ORDER-1001`. A Billingo eltárolja, cégprofilon belül egyedinek tartja, és kereshető vele (`GET /documents/vendor/{vendor_id}`). Egy második kiállítást ugyanazzal a `vendorId`-val 400 `Duplicate vendor id.` hibával elutasít.
 
-1. Kiállítás előtt a tárca megkeresi a bizonylatot a `vendorId` alapján (`GET /documents/vendor/{vendor_id}`). Ha már van, a meglévőt adja vissza `created: false` értékkel.
-2. Ha nincs, kiállítja.
-3. Hálózati hiba, időtúllépés, szerverhiba vagy értelmezhetetlen válasz után kétszer visszakeresi. Ha a számla mégis elkészült, megkapod (`created: true`), ha nem, az eredeti hiba megy tovább.
-4. Ha egy másik folyamat közben kiállította ugyanazt (a Billingo 400 `Duplicate vendor id.` hibát ad), a meglévőt adja vissza.
+Úgy válaszd, hogy ugyanabból az eseményből mindig ugyanaz legyen:
+
+| Forrás | Jó `vendorId` |
+| --- | --- |
+| Webshop rendelés | `ORDER-1001` |
+| Fizetési webhook | a fizetés azonosítója, például `pi_3Q…` |
+| Havi előfizetés | `SUB-42-2026-11` (előfizetés és időszak) |
+| Pénztár | `POS-<kassza>-<sorszám>` |
+
+Az időbélyeg vagy a véletlen szám rossz választás: egy újrapróbálás új azonosítót kapna, és a védelem nem működne.
+
+## Hogyan dönt?
+
+1. Kiállítás előtt megkeresi a bizonylatot a `vendorId` alapján. Ha már van, a meglévőt adja vissza `created: false` értékkel.
+2. Ha nincs (404), kiállítja.
+3. Hálózati hiba, időtúllépés, szerverhiba vagy értelmezhetetlen válasz után kétszer visszakeresi: 1 másodperc várakozás után, majd újabb 2 másodperc múlva. Ha a számla mégis elkészült, megkapod (`created: true`), ha nem, az eredeti hiba megy tovább.
+4. Ha egy másik folyamat közben kiállította (400 `Duplicate vendor id.`), a meglévőt adja vissza `created: false` értékkel.
 
 Ha a kiállítás előtti lépés (a számlatömb vagy a partner keresése) hibázik, a tárca a hibát változatlanul továbbadja: számla nem ment ki, a hívás megismételhető.
+
+A pontos szabályok, az opciók és a hibák: [Bizonylatok: Pontosan egyszer](/docs/bizonylatok/pontosan-egyszer).
 
 ## Elveszett válasz
 
 A legrosszabb eset: a Billingo kiállította a számlát, de a válasz elveszett útközben. A sandbox hamis Billingója ezt is tudja szimulálni:
 
 <Example slug="elveszett-valasz" />
+
+## Webhookban
+
+Ha a `createOnce()` hibát dob, a webhook válaszoljon 500-zal. A szolgáltató később újraküldi az eseményt, a `createOnce()` pedig ugyanazzal a `vendorId`-val megtalálja a számlát, ha az közben mégis elkészült. Ha a hibát elnyeled és 200-at adsz, a számla elmaradhat.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+export async function POST(request: Request): Promise<Response> {
+  const rendeles = (await request.json()) as { id: string; vevo: string; osszeg: number }
+  await tarca.receipts.createOnce({
+    vendorId: `ORDER-${rendeles.id}`,
+    items: [{ name: 'Rendelés', grossUnitPrice: rendeles.osszeg, vat: 27 }],
+    paymentMethod: 'bankcard',
+  })
+  return new Response(null, { status: 204 })
+}
+```
+
+A Stripe, SimplePay, Barion, Revolut és PayPal webhookot a `tarcajs/payments` kezeli, aláírás-ellenőrzéssel és a nyugta vagy számla döntéssel: [Fizetésből bizonylat](/docs/fizetesek).
 
 ## Több szerver között
 
@@ -37,12 +75,16 @@ declare const redis: Parameters<typeof upstashRedisStore>[0]
 const tarca = createTarca({ createOnceLock: upstashRedisStore(redis) })
 ```
 
-- Ha a zárat egy másik folyamat tartja, a hívás `in_progress` hibát ad. Később hívd meg ugyanígy.
+- Ha a zárat egy másik folyamat tartja, a hívás legfeljebb 10 másodpercig vár, utána `in_progress` hibát ad. Később hívd meg ugyanígy.
 - Ha a tároló nem érhető el, `store_unavailable` hibát kapsz, és semmi nem készült el.
 - A Cloudflare KV erre nem alkalmas: csak később konzisztens, és nincs atomi írása.
 
+A zár nélkül is működik a védelem, a Billingo `vendorId` egyedisége miatt: két szerver egyszerre küldött számlájából az egyik 400-at kap, és a `createOnce()` a meglévőt adja vissza. A zár a felesleges kéréseket takarítja meg, és a versenyhelyzet ritka hibáit előzi meg. Tárolók: [Tárolók](/docs/kiegeszitok/tarolok).
+
 ## Amire figyelj
 
-- A `vendorId` sztornó után is foglalt marad. A sztornózott rendelés újbóli számlázásához új `vendorId` kell.
-- A `vendorId` nem lehet `.` vagy `..`: a tárca ilyenkor kérés nélkül `validation` hibát ad.
+- A `vendorId` sztornó után is foglalt marad. A sztornózott rendelés újbóli számlázásához új `vendorId` kell, például `ORDER-1001-2`.
+- A számlák és a nyugták közös `vendorId`-téren osztoznak.
+- A `vendorId` nem lehet üres, `.` vagy `..`: a tárca ilyenkor kérés nélkül `validation` hibát ad.
 - Nyugtához ugyanez: `receipts.createOnce({ vendorId, ... })`.
+- Sztornóra, módosító számlára és befizetésre nincs `createOnce()`: ezeknél a művelet Válasz oldala mutatja, hogyan ellenőrizd egy bizonytalan hiba után.

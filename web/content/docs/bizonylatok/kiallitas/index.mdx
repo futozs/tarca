@@ -1,0 +1,37 @@
+---
+title: Kiállítás
+description: Számla, díjbekérő, előlegszámla és piszkozat kiállítása a documents.create() metódussal. A tárca megkeresi a számlatömböt és a partnert, ellenőrzi a bemenetet, és egyetlen POST kérést küld.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+A `documents.create()` állít ki minden bizonylatot, amelynek a típusát a `type` mező adja: számla (`invoice`, ez az alapérték), díjbekérő (`proforma`), előlegszámla (`advance`) vagy piszkozat (`draft`).
+
+<Operation id="CreateDocument" methods={['documents.create', 'documents.createRaw', 'documents.createOnce']} />
+
+```ts
+const szamla = await tarca.documents.create({ partner: 1234, items: [{ name: 'Webfejlesztés', quantity: 10, netUnitPrice: 15_000, vat: 27 }] })
+```
+
+Egy hívásból akár négy kérés is lesz: a tárca egyszer lekéri a számlatömböt (utána megjegyzi), megkeresi vagy létrehozza a partnert, és csak ezután küldi el a számlát. A számla `POST` kérése sosem ismétlődik.
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/kiallitas/keres">
+    A DocumentInput mezői, az alapértékek, a helyi ellenőrzés és a dróton küldött JSON.
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/kiallitas/valasz">
+    A visszakapott Billingo.Document mezői, az élő eltérések és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/kiallitas/minta">
+    Futtatható számla két áfakulccsal, a kérésekkel és a Billingo válaszával.
+  </Card>
+  <Card title="Szabályok és beállítások" href="/docs/bizonylatok/kiallitas/szabalyok">
+    Tételek és áfa, dátumok, partner, deviza, fizetési mód, értesítés, kerekítés, nyers küldés.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Egy kiállított számla nem vonható vissza">
+  Éles profilon a Billingo a kiállított számlát azonnal beküldi a NAV-nak. Törölni nem lehet, csak
+  sztornózni. Ha a `create()` hálózati hibával vagy időtúllépéssel tér vissza, ne hívd meg újra:
+  keresd vissza a `vendorId` alapján, vagy eleve a `createOnce()`-t használd ([Pontosan
+  egyszer](/docs/bizonylatok/pontosan-egyszer)).
+</Callout>

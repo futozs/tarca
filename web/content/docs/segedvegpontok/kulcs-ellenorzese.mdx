@@ -1,0 +1,63 @@
+---
+title: Kulcs ellenőrzése
+description: A Billingo API kulcs ellenőrzése a verifyCredentials() hívással. false rossz kulcsra, minden más hibát továbbdob, így a hálózati hiba nem tűnik rossz kulcsnak.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A `verifyCredentials()` egy kéréssel megmondja, elfogadja-e a Billingo a kulcsot. Induláskor vagy egy beállítási űrlap mentésekor hívd, mielőtt bármit kiállítanál.
+
+<Operation id="GetOrganizationData" methods={['verifyCredentials']} />
+
+## Kérés
+
+```ts
+tarca.verifyCredentials(options?: RequestOptions): Promise<boolean>
+```
+
+A metódus a `GET /organization` kérést küldi, ugyanazt, mint az [`organization.get()`](/docs/segedvegpontok/szervezet). Olvasás, ezért írási jog nélküli kulccsal is működik, és nem számít bele a havi API keretbe, mert abba csak az írások számítanak.
+
+## Válasz
+
+| Eredmény | Mikor? |
+| --- | --- |
+| `true` | A Billingo 200-zal válaszolt. |
+| `false` | A Billingo 401-gyel, `auth` kategóriájú hibával utasította el a kulcsot. |
+| hibát dob | Bármi más: `subscription` (402), `network`, `timeout`, `server`, `rate_limit`. Ezeknél a kulcs lehet jó, csak most nem derült ki. |
+
+Ha a kulcs egyáltalán nincs megadva (sem `apiKey`, sem `BILLINGO_API_KEY`), már a `createTarca()` `configuration` hibát dob, a `verifyCredentials()`-ig el sem jutsz.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  if (!(await tarca.verifyCredentials())) {
+    throw new Error('A Billingo nem fogadta el a BILLINGO_API_KEY kulcsot.')
+  }
+} catch (error) {
+  if (isBillingoError(error) && error.retryable) {
+    console.log('A Billingo most nem érhető el, a kulcsot később ellenőrizd:', error.category)
+  } else {
+    throw error
+  }
+}
+```
+
+A `retryable` hibák (`network`, `timeout`, `server`, `rate_limit`) mögött nem a kulcs a gond. Mire a `catch` ágba érsz, a tárca a `GET` kérést már újrapróbálta.
+
+<Callout type="info" title="A jó kulcs még nem jó profil">
+  A `true` csak azt jelenti, hogy a kulcs valamelyik Billingo céghez tartozik. Hogy a jóhoz-e,
+  és hogy teszt vagy éles profilról van-e szó, az `organization.get()` válaszából derül ki, lásd
+  [Szervezet](/docs/segedvegpontok/szervezet).
+</Callout>
+
+Az indításkori ellenőrzés teljes receptje a [Kulcs ellenőrzése induláskor](/docs/receptek/kulcs-ellenorzes-indulaskor) oldalon van. Parancssorból az `npx tarcajs verify` ugyanezt teszi, lásd [Parancssor](/docs/kiegeszitok/parancssor).
+
+## Minta
+
+A példa első kérése a `verifyCredentials()` hívásé, a második az `organization.get()`-é. Mindkettő ugyanaz a `GET /organization`.
+
+<Example slug="szervezet-adatai" operation="GetOrganizationData" />
+
+A sandbox minden kulcsot elfogad, ezért a példa `true`-t ír ki. Tesztben a `createMockTarca({ credentialsValid: false })` vagy a hamis Billingo `apiKeys` opciója adja a rossz kulcs esetét, lásd [Mock tárca](/docs/tesztek/mock-tarca).

@@ -1,0 +1,56 @@
+---
+title: "store_unavailable: elérhetetlen tároló"
+description: "A store_unavailable kategória: a createOnce zárjának vagy a visszatérítés ledgerének tárolója nem érhető el. A tárca ilyenkor nem állít ki semmit, hacsak nem kéred a zár nélküli folytatást."
+---
+
+| | |
+| --- | --- |
+| HTTP | nincs |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false` |
+
+## Mikor jön elő
+
+- A `createOnce` zárjának tárolója (`createOnceLock` vagy `lock`) hibát dobott vagy túllépte az idejét. Üzenet: `A createOnce zár tárolója nem érhető el, ezért a tárca nem állította ki a bizonylatot (vendorId: …).` A kiállító kérés nem ment ki.
+- A visszatérítés `ledger`-ének olvasása vagy a foglalás nem sikerült, kérés előtt. Sztornó és módosító számla nem készült.
+- A módosító számla elkészült, de a `ledger`-be nem sikerült beírni. Ezt a hibaüzenet ki is mondja (`A módosító számla elkészült …`): ne állítsd ki újra, a következő próbálkozás a Billingo listájából megtalálja.
+- A bizonylatnapló (`kvJournal`) írása nem sikerült, vagy a visszaolvasás mást adott: így egy hibákat lenyelő tároló sem hagy a naplóban olyan bejegyzést, amelyet egy listázás nem lát.
+
+## Mi a teendő
+
+Állítsd helyre a tárolót (például a Redist), és hívd újra. A `diagnoseStore()` megmondja, hogy a tároló működik-e, és mire alkalmas, lásd [Tárolók](/docs/kiegeszitok/tarolok).
+
+```ts twoslash
+import { createTarca, isBillingoError, type KeyValueStore } from 'tarcajs'
+
+declare const store: KeyValueStore
+
+const tarca = createTarca({
+  createOnceLock: store,
+  hooks: { onWarning: (warning) => console.warn(warning.hook, warning.message) },
+})
+
+const szamla = {
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, netUnitPrice: 15_000, vat: 27 }],
+}
+
+try {
+  await tarca.documents.createOnce(szamla)
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'store_unavailable') throw error
+  await tarca.documents.createOnce(szamla, { lockFailure: 'proceed' })
+}
+```
+
+A `lockFailure: 'proceed'` zár nélkül folytatja, és `onWarning`-ot küld `hook: 'createOnceLock'` értékkel. Dupla számla így sem készül: ha két folyamat egyszerre küldi el ugyanazt a `vendorId`-t, a Billingo a másodikat 400 `Duplicate vendor id` válasszal elutasítja, és a `createOnce` a meglévő bizonylatot adja vissza. Zár nélkül viszont mindkét folyamat elküldi a kiállító kérést, és mindkettő létrehozhat egy új partnert ugyanarra a vevőre. A [tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas) `store_unavailable` hibánál megáll.
+
+<Callout type="warning" title="A hibatűrő tároló itt nem jó">
+  A `resilient: true` beállítású tároló lenyeli a hibákat, így a zár csendben nem véd. A
+  `createOnce` zárjához, a naplóhoz és a visszatérítés ledgeréhez `resilient: false` (az
+  alapértelmezett) tárolót használj.
+</Callout>

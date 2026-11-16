@@ -1,0 +1,175 @@
+---
+title: Havi előfizetés számlázása
+description: Hónap elején minden aktív előfizetésre egy számla a runBatch-csel, a Billingo percenkénti keretén belül, újrafuttatáskor duplikáció nélkül.
+---
+
+Előfizetéses szolgáltatásnál hónap elején minden aktív előfizetőnek számla jár. Ez a recept egy cron útvonal, amely a `tarcajs/batch` `runBatch()` függvényével állítja ki a számlákat. Mindegyik `createOnce`-szal megy, a kulcs az előfizetésből és a hónapból áll, így egy félbeszakadt futást nyugodtan újraindíthatsz: a már kiállított számlák `existing` állapotban jönnek vissza.
+
+A Billingo saját ismétlődő számláit az API v3 nem éri el, ezért az időszakot és az ütemezést a saját kódod adja.
+
+## Az útvonal
+
+```ts twoslash title="app/api/cron/elofizetesek/route.ts"
+// @filename: modulok.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+declare module '@/lib/elofizetesek' {
+  export interface Elofizetes {
+    readonly id: number
+    readonly csomag: string
+    readonly havidij: number
+    readonly vevo: import('tarcajs').PartnerInput
+  }
+  export function aktivElofizetesek(): Promise<readonly Elofizetes[]>
+}
+// @filename: route.ts
+// ---cut---
+import { runBatch, todayPeriod } from 'tarcajs/batch'
+import { aktivElofizetesek } from '@/lib/elofizetesek'
+import { tarca } from '@/lib/tarca'
+
+export const maxDuration = 800
+
+const HONAPOK = { interval: 'month', anchor: '2026-01-01' } as const
+
+export async function GET(request: Request): Promise<Response> {
+  const titok = process.env.CRON_SECRET
+  if (!titok || request.headers.get('authorization') !== `Bearer ${titok}`) {
+    return new Response('Nincs jogosultság', { status: 401 })
+  }
+
+  const honap = todayPeriod(HONAPOK)
+  const elofizetesek = await aktivElofizetesek()
+
+  const eredmeny = await runBatch(tarca, {
+    items: elofizetesek.map((elofizetes) => ({
+      key: `ELOFIZETES-${elofizetes.id}-${honap.start}`,
+      document: () => ({
+        kind: 'invoice' as const,
+        input: {
+          partner: elofizetes.vevo,
+          items: [
+            {
+              name: `${elofizetes.csomag} csomag havidíja (${honap.start}–${honap.end})`,
+              quantity: 1,
+              netUnitPrice: elofizetes.havidij,
+              vat: 27,
+            },
+          ],
+        },
+      }),
+    })),
+    onProgress: (allapot) => console.info('előfizetések', allapot.done, '/', allapot.total),
+  })
+
+  if (eredmeny.stopped) console.warn('A számlázás leállt:', eredmeny.stopped.reason)
+  return Response.json({
+    uj: eredmeny.created.length,
+    meglevo: eredmeny.existing.length,
+    hibas: eredmeny.failed.map((tetel) => tetel.key),
+    kihagyott: eredmeny.skipped.length,
+    brutto: eredmeny.grossTotals,
+  })
+}
+```
+
+```json title="vercel.json"
+{
+  "crons": [{ "path": "/api/cron/elofizetesek", "schedule": "0 6 1 * *" }]
+}
+```
+
+Az `aktivElofizetesek()` a saját adatbázisodból olvas. A `vevo` egy `PartnerInput`, amelyet a tárca a [`findOrCreate`](/docs/partnerek/kereses-vagy-letrehozas) szabályai szerint keres meg vagy hoz létre. Ha a Billingo partner azonosítóját már tárolod, a `partner` mezőbe azt is adhatod.
+
+## Mi történik
+
+<Example slug="havi-elofizetes" operation="CreateDocument" />
+
+A sandbox két előfizetést számláz ki, majd ugyanazt a hónapot még egyszer. Az Elküldött kérések fülön a második futás csak `GetDocumentByVendorId` kéréseket küld, és mindkét tétel `existing`.
+
+- **A kulcs a `vendorId`.** Az `ELOFIZETES-41-2026-11-01` kulcs az előfizetés és a hónap első napja. Ugyanarra a hónapra akárhányszor fut a cron, előfizetésenként egy számla lesz.
+- **Ütemezés.** A `runBatch` alapból percenként 30 tételt indít, 2 másodpercenként egyet. Egy új tétel 2–6 kérés (`vendorId` keresés, partnerkeresés, új partner, számla), a Billingo percenkénti 300 kéréses kerete pedig közös a webhookjaiddal. 100 előfizetés így valamivel több mint 3 perc, ehhez kell a `maxDuration`.
+- **Leállás.** `rate_limit`, `auth`, `forbidden`, `subscription`, `configuration` és `store_unavailable` hibánál a futás megáll, a maradék tétel `skipped` lesz, az ok a `stopped.reason`-ben. Más hiba csak az adott tételt buktatja el (`failed`).
+- **Újrafuttatás.** Hiba vagy leállás után futtasd újra ugyanazt az útvonalat. A kiállított tételek `existing` állapotban jönnek vissza, csak a hiányzók készülnek el.
+
+## Próbafuttatás
+
+A `dryRun: true` semmit nem ír. Helyben ellenőrzi a bemenetet ugyanazokkal a szabályokkal, mint a `createOnce`, megkeresi a `vendorId`-t, és a Billingo kerekítési modelljével megbecsüli a végösszegeket. Add meg ugyanazt a `defaults`-ot, mint a kliensnél, hogy a becslés ugyanúgy számoljon.
+
+```ts twoslash title="scripts/elofizetesek-proba.ts"
+// @filename: modulok.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+declare module '@/lib/elofizetesek' {
+  export interface Elofizetes {
+    readonly id: number
+    readonly csomag: string
+    readonly havidij: number
+    readonly vevo: import('tarcajs').PartnerInput
+  }
+  export function aktivElofizetesek(): Promise<readonly Elofizetes[]>
+}
+// @filename: proba.ts
+// ---cut---
+import { runBatch, todayPeriod } from 'tarcajs/batch'
+import { aktivElofizetesek } from '@/lib/elofizetesek'
+import { tarca } from '@/lib/tarca'
+
+const honap = todayPeriod({ interval: 'month', anchor: '2026-01-01' })
+const elofizetesek = await aktivElofizetesek()
+
+const proba = await runBatch(tarca, {
+  dryRun: true,
+  defaults: { dueInDays: 8, paymentMethod: 'wire_transfer', electronic: true },
+  items: elofizetesek.map((elofizetes) => ({
+    key: `ELOFIZETES-${elofizetes.id}-${honap.start}`,
+    document: () => ({
+      kind: 'invoice' as const,
+      input: {
+        partner: elofizetes.vevo,
+        items: [{ name: elofizetes.csomag, quantity: 1, netUnitPrice: elofizetes.havidij, vat: 27 }],
+      },
+    }),
+  })),
+})
+
+console.info(proba.validated.length, 'új számla lenne', proba.grossTotals)
+```
+
+Próbafuttatásban a tételek `validated` (még nincs ilyen számla, a végösszeg becslés) vagy `existing` (már kiállítva, a Billingo végösszegével) állapotúak.
+
+## Buktatók
+
+<Callout type="warning" title="A kiállított, de hibás tételt ne állítsd ki újra">
+  Ha egy tétel `created` vagy `existing`, de van `error` mezője (`DocumentHookError`,
+  `JournalWriteError`), a számla elkészült, csak utána bukott el valami: például a saját
+  `onDocument` hookod. Ezt naplózd és rendezd, de új kulccsal ne számlázd újra.
+</Callout>
+
+<Callout type="info" title="Egy vevő, több előfizetés">
+  A Billingo partnerkeresője egy frissen létrehozott partnert akár egy percig sem talál meg. A
+  `runBatch` ezért egy futáson belül megjegyzi az új partnerek azonosítóját, így ha egy vevő két
+  előfizetésében ugyanazok a partneradatok szerepelnek, a második nem hoz létre még egy partnert.
+</Callout>
+
+<Callout type="info" title="Évfordulós előfizetés">
+  Ha az előfizetések nem a hónap elsején indulnak, adj meg előfizetésenként saját `anchor`-t (az
+  előfizetés kezdőnapját), és a kulcsba a saját időszakának kezdete kerüljön. A hónap végi napok
+  nem csúsznak el: január 31-i kezdésnél a februári időszak 28-án, a márciusi 31-én indul.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Tömeges számlázás" href="/docs/kiegeszitok/tomeges-szamlazas">
+    A runBatch összes opciója, a leállási okok és a párhuzamosság.
+  </Card>
+  <Card title="Ismétlődő időszakok" href="/docs/kiegeszitok/ismetlodo-idoszakok">
+    Heti, havi, negyedéves és éves időszakok budapesti dátumokkal.
+  </Card>
+  <Card title="Bizonylatnapló" href="/docs/kiegeszitok/bizonylatnaplo">
+    Saját nyilvántartás minden kiállított számláról, a runBatch journal opciójával.
+  </Card>
+</Cards>

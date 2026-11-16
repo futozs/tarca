@@ -1,0 +1,52 @@
+---
+title: Termékek
+description: Termékek és szolgáltatások a Billingo terméktörzsében a tárca products API-jával. Lista, létrehozás egy árral, lekérés, teljes cserés módosítás, törlés és készlet.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/ListProduct
+---
+
+A Billingo terméktörzse a gyakran számlázott tételeket tárolja névvel, egységgel, áfakulccsal és egy egységárral. A tárcában a `tarca.products` kezeli őket, a készletet pedig a `tarca.inventory`.
+
+```ts
+const termek = await tarca.products.create({ name: 'Kávé 250 g', currency: 'HUF', vat: '27%', unit: 'db', netUnitPrice: 1_000 })
+```
+
+Számlán a termékre az azonosítójával hivatkozhatsz: a tétel `{ productId, quantity }` alakú, a nevet, az árat és az áfát a Billingo a termékből veszi. Lásd [Számla kiállítása](/docs/bizonylatok/kiallitas).
+
+<Cards>
+  <Card title="Lista és keresés" href="/docs/termekek/lista/keres">
+    Lapozás és keresés a termék nevében.
+  </Card>
+  <Card title="Létrehozás" href="/docs/termekek/letrehozas/keres">
+    Pontosan egy ár: nettó vagy bruttó, a másikat a Billingo számolja.
+  </Card>
+  <Card title="Lekérés" href="/docs/termekek/lekeres">
+    Egy termék azonosító alapján, mindkét árral.
+  </Card>
+  <Card title="Módosítás" href="/docs/termekek/modositas/keres">
+    PUT teljes cserével, az egyik árat el kell hagyni.
+  </Card>
+  <Card title="Törlés" href="/docs/termekek/torles">
+    Törlés után a lekérés 404-et ad.
+  </Card>
+  <Card title="Készlet" href="/docs/termekek/keszlet">
+    Elérhető mennyiség, csak bekapcsolt készletkezeléssel.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Pontosan egy ár">
+  Írásnál a `netUnitPrice` és a `grossUnitPrice` közül pontosan egyet adj meg. A Billingo ár
+  nélkül és két árral is 422-t ad, a tárca ezért kérés előtt `validation` hibát dob. A lekért
+  termék mindkét árat tartalmazza, visszaküldés előtt az egyiket el kell hagyni.
+</Callout>
+
+## Élő eltérések röviden
+
+- A Billingo a hiányzó árat az áfakulcsból számolja: 1 000 Ft nettó és `'27%'` mellé 1 270 Ft bruttót tárolt.
+- A `purchasePrice` a létrehozás és a módosítás válaszában `null`, a `get()` és a `list()` ugyanarra a termékre `0`-t ad.
+- Az `entitlement` és a `connectProductId` beállítás nélkül `null`.
+- Az `update()` teljes csere: a kihagyott `comment` `''` lesz.
+- Törölt termékre a `get()` 404-et ad (`Product is not found.`), nem 403-at.
+
+<OperationTable pathPrefix="/products" />
+
+<OperationTable pathPrefix="/inventory" />

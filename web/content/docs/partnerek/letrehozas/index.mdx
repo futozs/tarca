@@ -1,0 +1,23 @@
+---
+title: Létrehozás
+description: Új partner a Billingóban a partners.create() metódussal. A PartnerInput mezői, a taxcode írásmód, a nagybetűs taxType, a 201-es válasz és a 422-es hibák.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/CreatePartner
+---
+
+A `partners.create()` minden hívásra új partnert hoz létre. Számlázáshoz általában a [`findOrCreate()`](/docs/partnerek/kereses-vagy-letrehozas) kell, amely csak akkor hoz létre partnert, ha még nincs meg ugyanazokkal az adatokkal.
+
+```ts
+const partner = await tarca.partners.create(vevo)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/partnerek/letrehozas/keres">
+    A `PartnerInput` mezői, a `taxcode` írásmód és a nagybetűs `taxType`.
+  </Card>
+  <Card title="Válasz" href="/docs/partnerek/letrehozas/valasz">
+    A 201-es válasz a Billingo alapértékeivel, a 422-es hibák és a teendő bizonytalan hiba után.
+  </Card>
+  <Card title="Minta" href="/docs/partnerek/letrehozas/minta">
+    Adószámos belföldi partner, az elküldött törzzsel és a válasszal.
+  </Card>
+</Cards>

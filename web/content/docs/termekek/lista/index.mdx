@@ -1,0 +1,23 @@
+---
+title: Lista és keresés
+description: Termékek listája és keresés a termék nevében a products.list() és a products.all() metódussal, lapozással.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/ListProduct
+---
+
+A `products.list()` egy oldalt ad vissza, a `products.all()` minden oldalt bejár. A `query` a termék nevében keres. Élőben egész szóra kaptunk találatot, a szó belsejére illesztést nem mértük.
+
+```ts
+const oldal = await tarca.products.list({ query: 'kávé' })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/termekek/lista/keres">
+    A paraméterek, a keresés a termék nevében és a lapozás.
+  </Card>
+  <Card title="Válasz" href="/docs/termekek/lista/valasz">
+    A `Page` boríték, a termékek mezői a listában és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/termekek/lista/minta">
+    Két termék, keresés a névben, majd a teljes lista mindkét árral.
+  </Card>
+</Cards>

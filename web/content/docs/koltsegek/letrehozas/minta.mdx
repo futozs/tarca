@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Forintos költség rögzítése partner nélkül, majd lekérése a hamis Billingo ellen, a ténylegesen elküldött JSON-nal és a Billingo válaszával.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingSave
+---
+
+A példa egy 12 700 Ft-os szoftverszámlát rögzít átutalással, partner nélkül, majd azonosító alapján lekéri.
+
+<Example slug="koltseg-rogzitese" />
+
+Az **Elküldött kérések** fülön a `POST /spendings` törzsében nincs `paid_at` és `partner_id`, mert a példa nem adta meg őket. A válaszban a `partner` `null`, a `total_gross_local` pontosan a küldött `total_gross_huf`, és a `created_by_nav` csak a második, `GET` kérés válaszában szerepel.

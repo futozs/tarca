@@ -1,0 +1,71 @@
+---
+title: Kérés
+description: A bankAccounts.update() bemenete. A PUT teljes csere, ezért a teljes bankszámlát kell elküldeni, a kihagyott IBAN és SWIFT kiürül.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/UpdateBankAccount
+---
+
+<Operation id="UpdateBankAccount" methods={['bankAccounts.update']} />
+
+```ts
+tarca.bankAccounts.update(id: number, input: BankAccountInput, options?: { signal?: AbortSignal }): Promise<Billingo.BankAccount>
+```
+
+A bemenet ugyanaz a `BankAccountInput`, mint a [létrehozásnál](/docs/bankszamlak/letrehozas/keres): a név, a számlaszám és a pénznem kötelező.
+
+<Callout type="warning" title="Teljes csere">
+  A Billingo a `PUT /bank-accounts/{id}` törzsével felülírja a teljes bankszámlát. A hivatalos
+  Billingo MCP élő tesztje szerint a kihagyott IBAN és SWIFT `''` lesz. Egy mező módosításához
+  kérd le a bankszámlát, és az egészet küldd vissza.
+</Callout>
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const uj = await tarca.bankAccounts.create({
+  name: 'Euró számla',
+  accountNumber: '11111111-22222222-44444444',
+  accountNumberIban: 'HU00111111112222222244444444',
+  currency: 'EUR',
+})
+const bankszamlaId = uj.id ?? 0
+
+const { id: _, ...bankszamla } = await tarca.bankAccounts.get(bankszamlaId)
+const modositott = await tarca.bankAccounts.update(bankszamlaId, {
+  ...bankszamla,
+  swift: 'ABCDHUHB',
+})
+
+console.log(modositott.accountNumberIban, modositott.swift)
+```
+
+## Mezők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező.** Megnevezés. |
+| `accountNumber` | `account_number` | – | **Kötelező.** Belföldi bankszámlaszám. |
+| `currency` | `currency` | – | **Kötelező.** Pénznem. |
+| `accountNumberIban` | `account_number_iban` | `''` | IBAN. Kihagyva kiürül. |
+| `swift` | `swift` | `''` | SWIFT kód. Kihagyva kiürül. |
+| `needQr` | `need_qr` | `false` | Elavult jelző. |
+
+Az azonosítót azért veszed ki a lekért bankszámlából, mert a `BankAccountInput` típus nem tartalmaz `id` mezőt, és a tárca a bankszámlánál nem szűri ki helyetted.
+
+## Ami a dróton megy
+
+A fenti csere törzse a hamis Billingo felvétele szerint:
+
+```json
+{
+  "name": "Euró számla",
+  "account_number": "11111111-22222222-44444444",
+  "account_number_iban": "HU00111111112222222244444444",
+  "swift": "ABCDHUHB",
+  "currency": "EUR",
+  "need_qr": false
+}
+```
+
+A tárca a PUT-ot nem ismétli magától.

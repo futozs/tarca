@@ -1,0 +1,91 @@
+---
+title: SimplePay
+description: SimplePay IPN-ből nyugta vagy számla a tarcajs/payments/simplepay webhookkezelővel. HMAC-SHA384 aláírás kereskedőnként, tranzakció-lekérdezés, aláírt IPN válasz és a visszairányítás ellenőrzése.
+official: https://simplepay.hu/fejlesztoknek/
+---
+
+A `simplePayWebhook()` a SimplePay IPN értesítését fogadja. Ellenőrzi a `Signature` fejlécet (a nyers törzs HMAC-SHA384 aláírása base64-ben, a kereskedő titkos kulcsával), lekéri a tranzakció részleteit a SimplePay API-jából, átadja a fizetést az `onPayment`-nek, végül a SimplePay által várt aláírt választ küldi vissza.
+
+## Beállítás
+
+```dotenv title=".env.local"
+SIMPLEPAY_SECRET_HUF=...
+SIMPLEPAY_SECRET_EUR=...
+```
+
+```ts twoslash title="app/api/simplepay/ipn/route.ts"
+import { createTarca } from 'tarcajs'
+import { issueForPayment } from 'tarcajs/payments'
+import { simplePayWebhook } from 'tarcajs/payments/simplepay'
+
+const tarca = createTarca()
+
+export const POST = simplePayWebhook({
+  merchants: {
+    HUFKERESKEDO: process.env.SIMPLEPAY_SECRET_HUF ?? '',
+    EURKERESKEDO: { secretKey: process.env.SIMPLEPAY_SECRET_EUR ?? '', method: 'simple_pay' },
+  },
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+A SimplePay pénznemenként külön kereskedői fiókot (`merchant`) ad, mindegyikhez saját titkos kulccsal. A `merchants` a kereskedő azonosítójától a kulcsig (vagy `{ secretKey, method }` objektumig) vezet. Ha csak egy fiókod van, elég a `secretKey`. Üres kulcs, vagy kulcs nélküli beállítás már létrehozáskor `TypeError`.
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `secretKey` | nincs | Egyetlen kereskedő titkos kulcsa. Akkor is ez lesz a tartalék, ha a `merchants` nem ismeri az IPN kereskedőjét. |
+| `merchants` | nincs | Kereskedőnként a kulcs és a fizetési mód. |
+| `fetchDetails` | `true` | `FINISHED` és `REFUND` állapotnál lekéri a tranzakciót (`/query`): összeg, vevő, visszatérítések. |
+| `sandbox` | `false` | A `sandbox.simplepay.hu` API-t használja a lekérdezéshez. |
+| `method` | `simple_pay` | A bizonylat fizetési módja. Banki átutalásnál (`WIRE`) alapból `wire_transfer`. |
+| `apiUrl`, `fetch`, `now` | | Tesztekhez. A `now` az IPN válasz `receiveDate` mezőjét adja. |
+
+A közös opciók: [Webhook beállítások](/docs/fizetesek/webhook-beallitasok).
+
+<Callout type="info" title="Az összeg a lekérdezésből jön">
+  Az IPN törzsében nincs összeg és vevő, csak a tranzakció azonosítója és állapota. A tárca ezért
+  `fetchDetails: false` mellett összeg nélküli eseményt ad, amelyből az `issueForPayment()` nem tud
+  bizonylatot kiállítani. Csak akkor kapcsold ki, ha a tételeket és az összeget magad adod meg az
+  `items` opcióval.
+</Callout>
+
+## A válasz
+
+Sikeres feldolgozás után a kezelő 200-at ad, a törzs az IPN másolata a `receiveDate` mezővel kiegészítve, a `signature` fejlécben a saját aláírásával. A SimplePay ebből tudja, hogy az értesítés megérkezett. Hibás aláírásra 400, feldolgozási hibára 500 a válasz, és a SimplePay később újraküldi az IPN-t.
+
+## Állapotok
+
+| SimplePay `status` | `kind` |
+| --- | --- |
+| `FINISHED` | `paid` |
+| `REFUND`, egyetlen visszatérítés a teljes összegre | `refunded` |
+| `REFUND` minden más esetben | `partially-refunded` |
+| `NOTAUTHORIZED`, `FRAUD`, `TIMEOUT`, `CANCELLED`, `REVERSED` | `failed` |
+| minden más | `other` |
+
+A fizetés azonosítója a SimplePay tranzakció (`transactionId`), a rendelésszám az `orderRef`. Az ismétlés-szűrő kulcsa `REFUND` esetén a lezárt visszatérítések számát és összegét is tartalmazza, így egy második visszatérítés új eseménynek számít.
+
+A vevőt a tranzakció `invoice` mezőjéből veszi: cégnév vagy név, cím, telefon, és a `customerEmail`. Adószámot a SimplePay nem ad, ezért cégnek szóló számlához a `buyerIsBusiness` vagy a `partner` opció kell, lásd [Vevő adatai](/docs/fizetesek/vevo-adatai).
+
+## A visszairányítás ellenőrzése
+
+A fizetés után a SimplePay a `r` és `s` paraméterrel irányítja vissza a vevőt a boltodba. A `verifySimplePayRedirect()` ellenőrzi az aláírást, és visszaadja az eredményt. Bizonylatot erre ne állíts ki: a vevő bezárhatja a böngészőt, a bizonylat az IPN-ből készül.
+
+```ts twoslash
+import { verifySimplePayRedirect } from 'tarcajs/payments/simplepay'
+
+export async function GET(request: Request): Promise<Response> {
+  const vissza = await verifySimplePayRedirect(new URL(request.url), {
+    HUFKERESKEDO: process.env.SIMPLEPAY_SECRET_HUF ?? '',
+  })
+  const oldal = vissza.event === 'SUCCESS' ? '/koszonjuk' : '/sikertelen-fizetes'
+  const cel = new URL(`${oldal}?rendeles=${encodeURIComponent(vissza.orderRef)}`, request.url)
+  return Response.redirect(cel, 303)
+}
+```
+
+Hibás vagy hamis paraméterre `WebhookVerificationError`-t dob. Az `event` értéke `SUCCESS`, `FAIL`, `TIMEOUT` vagy `CANCEL`.
+
+## Saját folyamatban
+
+A kezelő építőkockái külön is elérhetők: `verifySimplePaySignature`, `parseSimplePayIpn`, `querySimplePayTransaction`, `simplePayPaymentEvent`, `simplePayIpnResponse` és `simplePaySignature`.

@@ -1,0 +1,83 @@
+---
+title: Serverless és edge
+description: A tárca Vercel függvényekben, Cloudflare Workersben, Deno Deployon és Bunban. Egy kliens izolátumonként, közös createOnce zár több példány között, időkorlátok, webhookok és az MCP szerver edge-en.
+---
+
+A `tarcajs` gyökér és a legtöbb alcsomag futtatókörnyezet-független: nincs `Buffer`, nincs `node:` import, a kriptográfia WebCrypto, a hálózat `fetch`. Így ugyanaz a kód fut Node.js 22-n, Bunban, Denóban, Cloudflare Workersben és Vercel Edge-en. Kivétel a `tarcajs/storage/fs`, a `tarcajs/node` és a parancssor. A tárca CI-ja minden alcsomagot Bun, Deno és Cloudflare workerd alatt is lefuttat.
+
+## Egy kliens, sok példány
+
+A `createOnce` egy folyamaton belül magától pontosan egyszeri: az azonos `vendorId`-ra érkező hívások egy kérést osztanak meg. Serverless környezetben viszont ugyanaz a rendelés két példányon is futhat egyszerre (egy webhook újraküldése, egy kattintás kétszer). A Billingo `vendorId`-ja ilyenkor is véd: a második POST 400 `Duplicate vendor id` választ kap, a `createOnce` pedig visszaadja a meglévőt. A `createOnceLock` ennél egy lépéssel korábban áll meg: a második példány meg sem próbálja a POST-ot.
+
+```ts twoslash title="lib/tarca.ts"
+import { createTarca } from 'tarcajs'
+import { type UpstashRedisLike, upstashRedisStore } from 'tarcajs/stores'
+
+declare const redis: UpstashRedisLike
+
+export const tarca = createTarca({
+  createOnceLock: upstashRedisStore(redis, { prefix: 'bolt:', timeoutMs: 2_000 }),
+  timeoutMs: 15_000,
+})
+```
+
+| Zár beállítás | Alapérték | Leírás |
+| --- | --- | --- |
+| `lockTtlSeconds` | `600` | Ennyi idő után a zár magától lejár, ha a tartó példány összeomlott. |
+| `lockWaitMs` | `10000` | Ennyit vár egy foglalt zárra, utána `in_progress`. |
+| `lockFailure` | `'throw'` | Elérhetetlen tárolónál `store_unavailable`. `'proceed'`: zár nélkül folytatja, figyelmeztetéssel. |
+
+A zárhoz `setIfAbsent`-et ismerő tároló kell: Upstash vagy más Redis, Durable Object. A Cloudflare KV nem jó, mert nincs atomikus írása, lásd [Tárolók](/docs/kiegeszitok/tarolok).
+
+## Cloudflare Workers
+
+```ts twoslash title="src/index.ts"
+import { createTarca, type Tarca } from 'tarcajs'
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+import { type DurableObjectStubLike, durableObjectStore } from 'tarcajs/stores'
+
+interface Env {
+  BILLINGO_API_KEY: string
+  STRIPE_WEBHOOK_SECRET: string
+  TARCA_STORE: { idFromName(name: string): unknown; get(id: unknown): DurableObjectStubLike }
+}
+
+let tarca: Tarca | undefined
+
+export default {
+  fetch(request: Request, env: Env): Promise<Response> {
+    const store = durableObjectStore(env.TARCA_STORE.get(env.TARCA_STORE.idFromName('tarca')))
+    tarca ??= createTarca({ apiKey: env.BILLINGO_API_KEY, createOnceLock: store })
+    const kliens = tarca
+    return stripeWebhook({
+      secret: env.STRIPE_WEBHOOK_SECRET,
+      dedupe: store,
+      onPayment: (payment) => issueForPayment(kliens, payment, { vat: 27, ledger: store }),
+    })(request)
+  },
+}
+```
+
+- Workersben a környezeti változók az `env` paraméterben jönnek, nem a `process.env`-ben, ezért a kulcsot az `apiKey` opcióval add át.
+- A klienst izolátumonként egyszer hozd létre (a modul szintjén vagy egy `??=`-vel): a `createOnce` megosztott keresései és a számlatömb gyorsítótára így kérések között is élnek.
+- A Durable Object tároló egyszerre szolgálja a zárat, a webhook ismétlés-szűrőt és a visszatérítés ledgerét. A Durable Object osztály: [Tárolók](/docs/kiegeszitok/tarolok).
+- A PDF-hez az R2 kötés: `r2BindingStorage(env.SZAMLAK)`, lásd [PDF tárhely](/docs/kiegeszitok/pdf-tarhely).
+
+## Vercel
+
+Next.js App Routerben a webhookkezelő közvetlenül `POST`-ként exportálható, lásd [Stripe](/docs/fizetesek/stripe). A zárhoz a Vercel Marketplace Redise (Upstash) jó, az `upstashRedisStore()`-ral. A Vercel KV megszűnt.
+
+## Időkorlátok
+
+Egy webhook vagy egy serverless függvény saját időkorláttal fut. Számolj vele, hogy egy `createOnce` több kérés: `vendorId` keresés, partnerkeresés, esetleg új partner, maga a bizonylat, bizonytalan hibánál két további keresés 1 és 2 másodperc várakozással. A függvény időkorlátja legyen hosszabb, mint a `timeoutMs` és a helyreállítás együtt.
+
+- Ha a függvény a kiállítás közben áll le, a Billingo ettől még kiállíthatja a számlát. A következő próbálkozás a `vendorId` alapján megtalálja.
+- A PDF-re ne várj a webhookban: a `documents.pdf()` alapból 30 másodpercig vár a 202-re. Tedd sorba, és egy későbbi futás töltse le.
+- A webhook adjon 500-at, ha a kiállítás nem sikerült. A szolgáltató újraküldi, és a `createOnce` nem állít ki duplát.
+
+## MCP szerver edge-en
+
+A [`createTarcaMcpHandler()`](/docs/kiegeszitok/mcp-http) Workersben és Vercel Edge-en is fut. Kötelező az `authorize` és a közös `confirmationSecret`, és a szervert izolátumonként egyszer kell létrehozni.
+
+Egy teljes Workers projekt: [Cloudflare Workers recept](/docs/receptek/cloudflare-workers).

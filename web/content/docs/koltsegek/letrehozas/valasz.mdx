@@ -1,0 +1,97 @@
+---
+title: Válasz
+description: A spendings.create() által visszaadott Billingo.Spending mezői, az élő eltérések (201, partner null, nincs createdByNav), a hibák és a biztonságos újrapróbálás duplikált költség nélkül.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingSave
+---
+
+Sikeres létrehozásra a Billingo 201-es státusszal a mentett költséget küldi vissza. A tárca camelCase-re fordítja, és `Billingo.Spending` típusként adja vissza.
+
+```ts
+const koltseg = await tarca.spendings.create(adatok)
+```
+
+## Billingo.Spending
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | Az új költség azonosítója. Ezt tárold el, ezzel kéred le, módosítod és törlöd. |
+| `organizationId` | `number` | A Billingo cég azonosítója. |
+| `category`, `currency`, `conversionRate`, `paymentMethod` | | Amit küldtél. |
+| `invoiceNumber`, `invoiceDate`, `fulfillmentDate`, `dueDate` | `string` | Amit küldtél, a dátumok `YYYY-MM-DD` alakban. |
+| `paidAt` | `string \| null` | A fizetés napja, vagy `null`, ha nem adtál meg `paidAt`-ot. |
+| `totalGross`, `totalVatAmount` | `number` | Bruttó összeg és áfa a számla pénznemében. |
+| `totalGrossLocal`, `totalVatAmountLocal` | `number` | A `totalGrossHuf` és a `totalVatAmountHuf` értéke változatlanul, új néven. |
+| `partner` | `Billingo.SpendingPartner \| null` | A partner adatai `partnerId` esetén, különben `null`. |
+| `comment` | `string \| null` | Megjegyzés. |
+| `items` | `readonly Billingo.SpendingItem[]` | Tételek. API-n rögzített költségnél élőben üres tömb volt. |
+
+## Élőben mérve
+
+A 2026. november 15-i élő próbán a státusz 201 volt, ahogy a spec is írja. A spectől három dologban tért el a válasz:
+
+- A `partner` `null`, ha nem adtál meg `partnerId`-t. A spec ezt nem engedi, a tárca típusa igen.
+- A válaszban nincs `createdByNav`. Ez a mező csak a [lekérésben](/docs/koltsegek/lekeres) és a [listában](/docs/koltsegek/lista/valasz) jön.
+- A Billingo a forintos összegeket nem számolja újra az árfolyammal: a küldött `total_gross_huf` változatlanul jött vissza `total_gross_local` néven.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Érvénytelen dátum a bemenetben. A `fieldErrors` a camelCase mezőt nevezi meg, kérés nem ment ki. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 402 | `subscription` | Az előfizetés nem engedi a műveletet. |
+| 403 | `forbidden` | Csak olvasási jogú kulcs. |
+| 422 | `validation` | A Billingo elutasította az adatokat, például hiányzik egy élőben kötelező mező. A `fieldErrors` a snake_case mezőt nevezi meg. |
+| 429 | `rate_limit` | Túl sok kérés. Írásnál a tárca nem próbálja újra. |
+| 5xx | `server` | Billingo oldali hiba. Lehet, hogy a költség ettől még létrejött. |
+| – | `network`, `timeout` | Nem jött válasz. Lehet, hogy a költség létrejött. |
+| – | `unexpected_response` | A válasz üres vagy nem JSON. A költség valószínűleg létrejött. |
+
+## Ha a válasz elveszik
+
+A `create()` `POST` kérés, ezért a tárca soha nem ismétli meg magától: egy elveszett válasz után a második kérés második költséget rögzítene. A költségnek nincs `vendorId`-ja, és a `q` keresés a számlaszámot nem találja. Mielőtt újra elküldöd, keresd meg a kelt napjára szűrt listában:
+
+```ts twoslash
+import { createTarca, isBillingoError, type SpendingInput } from 'tarcajs'
+
+const tarca = createTarca()
+
+const BIZONYTALAN = new Set(['network', 'timeout', 'server', 'unexpected_response'])
+
+async function rogzitEgyszer(adatok: SpendingInput & { invoiceDate: string }) {
+  try {
+    return await tarca.spendings.create(adatok)
+  } catch (error) {
+    if (!isBillingoError(error) || !BIZONYTALAN.has(error.category)) throw error
+    for await (const koltseg of tarca.spendings.all({
+      spendingDate: 'invoice_date',
+      startDate: adatok.invoiceDate,
+      endDate: adatok.invoiceDate,
+    })) {
+      if (koltseg.invoiceNumber === adatok.invoiceNumber) return koltseg
+    }
+    return await tarca.spendings.create(adatok)
+  }
+}
+
+const koltseg = await rogzitEgyszer({
+  category: 'software',
+  currency: 'HUF',
+  conversionRate: 1,
+  totalGross: 12_700,
+  totalGrossHuf: 12_700,
+  totalVatAmount: 2_700,
+  totalVatAmountHuf: 2_700,
+  invoiceNumber: 'SZLA-2026-42',
+  invoiceDate: '2026-11-10',
+  fulfillmentDate: '2026-11-10',
+  dueDate: '2026-11-18',
+  paymentMethod: 'wire_transfer',
+})
+
+console.log(koltseg.id)
+```
+
+Ha ugyanattól a szállítótól egy napon több számla is jöhet, a `totalGross` egyezését is nézd meg. Hogy egy frissen rögzített költség mennyi idő után jelenik meg a listában, nem mértük. A bizonylatlista 15–30 másodpercet is késhet, és ha a költséglista is ennyit késik, a függvény a második `create()` hívással duplikált költséget rögzíthet.
+
+Egy duplán rögzített költség nem végzetes, a [törléssel](/docs/koltsegek/torles) eltávolíthatod. A bizonylatokra szigorúbb szabály vonatkozik, ezt a [Pontosan egyszer](/docs/alapok/pontosan-egyszer) oldal írja le.

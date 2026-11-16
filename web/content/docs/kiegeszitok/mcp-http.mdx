@@ -1,0 +1,68 @@
+---
+title: MCP HTTP-n
+description: A createTarcaMcpHandler() Request → Response kezelőt ad az MCP szerverhez Cloudflare Workers, Vercel Edge, Deno és Bun alá. Kötelező hitelesítés és közös titok, Origin-szűrés, méretkorlát és válaszkódok.
+---
+
+A `createTarcaMcpHandler(server, options)` a Streamable HTTP POST kéréseit szolgálja ki egy webes `(request: Request) => Promise<Response>` függvénnyel. Így az [MCP szerver](/docs/kiegeszitok/mcp-szerver) egy edge függvényben is futhat, a Billingo kulcs pedig a szerveren marad.
+
+```ts twoslash title="src/index.ts"
+import { createTarcaMcpHandler, createTarcaMcpServer, type TarcaMcpHandler } from 'tarcajs/mcp'
+
+interface Env {
+  BILLINGO_API_KEY: string
+  MCP_SECRET: string
+  MCP_TOKEN: string
+}
+
+let handler: TarcaMcpHandler | undefined
+
+export default {
+  fetch(request: Request, env: Env) {
+    handler ??= createTarcaMcpHandler(
+      createTarcaMcpServer({ apiKey: env.BILLINGO_API_KEY, confirmationSecret: env.MCP_SECRET }),
+      {
+        authorize: (incoming) =>
+          Boolean(env.MCP_TOKEN) &&
+          incoming.headers.get('authorization') === `Bearer ${env.MCP_TOKEN}`,
+      },
+    )
+    return handler(request)
+  },
+}
+```
+
+<Callout type="warning" title="Két kötelező beállítás">
+  Az `authorize` kötelező: egy szerveroldali Billingo kulcs névtelen végpont mögött bárkinek
+  megengedné, hogy bizonylatot kérdezzen le vagy állítson ki. A `confirmationSecret` is kötelező,
+  mert egy véletlen, folyamatonkénti titokkal kiadott kódot egy másik példány nem tudna ellenőrizni.
+  Bármelyik hiánya `configuration` hiba a kezelő létrehozásakor.
+</Callout>
+
+A `Boolean(env.MCP_TOKEN)` azért kell, mert beállítatlan token mellett a várt fejléc `Bearer undefined` lenne, és ezt bárki elküldheti. A titok legyen legalább 16 bájt, például `openssl rand -hex 32`. A szervert példányonként egyszer hozd létre, ne kérésenként: a `send_document` a felhasznált kódokat a szerver memóriájában jegyzi meg.
+
+## A kérés útja
+
+A kezelő ebben a sorrendben ellenőriz:
+
+| Lépés | Ha nem teljesül |
+| --- | --- |
+| Csak `POST` | 405, `Allow: POST` |
+| Ha van `Origin` fejléc, szerepeljen az `allowedOrigins` listában (alapból üres, a DNS rebinding ellen) | 403 |
+| Az `authorize(request)` `true`-t ad | 401. Ha az `authorize` dob, 500 részletek nélkül. |
+| `content-type: application/json` | 415 |
+| A törzs legfeljebb `maxBodyBytes` (alapból 1 MiB), olvasás közben mérve | 413 |
+| Érvényes UTF-8 JSON | 400, JSON-RPC `-32700` |
+
+Minden kérés friss kapcsolatot kap, így egy korábbi `initialize` kézfogás nem marad meg. A 2026-07-28 előtti protokollt használó kliens `tools/list` és `tools/call` hívása ezért csak akkor működik, ha a kérés `MCP-Protocol-Version` fejlécében egy támogatott régi verzió áll (2025-11-25, 2025-06-18, 2025-03-26 vagy 2024-11-05). A csak értesítéseket tartalmazó törzsre 202 a válasz, törzs nélkül.
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `authorize(request)` | kötelező | `true` vagy `Promise<true>` engedi tovább a kérést. |
+| `allowedOrigins` | `[]` | Böngészős kliens engedélyezett eredetei. |
+| `maxBodyBytes` | `1048576` | A törzs legnagyobb mérete. Nem pozitív egész `configuration` hiba. |
+
+## Írás több példánnyal
+
+HTTP módban több példány is futhat (Workers izolátumok, serverless függvények). A megerősítő kódot bármelyik ellenőrizni tudja, mert a titok közös. A felhasznált kódok memóriája viszont példányonként külön van, így a `send_document` és a `cancel_document` egyszeri volta példányon belül érvényes. A `create_document` és a `create_receipt` ettől függetlenül pontosan egyszer állít ki, mert a `vendorId`-ra épülő `createOnce`-t használja. A [Serverless és edge](/docs/kiegeszitok/serverless-es-edge) oldal írja le, hogyan adj ehhez közös zárat.
+
+Node alatt (Express, Fastify) a kezelőt a [`toNodeHandler()`](/docs/kiegeszitok/node-express) csatolja.

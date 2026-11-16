@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Új számlatömb WEB előtaggal, egy számla a tömbben a WEB / 2026-000001 sorszámmal, és egy kötőjeles név, amelyet a tárca el sem küld.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/CreateDocumentBlock
+---
+
+A példa létrehoz egy `Webshop` tömböt `WEB` előtaggal, kiállít benne egy számlát, és kiírja a sorszámát. Végül egy kötőjeles nevű tömböt próbál létrehozni, ezt a tárca `validation` hibával megállítja.
+
+<Example slug="szamlatomb-letrehozas" />
+
+Az **Elküldött kérések** fülön a `CreateDocument` törzsében a `block_id` az új tömb azonosítója, és nincs második `CreateDocumentBlock` kérés. A **Billingo válasz** fülön a tömb 201-es válaszában a teljes beállításlista látszik.

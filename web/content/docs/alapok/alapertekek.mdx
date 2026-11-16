@@ -1,0 +1,62 @@
+---
+title: Alapértékek
+description: A createTarca({ defaults }) beállításai a bizonylatokhoz. Számlatömb, nyugtatömb, bankszámla, fizetési mód, nyelv, pénznem, határidő, e-számla és e-mail értesítés, és honnan jön az érték, ha nem adod meg.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Ami minden bizonylaton ugyanaz, azt egyszer adod meg a kliensnek. A hívásban megadott érték mindig nyer.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+export const tarca = createTarca({
+  defaults: {
+    blockId: 1,
+    receiptBlockId: 2,
+    bankAccountId: 1,
+    paymentMethod: 'wire_transfer',
+    language: 'hu',
+    currency: 'HUF',
+    dueInDays: 15,
+    electronic: false,
+    sendEmail: true,
+  },
+})
+```
+
+| Mező | Hol érvényes? | Ha nincs megadva | Leírás |
+| --- | --- | --- | --- |
+| `blockId` | számla, díjbekérő, előleg, piszkozat | az első `invoice` típusú tömb | A számlatömb azonosítója. |
+| `receiptBlockId` | nyugta | az első `receipt` típusú tömb | A nyugtatömb azonosítója. |
+| `bankAccountId` | számla | nincs bankszámla a számlán | A számlán megjelenő bankszámla. |
+| `paymentMethod` | számla és nyugta | számlán `'wire_transfer'`, nyugtán `'cash'` | Fizetési mód. |
+| `language` | számla | `'hu'` | A számla nyelve. |
+| `currency` | számla és nyugta | `'HUF'` | Pénznem. Nem forintos alapérték mellett minden bizonylathoz árfolyam kell. |
+| `dueInDays` | számla, díjbekérőből készült számla | `8` | Határidő napokban, a mai budapesti naptól. |
+| `electronic` | számla és nyugta | `false` | E-számla. |
+| `sendEmail` | számla | `false` | A Billingo kiküldje-e a partner címeire (`settings.should_send_email`). |
+
+## A számlatömb kikeresése
+
+Ha nincs `blockId`, az első bizonylatnál a tárca lekéri a tömböket (`GET /document-blocks?type=invoice&per_page=100`), és az elsőt használja. A Billingo a tömböket növekvő azonosító szerint adja, így ez a legrégebbi `invoice` tömb; egy friss profilon a „Számlák”. Nyugtánál ugyanez a `receipt` típussal, friss profilon a „Nyugták” (`NYT` előtag).
+
+A lekérés kliensenként és típusonként egyszer fut, a sikeres eredményt a tárca megjegyzi, a sikertelent nem. Ha a fiókban nincs ilyen tömb, `configuration` hiba jön, a `hint` megmondja, mit tegyél. Éles rendszerben érdemes a `blockId`-t megadni: egy kéréssel kevesebb, és nem függ attól, milyen tömböt hoz létre valaki a Billingo felületén.
+
+## Ellenőrzés
+
+A `createTarca()` az alapértékeket azonnal ellenőrzi. Nem pozitív egész azonosító, ismeretlen fizetési mód, nyelv vagy pénznem, negatív `dueInDays` vagy nem logikai `electronic` esetén `configuration` hibát dob, az első kérés előtt:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+try {
+  createTarca({ defaults: { dueInDays: -1 } })
+} catch (error) {
+  if (!isBillingoError(error)) throw error
+  console.log(error.category, error.message)
+}
+```
+
+## Tesztekben ugyanaz
+
+A `createMockTarca({ defaults })` ugyanezt a `TarcaDefaults` objektumot fogadja, így a teszt pontosan úgy állítja ki a bizonylatot, mint az éles kliens. A `runBatch()` próbafuttatásának is add át ugyanezt: [Tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas).

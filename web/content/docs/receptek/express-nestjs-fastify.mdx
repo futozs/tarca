@@ -1,0 +1,222 @@
+---
+title: Express, NestJS, Fastify
+description: A tárca webhook- és MCP-kezelőinek bekötése Express, NestJS, Fastify és a Node http szerver alá a tarcajs/node adapterrel, a nyers törzs és az aláírás megőrzésével.
+---
+
+A tárca fizetési webhookjai és az MCP szerver HTTP kezelője web-szabványos `(Request) => Promise<Response>` függvények. Next.js, Hono, Cloudflare Workers, Bun és Deno alatt közvetlenül használhatók. Az Express, a NestJS és a Fastify viszont a Node saját kérés- és válaszobjektumaival dolgozik, ezeket a `tarcajs/node` adapter alakítja át.
+
+Mindhárom keretrendszerben ugyanarra kell figyelni: a fizetési szolgáltató a törzs **bájtjait** írja alá, ezért a webhooknak a nyers törzs kell. Ha egy middleware JSON-ként beolvassa, a visszaalakított szövegen az aláírás már nem egyezik.
+
+## A kezelő
+
+Mindhárom változat ugyanazt a kezelőt köti be. A `tarca` a [közös kliens](/docs/receptek/kozos-kliens).
+
+```ts twoslash title="src/stripe-webhook.ts"
+// @filename: tarca.ts
+export declare const tarca: import('tarcajs').Tarca
+// @filename: stripe-webhook.ts
+// ---cut---
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+import { tarca } from './tarca'
+
+export const webhook = stripeWebhook({
+  secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+## Bekötés
+
+<Tabs items={['Express', 'NestJS', 'Fastify', 'Node http']} groupId="node-keretrendszer">
+  <Tab value="Express">
+    ```ts twoslash title="src/server.ts"
+    // @filename: shims.d.ts
+    declare module 'express' {
+      interface App {
+        post(path: string, handler: (request: never, response: never) => unknown): void
+        use(handler: unknown): void
+        listen(port: number): void
+      }
+      interface Express {
+        (): App
+        json(): unknown
+      }
+      const express: Express
+      export default express
+    }
+    // @filename: stripe-webhook.ts
+    export declare const webhook: (request: Request) => Promise<Response>
+    // @filename: server.ts
+    // ---cut---
+    import express from 'express'
+    import { toNodeHandler } from 'tarcajs/node'
+    import { webhook } from './stripe-webhook'
+
+    const app = express()
+
+    app.post('/webhooks/stripe', toNodeHandler(webhook))
+    app.use(express.json())
+
+    app.listen(3000)
+    ```
+
+    A webhook útvonal az `express.json()` **előtt** van. Fordított sorrendben a JSON middleware beolvasná a törzset, és a tárca `NodeBodyError` hibával jelezné, hogy így az aláírás nem ellenőrizhető. Ha a sorrendet nem tudod megváltoztatni, tedd az útvonalra az `express.raw({ type: '*/*' })` middleware-t.
+
+    Express alatt a `toNodeHandler` a hibát a `next(error)` hívással adja tovább az Express hibakezelőjének.
+  </Tab>
+  <Tab value="NestJS">
+    ```ts twoslash title="src/main.ts"
+    // @filename: shims.d.ts
+    declare module '@nestjs/core' {
+      export const NestFactory: {
+        create(
+          module: unknown,
+          options?: { rawBody?: boolean },
+        ): Promise<{
+          use(path: string, handler: (request: never, response: never) => unknown): void
+          listen(port: number): Promise<void>
+        }>
+      }
+    }
+    // @filename: app.module.ts
+    export class AppModule {}
+    // @filename: stripe-webhook.ts
+    export declare const webhook: (request: Request) => Promise<Response>
+    // @filename: main.ts
+    // ---cut---
+    import { NestFactory } from '@nestjs/core'
+    import { toNodeHandler } from 'tarcajs/node'
+    import { AppModule } from './app.module'
+    import { webhook } from './stripe-webhook'
+
+    const app = await NestFactory.create(AppModule, { rawBody: true })
+    app.use('/webhooks/stripe', toNodeHandler(webhook))
+    await app.listen(3000)
+    ```
+
+    A `rawBody: true` miatt a NestJS a `request.rawBody` mezőben megőrzi a nyers törzset, és a `toNodeHandler` azt adja tovább, akkor is, ha a JSON parser közben feldolgozta a törzset. Controllerből is hívhatod: `toNodeHandler(webhook)(request, response)` a `@Req()` és `@Res()` paraméterekkel.
+  </Tab>
+  <Tab value="Fastify">
+    ```ts twoslash title="src/server.ts"
+    // @filename: shims.d.ts
+    declare module 'fastify' {
+      import type { IncomingHttpHeaders } from 'node:http'
+      interface FastifyRequestLike {
+        method: string
+        url: string
+        headers: IncomingHttpHeaders
+        body: unknown
+      }
+      interface FastifyReplyLike {
+        status(code: number): FastifyReplyLike
+        headers(values: Record<string, string>): FastifyReplyLike
+        send(body: Uint8Array): FastifyReplyLike
+      }
+      interface FastifyLike {
+        addContentTypeParser(
+          type: string,
+          options: { parseAs: 'buffer' },
+          parser: (request: FastifyRequestLike, body: Buffer, done: (error: null, body: Buffer) => void) => void,
+        ): void
+        post(path: string, handler: (request: FastifyRequestLike, reply: FastifyReplyLike) => Promise<FastifyReplyLike>): void
+        register(plugin: (scope: FastifyLike) => Promise<void>): void
+        listen(options: { port: number }): Promise<string>
+      }
+      export default function fastify(): FastifyLike
+    }
+    // @filename: stripe-webhook.ts
+    export declare const webhook: (request: Request) => Promise<Response>
+    // @filename: server.ts
+    // ---cut---
+    import fastify from 'fastify'
+    import { toWebRequest } from 'tarcajs/node'
+    import { webhook } from './stripe-webhook'
+
+    const app = fastify()
+
+    app.register(async (scope) => {
+      scope.addContentTypeParser('*', { parseAs: 'buffer' }, (_request, body, done) => {
+        done(null, body)
+      })
+      scope.post('/webhooks/stripe', async (request, reply) => {
+        const response = await webhook(
+          toWebRequest({
+            method: request.method,
+            url: request.url,
+            headers: request.headers,
+            body: request.body,
+          }),
+        )
+        return reply
+          .status(response.status)
+          .headers(Object.fromEntries(response.headers))
+          .send(new Uint8Array(await response.arrayBuffer()))
+      })
+    })
+
+    await app.listen({ port: 3000 })
+    ```
+
+    A Fastify a törzset a saját parserével olvassa be. A webhook ezért egy külön `register` hatókörbe kerül, ahol a parser `Buffer`-ként adja tovább a nyers bájtokat, a többi útvonal pedig továbbra is JSON-t kap. Fastifyban a `toWebRequest()` és a kezelő közvetlen hívása a legegyszerűbb.
+  </Tab>
+  <Tab value="Node http">
+    ```ts twoslash title="src/server.ts"
+    // @filename: stripe-webhook.ts
+    export declare const webhook: (request: Request) => Promise<Response>
+    // @filename: server.ts
+    // ---cut---
+    import { createServer } from 'node:http'
+    import { toNodeHandler } from 'tarcajs/node'
+    import { webhook } from './stripe-webhook'
+
+    const kezelo = toNodeHandler(webhook, {
+      onError: (error) => console.error('A webhook nem futott le', error),
+    })
+
+    createServer((request, response) => {
+      if (request.method === 'POST' && request.url === '/webhooks/stripe') {
+        void kezelo(request, response)
+        return
+      }
+      response.statusCode = 404
+      response.end()
+    }).listen(3000)
+    ```
+  </Tab>
+</Tabs>
+
+## Mit csinál a toNodeHandler
+
+- A kérés törzsét folyamként adja tovább, így a webhook saját méretkorlátja (1 MiB) már beolvasás közben érvényesül. A NestJS `rawBody` mezőjét, az `express.raw()` `Buffer`-ét és a szöveges törzset változtatás nélkül használja.
+- Az URL a `Host` fejlécből és a kérés útvonalából áll össze, a query stringgel együtt (a Barion callbackjéhez kell).
+- A választ státusszal, fejlécekkel és törzzsel visszaírja a Node válaszobjektumára.
+- Hibánál Expressben `next(error)`-t hív. Ha nincs `next`, az `onError`-nak adja a hibát, és 500-at válaszol. `onError` nélkül csak egy összefoglalót ír a konzolra: a hiba nevét, és `BillingoError`-nál a kategóriát, a státuszt és a műveletet. A hiba szövegét nem, mert egy `validation` üzenet idézhet e-mail-címet.
+
+## Buktatók
+
+<Callout type="warning" title="Proxy mögött">
+  Az URL alapból a `Host` fejlécből és a socket TLS állapotából készül. Ha a szerver egy TLS-t
+  lezáró proxy (nginx, load balancer) mögött fut, add meg a `{ trustProxy: true }` opciót, és a
+  tárca az `X-Forwarded-Proto` és `X-Forwarded-Host` fejlécet használja. Csak akkor kapcsold be,
+  ha a proxyd írja ezeket, különben a kliens bármit beírhat.
+</Callout>
+
+<Callout type="info" title="Ugyanígy az MCP szerver">
+  A `createTarcaMcpHandler()` is web-szabványos kezelő: `app.post('/mcp', toNodeHandler(handler))`.
+  A beállítását az [AI asszisztens](/docs/receptek/mcp-asszisztens) recept írja le.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Node.js és Express" href="/docs/kiegeszitok/node-express">
+    A toNodeHandler, a toWebRequest és a writeWebResponse részletei.
+  </Card>
+  <Card title="Stripe webhook" href="/docs/receptek/stripe-webhook">
+    Ugyanez a webhook Next.js útvonalként, dedupe tárolóval és főkönyvvel.
+  </Card>
+  <Card title="Webhook beállítások" href="/docs/fizetesek/webhook-beallitasok">
+    A webhookok közös opciói: dedupe, méretkorlát, hibakezelés.
+  </Card>
+</Cards>

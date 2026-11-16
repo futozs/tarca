@@ -1,0 +1,31 @@
+---
+title: Kiállítás
+description: Nyugta kiállítása a receipts.create() és a receipts.createOnce() metódussal, POST /documents/receipt kéréssel, a nyugtatömbbe, bruttó árakkal.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceipt
+---
+
+<Operation id="CreateReceipt" methods={['receipts.create', 'receipts.createOnce']} />
+
+```ts
+const nyugta = await tarca.receipts.create({ items: [{ name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 }], paymentMethod: 'bankcard' })
+```
+
+A `create()` egy nyugtát állít ki. A `createOnce()` a `vendorId` alapján legfeljebb egyet, ugyanazzal a működéssel, mint a számláé: [Pontosan egyszer](/docs/bizonylatok/pontosan-egyszer). Pénztárnál, webshopban és webhookból a `createOnce()` a jó választás.
+
+<Cards>
+  <Card title="Kérés" href="/docs/nyugtak/kiallitas/keres">
+    A ReceiptInput mezői, a tételek és áfakulcsok, és a dróton küldött JSON.
+  </Card>
+  <Card title="Válasz" href="/docs/nyugtak/kiallitas/valasz">
+    A nyugta mezői, a Magánszemély partner és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/nyugtak/kiallitas/minta">
+    Kártyás nyugta két áfakulccsal, és pontosan egyszeri nyugta.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Nyugtát se küldj újra kézzel">
+  A nyugta is NAV-hoz kerülő bizonylat, és csak sztornózni lehet. A tárca a `POST
+  /documents/receipt` kérést nem ismétli meg. Bizonytalan hiba után a `createOnce()` visszakeresi
+  a `vendorId` alapján.
+</Callout>

@@ -1,0 +1,94 @@
+---
+title: Részletfizetés
+description: Részletekben érkező átutalások rögzítése egy kiállított számlán, a bankszámlakivonat ismételt beolvasásakor is duplikáció nélkül, a hátralék kiszámításával.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Egy nagyobb számlát a vevő gyakran több részletben fizet ki. A Billingo a befizetéseket a számlán tartja, és ezekből számolja a fizetési állapotot: amíg az összegük a bruttó végösszeg alatt van, a számla `partially_paid`, ha eléri, `paid`. Ez a recept egy függvény, amely a bankszámlakivonat egy jóváírását rögzíti a számlán, és visszaadja a hátralékot.
+
+## A függvény
+
+```ts twoslash title="lib/befizetesek.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+// @filename: befizetesek.ts
+// ---cut---
+import { tarca } from '@/lib/tarca'
+
+export interface Jovairas {
+  readonly azonosito: string
+  readonly datum: string
+  readonly osszeg: number
+}
+
+export async function rogzitsdAJovairast(szamlaId: number, jovairas: Jovairas) {
+  const eddigi = await tarca.documents.payments.list(szamlaId)
+  const befizetesek = eddigi.some((befizetes) => befizetes.voucherNumber === jovairas.azonosito)
+    ? eddigi
+    : await tarca.documents.payments.add(szamlaId, {
+        date: jovairas.datum,
+        price: jovairas.osszeg,
+        paymentMethod: 'wire_transfer',
+        voucherNumber: jovairas.azonosito,
+      })
+
+  const szamla = await tarca.documents.get(szamlaId)
+  const befizetve = befizetesek.reduce((osszeg, befizetes) => osszeg + befizetes.price, 0)
+  return { allapot: szamla.paymentStatus, hatralek: (szamla.grossTotal ?? 0) - befizetve }
+}
+```
+
+A jóváírás banki azonosítója a befizetés `voucherNumber` mezőjébe kerül. Ha ugyanazt a kivonatot kétszer olvasod be, a függvény másodszor megtalálja az azonosítót, és nem rögzíti újra a befizetést.
+
+Egy 190 500 Ft-os számlára az első, 50 000 Ft-os részlet után `partially_paid` az állapot és 140 500 Ft a hátralék. A második, 140 500 Ft-os részlet után `paid` és 0.
+
+## Mi megy a dróton
+
+<Example slug="befizetes" operation="UpdatePayment" />
+
+A Billingónak nincs olyan végpontja, amely egyetlen befizetést adna hozzá. A `payments.add()` lekéri az eddigi befizetéseket (`GET /documents/{id}/payments`), és a listát az új tétellel együtt **egészben** visszaírja (`PUT`, csupasz tömb). Az Elküldött kérések fülön látszik: a második `UpdatePayment` törzsében már mindkét részlet benne van.
+
+## Hibák
+
+| Kategória | Mikor? | Mit tegyél |
+| --- | --- | --- |
+| `validation` | Hibás dátum, nem véges összeg vagy ismeretlen fizetési mód. A tárca a kérés előtt jelzi, a `fieldErrors` mezője `payment.date`, `payment.price` formájú. | Javítsd az adatot. |
+| `forbidden` (403) | Ismeretlen vagy másik céghez tartozó számla. A Billingo bizonylatra 404 helyett 403-at ad. | Ellenőrizd az azonosítót. |
+| `network`, `timeout`, `server` a `PUT`-nál | Bizonytalan, lehet, hogy a befizetés rögzült. A tárca írást nem ismétel. | Hívd újra a függvényt: a `voucherNumber` alapján kiderül, rögzült-e. |
+
+## Buktatók
+
+<Callout type="warning" title="Egy számla befizetéseit egyszerre csak egy folyamat írja">
+  A `payments.add()` olvas, majd az egész listát felülírja. Ha két folyamat egyszerre ír ugyanarra
+  a számlára, az egyik befizetése elveszhet. Dolgozd fel a kivonatot egy folyamatban, sorban, vagy
+  zárold a számlát a saját adatbázisodban.
+</Callout>
+
+<Callout type="warning" title="Díjbekérőből készült számlára ne rögzíts befizetést">
+  A `createFromProforma` számlája már `paid` állapotban születik, és a nyugta is mindig fizetett.
+  Egy újabb befizetés duplán számolná az összeget. Lásd a
+  [Díjbekérő, majd számla fizetéskor](/docs/receptek/dijbekero-fizeteskor) receptet.
+</Callout>
+
+<Callout type="info" title="Visszavonás">
+  A `payments.clear(id)` minden befizetést töröl, és a számla újra `outstanding` lesz. Élőben a
+  Billingo erre 200-at és üres tömböt ad. Az útmutató 204-et ír, a tárca mindkettőt kezeli. Egyetlen befizetés
+  törléséhez a `payments.list()` eredményéből hagyd ki, és a többit írd vissza a
+  `payments.replace()`-szel.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Befizetés rögzítése" href="/docs/bizonylatok/befizetes">
+    A list, add, replace és clear kérése, válasza és élő viselkedése.
+  </Card>
+  <Card title="Díjbekérő, majd számla" href="/docs/receptek/dijbekero-fizeteskor">
+    Előre fizetésnél díjbekérő, és belőle fizetett számla.
+  </Card>
+  <Card title="Bizonylatok listája" href="/docs/bizonylatok/lista">
+    Kifizetetlen számlák lekérése paymentStatus szűrővel.
+  </Card>
+</Cards>

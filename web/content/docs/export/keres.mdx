@@ -1,0 +1,88 @@
+---
+title: Kérés
+description: Az exports.run(), create(), poll() és download() bemenete, az ExportInput mezői snake_case párjukkal, a várakozás ütemezése és a helyi ellenőrzés.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentExport/Create
+---
+
+```ts
+tarca.exports.run(input: ExportInput, options?: ExportRunOptions): Promise<ExportResult>
+```
+
+```ts
+tarca.exports.create(input: ExportInput, options?: RequestOptions): Promise<ExportJob>
+```
+
+```ts
+tarca.exports.poll(id: string, options?: RequestOptions): Promise<Billingo.DocumentExportStatus>
+```
+
+```ts
+tarca.exports.download(id: string, options?: RequestOptions): Promise<ExportFile>
+```
+
+Az `ExportRunOptions` a `RequestOptions` (`signal`) és egy `maxWaitMs` mező, az `ExportJob` egyetlen mezője az `id`. A `run()` sorban meghívja a másik hármat. Ha a várakozást magad ütemeznéd, például egy háttérfeladatban, hívd őket külön.
+
+## ExportInput
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `queryType` | `query_type` | – | **Kötelező.** Melyik dátum szerint szűr: `'invoice_date'` (kelt), `'fulfillment_date'` (teljesítés), `'due_date'` (határidő) vagy `'paid_date'` (fizetés napja). |
+| `startDate` | `start_date` | – | **Kötelező.** Az időszak első napja, `Date` vagy `YYYY-MM-DD`. A tárca a budapesti naptári napot küldi. |
+| `endDate` | `end_date` | – | **Kötelező.** Az időszak utolsó napja. |
+| `exportType` | `export_type` | – | **Kötelező.** A formátum. `'simple_csv'` egyszerű CSV, `'simple_excel'` és `'simple_excel_items'` Excel, a többi nagyrészt egy-egy könyvelőprogram formátuma, például `'kulcs_konyv'`, `'novitax'` vagy `'rlb'`. A teljes lista a `Billingo.DocumentExportType` típusban van. |
+| `documentBlockId` | `document_block_id` | minden számlatömb | Csak ennek a [számlatömbnek](/docs/szamlatombok) a bizonylatai. |
+| `numberStartYear`, `numberStartSequence` | `number_start_year`, `number_start_sequence` | – | Sorszám szerinti szűrés kezdete: év és sorszám. |
+| `numberEndYear`, `numberEndSequence` | `number_end_year`, `number_end_sequence` | – | Sorszám szerinti szűrés vége. |
+| `paymentMethod` | `payment_method` | minden | Csak az ilyen fizetési módú bizonylatok. |
+| `sortBy` | `sort_by` | – | Rendezés: `'invoice_date'`, `'fulfillment_date'` vagy `'invoice_raw_number'`. |
+| `otherOptions` | `other_options` | – | `'all'`, `'outstanding'` (kifizetetlen) vagy `'expired'` (lejárt). |
+| `filterExtra` | `filter_extra` | – | Egyes könyvelőprogram-formátumok extra beállításai, például `ledgerNumber` vagy `useGrossValues`. |
+
+Élőben csak a `simple_csv` formátumot próbáltuk ki (2026. november 15.). A többi formátumot és mezőt a spec írja le, a tárca ezeket változtatás nélkül, snake_case-re fordítva küldi.
+
+## A várakozás
+
+A `run()` az export indítása után 1, 2, 4 és 8 másodperccel kérdezi le az állapotot, utána 5 másodpercenként. `success` vagy `warning` állapotnál letölti a fájlt, `fail` állapotnál hibát dob.
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `maxWaitMs` | `60_000` | Ennyi ideig vár összesen a lekérdezések között. Az utolsó várakozást a tárca lerövidíti, hogy a lekérdezés a határidőre essen. Negatív vagy nem véges értékre `RangeError`. `0` esetén nem vár: egyszer lekérdezi az állapotot, és ha az export nincs kész, `not_ready` hibát dob. |
+| `signal` | – | `AbortSignal`. Megszakításkor a várakozás azonnal véget ér, és a `run()` a signal okával utasít el. |
+
+A `maxWaitMs`-be csak a várakozások számítanak bele, a kérések ideje nem, ezért a `run()` teljes ideje a kérések idejével hosszabb lehet. A tárca a lekérdezést (`GET`) hálózati hibánál magától újrapróbálja, az indítást (`POST`) nem.
+
+## Helyi ellenőrzés
+
+A `create()` és a `run()` a kérés előtt átalakítja a két dátumot. Érvénytelen naptári napra `validation` kategóriájú `BillingoError`-t dob, a `fieldErrors` a `startDate` vagy az `endDate` mezőt nevezi meg, és kérés nem megy ki:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  await tarca.exports.run({
+    queryType: 'invoice_date',
+    startDate: '2026-11-01',
+    endDate: '2026-11-31',
+    exportType: 'simple_csv',
+  })
+} catch (error) {
+  if (isBillingoError(error)) console.log(error.category, error.fieldErrors[0]?.field)
+}
+```
+
+## A dróton
+
+A `POST /document-export` törzse a hamis Billingo felvételéből, a [Minta](/docs/export/minta) oldal példájára:
+
+```json
+{
+  "query_type": "invoice_date",
+  "start_date": "2026-11-01",
+  "end_date": "2026-11-30",
+  "export_type": "simple_csv"
+}
+```
+
+A `poll()` és a `download()` `GET` kérés, az azonosító az útvonalban megy: `/document-export/{id}/poll` és `/document-export/{id}/download`.

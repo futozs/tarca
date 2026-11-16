@@ -1,0 +1,15 @@
+---
+title: Minta
+description: Kártyás nyugta két áfakulccsal partner nélkül, majd egy pontosan egyszer kiállított nyugta, a ténylegesen elküldött kérésekkel és a Billingo válaszával.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceipt
+---
+
+A nyugta két kávét és egy croissant-t tartalmaz, 1 950 Ft-ért. Az **Elküldött kérések** fülön az első kérés a nyugtatömböt keresi (`type=receipt`), a második a nyugta: a tételeken nincs `unit_price_type`, a croissant mennyisége `1`, mert a tárca kitöltötte.
+
+<Example slug="nyugta" />
+
+## Pontosan egyszer
+
+Ugyanarra a `vendorId`-ra a második hívás csak egy `GET /documents/vendor/POS-1001` kérést küld, és a meglévő nyugtát adja `created: false` értékkel.
+
+<Example slug="nyugta-pontosan-egyszer" />

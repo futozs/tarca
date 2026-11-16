@@ -1,0 +1,37 @@
+---
+title: Válasz
+description: A partners.list() által visszaadott Page, a partnerek mezői, a lista élő eltérései és a hibák.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/ListPartner
+---
+
+A `list()` egy `Page<Billingo.Partner>` objektumot ad vissza. A Billingo Laravel-stílusú lapozó borítékából a tárca csak a számokat tartja meg, a `prev_page_url` és `next_page_url` mezőket eldobja (élőben az első és az utolsó oldalon `null`, amit a spec nem enged).
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `data` | `readonly Billingo.Partner[]` | Az oldal partnerei, név szerint rendezve. |
+| `total` | `number` | Az összes találat száma. |
+| `perPage` | `number` | Oldalméret. |
+| `currentPage` | `number` | Az aktuális oldal sorszáma. |
+| `lastPage` | `number` | Az utolsó oldal sorszáma. |
+
+Az `all()` ugyanezeket a partnereket adja egyenként, `AsyncGenerator<Billingo.Partner>` formában.
+
+Egy partner minden mezőjét a [Lekérés](/docs/partnerek/lekeres) oldal írja le. A listaelem ugyanaz a teljes `Partner` objektum, amit a `get()` ad.
+
+## Élő eltérések
+
+- **Késleltetett index.** Az új vagy átnevezett partner 20–60 másodpercig hiányozhat a `query` találatai közül.
+- **Elavult `total` törlés után.** A `total` és a `lastPage` percekig a törlés előtti értéket mutatja, a `data` viszont már nem tartalmazza a törölt partnert. Ciklust ezért a `data` ürességére építs, ne a `total`-ra; az `all()` is így áll meg.
+- **`null` a nem nullázható mezőkben.** A `customBillingSettings.dueDays` és a `customBillingSettings.documentCurrency` beállítás nélkül `null`. A `Billingo` típus ezt már jelzi, ezért `!= null` feltétellel vizsgáld.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `RangeError` | Hibás `page` vagy `perPage`. Nincs kérés. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429 | `rate_limit` | Túl sok kérés. A tárca a `Retry-After` szerint újrapróbálja. |
+| 5xx | `server` | Billingo hiba. A tárca újrapróbálja, alapból összesen három kísérlettel. |
+| – | `network`, `timeout` | Nincs válasz. A lista olvasás, a tárca ezt is újrapróbálja. |
+
+Az újrapróbálás szabályai: [Újrapróbálás és korlátok](/docs/alapok/ujraprobalas-es-korlatok).

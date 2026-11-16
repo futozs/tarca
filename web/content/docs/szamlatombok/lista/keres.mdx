@@ -1,0 +1,54 @@
+---
+title: Kérés
+description: A documentBlocks.list() és a documentBlocks.all() paraméterei, a típus szerinti szűrés és a lapozás a számlatömbök listájában.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentBlock/ListDocumentBlock
+---
+
+<Operation id="ListDocumentBlock" methods={['documentBlocks.list', 'documentBlocks.all']} />
+
+```ts
+tarca.documentBlocks.list(query?: DocumentBlockListQuery, options?: { signal?: AbortSignal }): Promise<Page<Billingo.DocumentBlock>>
+```
+
+```ts
+tarca.documentBlocks.all(query?: Omit<DocumentBlockListQuery, 'page'>, options?: { signal?: AbortSignal }): AsyncGenerator<Billingo.DocumentBlock>
+```
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const nyugtaTombok = await tarca.documentBlocks.list({ type: 'receipt' })
+console.log(nyugtaTombok.data.map((tomb) => tomb.prefix))
+
+for await (const tomb of tarca.documentBlocks.all()) {
+  console.log(tomb.id, tomb.name, tomb.type)
+}
+```
+
+## Mezők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `type` | `type` | – | Csak az adott típusú tömbök: `'invoice'`, `'receipt'`, `'offer'`, `'order_form'`, `'waybill'`, `'certificate_of_completion'` vagy `'dossier'`. |
+| `page` | `page` | `1` | Az oldal sorszáma. Az `all()` nem fogadja. |
+| `perPage` | `per_page` | Billingo: `25`, `all()`: `100` | Oldalanként hány tömb jöjjön, legfeljebb 100. |
+
+A `type` szűrő élőben működik: `type=receipt` csak a `Nyugták` tömböt adta, `type=invoice` csak a számlatömböket. Díjbekérő és előlegszámla a számlatömbökbe kerül, nekik nincs külön típusuk.
+
+## Helyi ellenőrzés
+
+A tárca kérés előtt `RangeError`-t dob, ha a `page` nem legalább 1 egész szám, vagy ha a `perPage` nem 1 és 100 közötti egész szám. Ismeretlen `type` értéket a típus nem enged. Lásd [Lapozás](/docs/alapok/lapozas).
+
+## Ami a dróton megy
+
+```text
+GET /v3/document-blocks?type=receipt
+```
+
+Az `all()` 100-as oldalakkal lapoz:
+
+```text
+GET /v3/document-blocks?page=1&per_page=100
+```

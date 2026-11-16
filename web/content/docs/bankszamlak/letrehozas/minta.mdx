@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Forint és euró bankszámla létrehozása a hamis Billingo ellen, majd egy euró számla, amely az euró bankszámlát kapja.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/CreateBankAccount
+---
+
+A példa létrehoz egy forint és egy euró bankszámlát, aztán kiállít egy euró számlát, és a `bankAccountId` mezővel az euró bankszámlát adja meg hozzá.
+
+<Example slug="bankszamla-letrehozas" />
+
+Az **Elküldött kérések** fülön az első `CreateBankAccount` törzsében csak a három kötelező mező van. A **Billingo válasz** fülön a válasz kitölti az `account_number_iban` és a `swift` mezőt üres szöveggel, a `CreateDocument` válaszában pedig az `organization.bank_account` az euró bankszámla.

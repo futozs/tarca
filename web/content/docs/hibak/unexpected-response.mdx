@@ -1,0 +1,37 @@
+---
+title: "unexpected_response: váratlan válasz"
+description: "Az unexpected_response kategória: a Billingo sikeres státusszal válaszolt, de a törzs üres vagy nem JSON. Írásnál a művelet ettől még megtörténhetett, ezért ellenőrizni kell, mielőtt megismételnéd."
+---
+
+| | |
+| --- | --- |
+| HTTP | 2xx |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false` |
+
+## Mikor jön elő
+
+Ahol a tárca JSON-t vár, de üres törzset vagy nem JSON-t kap (például egy proxy HTML oldalát 200-zal), `A Billingo válasza nem értelmezhető JSON.` üzenetű `unexpected_response` hibát ad, a `status` mezőben a kapott státusszal. Írásnál az üzenet hozzáteszi, hogy a művelet a Billingo oldalán ettől még végrehajtódhatott, ezért ne ismételd meg vakon. Bináris válasznál (PDF, blokknyomtatás) akkor jön, ha a bájtok nem `%PDF`-fel kezdődnek. A tartalomtípust a tárca nem nézi, mert a blokknyomtatós PDF élőben `application/octet-stream` típussal érkezik.
+
+## Mi a teendő
+
+Írásnál ugyanaz a helyzet, mint hálózati hibánál: a Billingo elvégezhette a műveletet, csak a válasz értelmezhetetlen. A `createOnce` ezt bizonytalan hibának veszi, és a `vendorId` alapján keres utána.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const { document, created } = await tarca.documents.createOnce({
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, netUnitPrice: 15_000, vat: 27 }],
+})
+
+console.log(document.invoiceNumber, created)
+```
+
+Sztornónál, befizetésnél és e-mail küldésnél nincs `vendorId`: ott olvasd vissza a bizonylatot (`documents.get`, `documents.payments.list`), mielőtt újra küldenéd. A [megfigyelhetőség](/docs/kiegeszitok/megfigyelhetoseg) `tarca_unexpected_response_total` számlálója mutatja, ha egy proxy rendszeresen elrontja a válaszokat.

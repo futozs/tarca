@@ -1,0 +1,28 @@
+---
+title: Piszkozat
+description: Nyugta piszkozat a receipts.create() hívással draft típussal, és véglegesítése nyugtává a receipts.finalizeDraft() metódussal, PUT /documents/receipt/{id} kéréssel.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceiptFromDraft
+---
+
+A nyugta piszkozat sorszám nélküli nyugta. Akkor hasznos, ha a pénztárban a kosár már összeállt, de a fizetés még nem zárult le. Véglegesítéskor a Billingo sorszámot ad neki, és fizetett nyugta lesz belőle.
+
+<Operation id="CreateReceiptFromDraft" methods={['receipts.finalizeDraft']} />
+
+```ts
+const piszkozat = await tarca.receipts.create({ type: 'draft', items })
+const nyugta = await tarca.receipts.finalizeDraft(piszkozat.id ?? 0, { items, paymentMethod: 'bankcard' })
+```
+
+A piszkozatot a [Kiállítás](/docs/nyugtak/kiallitas) `create()` metódusa hozza létre `type: 'draft'` értékkel. Törölni a számlákéval közös `documents.deleteDraft()` tudja, lásd [Bizonylatok: Piszkozat](/docs/bizonylatok/piszkozat).
+
+<Cards>
+  <Card title="Kérés" href="/docs/nyugtak/piszkozat/keres">
+    A finalizeDraft() teljes bemenete.
+  </Card>
+  <Card title="Válasz" href="/docs/nyugtak/piszkozat/valasz">
+    201, ugyanaz az azonosító, új sorszám, és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/nyugtak/piszkozat/minta">
+    Nyugta piszkozat, majd véglegesítés kártyás fizetéssel.
+  </Card>
+</Cards>

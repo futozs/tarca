@@ -1,0 +1,53 @@
+---
+title: Kérés
+description: A createFromProforma() bemenete (teljesítés, határidő, megjegyzés, típus, formátum) és az archive(). A tárca mindig küld törzset, a teljesítés napját és a határidőt is.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocumentFromProforma
+---
+
+```ts
+tarca.documents.createFromProforma(id: number, input?: ProformaConversionInput, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+tarca.documents.archive(id: number, options?: { signal?: AbortSignal }): Promise<void>
+```
+
+## Számla a díjbekérőből
+
+A tárca `POST /documents/{id}/create-from-proforma` kérést küld. A törzs a Billingo `InvoiceSettings` sémája; a tárca mindig elküldi, a teljesítés napjával és a határidővel együtt, mert élőben ezt az alakot mértük.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const dijbekeroId: number
+
+const szamla = await tarca.documents.createFromProforma(dijbekeroId, {
+  fulfillmentDate: '2026-11-16',
+  dueInDays: 0,
+  comment: 'Fizetve átutalással.',
+})
+
+console.log(szamla.invoiceNumber, szamla.paymentStatus)
+```
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `fulfillmentDate` | `fulfillment_date` | ma, Budapesten | A számla teljesítési napja. |
+| `dueDate` | `due_date` | ma + `dueInDays` | A számla határideje. |
+| `dueInDays` | (a `due_date`-be számolva) | `defaults.dueInDays`, alapból 8 | A `dueDate`-tel együtt nem adható meg. |
+| `comment` | `comment` | – | A számla megjegyzése. |
+| `documentType` | `document_type` | – | A létrejövő bizonylat típusa (`Billingo.DocumentType`). |
+| `documentFormat` | `document_format` | – | `'electronic'`, `'traditional'` vagy `''`. |
+
+A hamis Billingo a fenti hívásra ezt a törzset rögzítette:
+
+```json
+{ "comment": "Fizetve átutalással.", "fulfillment_date": "2026-11-16", "due_date": "2026-11-16" }
+```
+
+Hibás dátum, vagy a `dueDate` és a `dueInDays` együtt, kérés nélkül `validation` hibát ad (`fulfillmentDate`, `dueDate`, `dueInDays` mezővel).
+
+## Archiválás
+
+Az `archive(id)` a `PUT /documents/{id}/archive` kérést küldi, törzs nélkül. Díjbekérőt archivál, akkor is, ha már készült belőle számla. Az archivált díjbekérő eltűnik a [listából](/docs/bizonylatok/lista), de nem törlődik.
+
+Egyik metódust sem ismétli meg a tárca hiba után.

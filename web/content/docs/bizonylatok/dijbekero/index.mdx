@@ -1,0 +1,36 @@
+---
+title: Díjbekérő
+description: Díjbekérő kiállítása, belőle számla a createFromProforma() metódussal, és a díjbekérő archiválása az archive() metódussal. A díjbekérőből készült számla fizetettként jön létre.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocumentFromProforma
+---
+
+A díjbekérő (proforma) fizetési felszólítás, nem számla: nem megy a NAV-hoz, és nem sztornózható. Amikor a vevő fizet, a díjbekérőből számla lesz.
+
+<Operation id="CreateDocumentFromProforma" methods={['documents.createFromProforma']} />
+
+<Operation id="ArchiveDocument" methods={['documents.archive']} />
+
+```ts
+const dijbekero = await tarca.documents.create({ type: 'proforma', partner, items })
+const szamla = await tarca.documents.createFromProforma(dijbekero.id ?? 0)
+await tarca.documents.archive(dijbekero.id ?? 0)
+```
+
+A díjbekérőt a [Kiállítás](/docs/bizonylatok/kiallitas) `create()` metódusa hozza létre `type: 'proforma'` értékkel. A sorszáma külön számozást kap: `000001`.
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/dijbekero/keres">
+    A createFromProforma() mezői és az archive().
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/dijbekero/valasz">
+    A fizetett számla, a relatedDocuments, és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/dijbekero/minta">
+    Díjbekérő, belőle számla, végül archiválás.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="A díjbekérőből készült számla már fizetett">
+  A `createFromProforma()` számlája `paymentStatus: 'paid'` állapottal jön létre. Ha utána
+  befizetést is rögzítesz rá, kétszer számolod a pénzt.
+</Callout>

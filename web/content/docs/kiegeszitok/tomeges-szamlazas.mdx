@@ -1,0 +1,92 @@
+---
+title: Tömeges számlázás
+description: A runBatch() sok számlát vagy nyugtát állít ki pontosan egyszer, a Billingo percenkénti korlátja alatt ütemezve, próbafutással, megszakítással és hibánkénti megállással. Kulcsok, opciók, eredmény.
+---
+
+A `runBatch(tarca, options)` egy listát állít ki: havi előfizetések, egy nap rendelései, egy importált táblázat. Minden tétel a `createOnce`-on megy át a tétel kulcsával mint `vendorId`-val, így egy félbeszakadt futás ugyanazokkal a kulcsokkal újraindítható: a már kiállított tételek `existing` állapotot kapnak, dupla bizonylat nem készül.
+
+<Example slug="tomeges-szamlazas" />
+
+A próbafutás nem ír semmit, csak ellenőriz és becsül. Az éles futás két számlát állít ki, az újrafuttatás mindkettőt `existing`-ként találja meg. A két tétel ugyanazt a vevőt használja: a második már az első partnerét kapja, nem keres újra.
+
+## Tételek
+
+```ts
+{ key: string, document: () => BatchDocument | Promise<BatchDocument> }
+```
+
+A `BatchDocument` `{ kind: 'invoice', input: DocumentInput }` vagy `{ kind: 'receipt', input: ReceiptInput }`. A `document` függvény csak akkor fut, amikor a tétel sorra kerül, így drága adatbetöltést is tehetsz bele.
+
+- A levágott `key` lesz a `vendorId`. Ha az `input` saját `vendorId`-ja ettől eltér, a tétel `validation` hibával elbukik.
+- Üres vagy ismétlődő kulcs az egész futást elutasítja, kérés előtt (`validation`, `fieldErrors: [{ field: 'items.N.key' }]`).
+- Egy időszakos számla kulcsa legyen az előfizetés és az időszak, például `SUB-41-2026-11-01`, lásd [Ismétlődő időszakok](/docs/kiegeszitok/ismetlodo-idoszakok).
+
+## Opciók
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `concurrency` | `1` | Egyszerre futó tételek, 1–4. |
+| `ratePerMinute` | `30` | Tételindítás percenként, legfeljebb 60. Az indítások `60000 / ratePerMinute` ms-onként követik egymást, párhuzamosan is. |
+| `dryRun` | `false` | Próbafutás, lásd lent. |
+| `defaults` | nincs | `TarcaDefaults`, csak a próbafutás becsléséhez. Ugyanazt add, mint a `createTarca()`-nak. |
+| `journal` | nincs | `{ track(vendorId, run) }`: minden kiállítás ezen megy át, lásd [Bizonylatnapló](/docs/kiegeszitok/bizonylatnaplo). |
+| `once` | nincs | A `createOnce` zárbeállításai: `lock`, `lockTtlSeconds`, `lockWaitMs`, `lockFailure`. |
+| `signal` | nincs | Megszakítás. |
+| `onProgress(progress)` | nincs | Minden tétel után: `{ total, done, created, existing, validated, failed, skipped, key, status }`. Ha dob, a tárca figyelmen kívül hagyja. |
+| `recoveryDelayMs`, `now` | | A `createOnce` helyreállítási várakozása és az ütemezés órája. |
+
+Érvénytelen opció `configuration` hiba, kérés előtt.
+
+**Miért 30 percenként?** A Billingo kulcsonként percenként 300 kérést enged, minden kérést (a GET-et is) beleszámolva, és a webhookjaid ugyanebből a keretből élnek. Egy tétel 2–6 kérés: `vendorId` keresés, partnerkeresés 1–3 oldal, új partner, a bizonylat (az alapértelmezett számlatömb gyorsítótárban van). 30 tétel így legfeljebb 180 kérés.
+
+## Partnerek
+
+A Billingo partnerkeresője 20–60 másodpercig nem látja a frissen létrehozott partnert, így egy második `findOrCreate` ugyanarra a vevőre új partnert hozna létre. A futáson belül a `runBatch` megjegyzi minden beágyazott `PartnerInput` partnerazonosítóját, amint egy tétel kiállított vele egy bizonylatot, és a későbbi tételeknek már az azonosítót adja. `concurrency > 1` esetén a későbbi tételek megvárják az elsőt. Egy `existing` bizonylat partnerét nem veszi át.
+
+## Megállás és hibák
+
+| Hiba | Mi történik |
+| --- | --- |
+| `rate_limit`, `auth`, `forbidden`, `subscription`, `configuration`, `store_unavailable` | A futás megáll, a hátralévő tételek `skipped` állapotot kapnak. A `stopped` mező `reason` szövege és `error` hibája mondja meg, miért. Az írást a tárca nem ismétli: futtasd újra később ugyanazokkal a kulcsokkal. |
+| `in_progress` | Csak ezt a tételt hagyja ki, mert egy másik folyamat épp kiállítja. |
+| bármi más, a `createOnce` által fel nem oldott bizonytalan hiba is | Csak ez a tétel `failed`. |
+| `DocumentHookError`, `JournalWriteError` | A bizonylat elkészült, csak utána bukott el valami. A tétel `created` (vagy `existing`) marad, beleszámít a `grossTotals`-ba, és az `error` mezőben ott a hiba. Ne állítsd ki újra. |
+
+A `signal` megszakítja az új tételek indítását és az ütemezés várakozását, de a már futó tételek befejeződnek: a jel nem jut el a `createOnce`-ig, így egy POST sem szakad félbe.
+
+## Próbafutás
+
+A Billingónak nincs előnézeti végpontja. A `dryRun: true` ezért helyben ellenőriz, ugyanazokkal a szabályokkal, mint a `createOnce`, megnézi a `vendorId`-t (egy ütemezett GET), és a Billingo kerekítési modelljével becsli az összeget. Soha nem ír, piszkozatot sem, mert az is az írási keretből fogy. A tételek `existing` (a Billingo saját számaival) vagy `validated` (becsléssel) állapotot kapnak. Termékre hivatkozó tételnél, `discountPercent`, `advanceInvoiceIds` és `none` áfás nyugtatétel mellett nincs becslés (`grossTotal: undefined`).
+
+## Az eredmény
+
+```ts
+{ dryRun, items, created, existing, validated, failed, skipped, stopped?, grossTotals }
+```
+
+Minden `BatchItemResult` `{ key, status, kind?, document?, number?, grossTotal?, currency?, error?, reason? }`. A `grossTotals` pénznemenként adja össze a Billingo `grossTotal` értékeit (`{ HUF: 25400, EUR: 381.26 }`), pénznemek között soha.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { runBatch } from 'tarcajs/batch'
+import { createMockTarca } from 'tarcajs/testing'
+
+const tarca = process.env.NODE_ENV === 'test' ? createMockTarca() : createTarca()
+
+const eredmeny = await runBatch(tarca, {
+  items: [
+    {
+      key: 'NAP-2026-11-16-1',
+      document: () => ({
+        kind: 'receipt',
+        input: { items: [{ name: 'Kávé', grossUnitPrice: 890, vat: 27, quantity: 2 }] },
+      }),
+    },
+  ],
+  onProgress: (allapot) => console.log(`${allapot.done}/${allapot.total}`, allapot.status),
+})
+
+console.log(eredmeny.created.length, eredmeny.grossTotals)
+```
+
+A `runBatch` a klienstől csak a `documents.createOnce`, a `documents.findByVendorId` és a `receipts.createOnce` metódust kéri (`BatchApi`), ezért a `createMockTarca()` is megfelel. Egy teljes havi számlázás: [Havi előfizetés recept](/docs/receptek/havi-elofizetes).

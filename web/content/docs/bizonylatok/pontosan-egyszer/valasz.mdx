@@ -1,0 +1,74 @@
+---
+title: Válasz
+description: A createOnce() eredménye a bizonylat és a created jelző. Mikor igaz a created, milyen hibákat ad, és melyik után kell újra hívni ugyanazzal a vendorId-val.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/GetDocumentByVendorId
+---
+
+```ts
+interface DocumentOnceResult {
+  readonly document: Billingo.Document
+  readonly created: boolean
+}
+```
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `document` | `Billingo.Document` | A bizonylat, akár most készült, akár korábban. A mezőit a [Kiállítás válasza](/docs/bizonylatok/kiallitas/valasz) írja le. |
+| `created` | `boolean` | `true`, ha ez a hívás küldte el a `POST`-ot, és a bizonylat ettől készült el. |
+
+## Mikor igaz a created?
+
+| Helyzet | `created` |
+| --- | --- |
+| Nem volt ilyen `vendorId`, a kiállítás sikerült. | `true` |
+| A kiállítás bizonytalan hibával ért véget, de a visszakeresés megtalálta. | `true` |
+| Már volt ilyen `vendorId`, akár sztornózva is. | `false` |
+| Egy másik folyamat megelőzte (400 `Duplicate vendor id.`), és a visszakeresés megtalálta. | `false` |
+| Ugyanebben a folyamatban egy párhuzamos hívás állította ki. | `false` |
+
+Az `onDocument` hook csak `created: true` esetén kap `created` eseményt, így a naplód egy bizonylatot egyszer rögzít.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Hibás bemenet vagy hiányzó, `.`, `..` `vendorId`. Kérés nem ment ki. |
+| – | `configuration` | Hibás `recoveryDelayMs`, vagy nincs számlatömb. |
+| – | `in_progress` | A zárat egy másik folyamat tartja `lockWaitMs` óta. Hívd meg később ugyanígy. |
+| – | `store_unavailable` | A zár tárolója nem érhető el. Semmi nem készült el. |
+| 400 | `validation` | Más 400-as hiba, például EU-s áfakód nem külföldi partnerrel. A tárca változatlanul továbbadja. |
+| 5xx | `server` | A kiállítás szerverhibát adott, és a két visszakeresés sem találta a bizonylatot. Az eredeti hiba jön. |
+| – | `network`, `timeout` | Ugyanez hálózati hibával vagy időtúllépéssel. |
+| 400 + keresési hiba | a keresés kategóriája | A Billingo szerint a `vendorId` foglalt, de a visszakeresés nem sikerült. A `hint` szerint a bizonylat létezik. |
+
+A partner és a számlatömb keresése a `POST` előtt, a visszakeresésen kívül fut. Ezek hibái változatlanul jönnek, és biztosan nem készült bizonylat.
+
+## Mikor hívd újra?
+
+A `createOnce()` minden hibája után ugyanazzal a `vendorId`-val biztonságos újra hívni: ha a bizonylat közben elkészült, a következő hívás megtalálja. Webhookban ezért a hibát ne nyeld el, hanem adj 500-as választ, és hagyd, hogy a szolgáltató újraküldje az eseményt.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function szamlazas(rendelesId: string): Promise<Response> {
+  try {
+    const { document } = await tarca.documents.createOnce({
+      vendorId: `ORDER-${rendelesId}`,
+      partner: 1,
+      items: [{ name: 'Konyhabútor', quantity: 1, netUnitPrice: 150_000, vat: 27 }],
+    })
+    return Response.json({ szamla: document.invoiceNumber })
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'validation') {
+      return Response.json({ hiba: error.message }, { status: 422 })
+    }
+    return new Response('Később próbáld újra.', { status: 500 })
+  }
+}
+
+console.log((await szamlazas('1001')).status)
+```
+
+Új `vendorId`-t csak akkor adj, ha szándékosan második bizonylatot akarsz, például egy sztornózott rendelés újraszámlázásához.

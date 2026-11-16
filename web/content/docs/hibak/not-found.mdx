@@ -1,0 +1,44 @@
+---
+title: "not_found: nincs ilyen erőforrás"
+description: "A not_found kategória: a Billingo 404-et adott. Ismeretlen partner, termék, költség vagy vendorId, és a nullIfNotFound() segédfüggvény, amely ezt null értékre cseréli."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | 404 |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false`, az `isNotFound` mező `true` |
+
+## Mikor jön elő
+
+| Művelet | A Billingo üzenete |
+| --- | --- |
+| `partners.get` ismeretlen vagy törölt azonosítóra | `Partner is not found.` |
+| `products.get` | `Product is not found.` |
+| `spendings.get` | `Spending is not found.` |
+| `documents.getByVendorId` ismeretlen `vendorId`-ra | `Document is not found.` |
+| ismeretlen útvonal | üres üzenet |
+
+```text
+404 {"error":{"message":"Partner is not found."}}
+```
+
+A tárca üzenete `A Billingo nem találja a kért erőforrást.`, utána a Billingo üzenete. Bizonylatra és számlatömbre azonosító alapján a Billingo 403-at ad, nem 404-et, lásd [Megtagadott művelet](/docs/hibak/forbidden).
+
+Két helyen a tárca maga kezeli a 404-et, és nem dob: a `documents.findByVendorId()` `null`-t ad, a `documents.navStatus()` pedig `null`-t, amíg a Billingónak még nincs NAV rekordja a friss bizonylatról (404 `NavOnlineSzamla is not found.`).
+
+## Mi a teendő
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+const partner = await nullIfNotFound(tarca.partners.get(1234))
+const szamla = await tarca.documents.findByVendorId('ORDER-1001')
+
+console.log(partner?.name ?? 'Nincs ilyen partner.', szamla?.invoiceNumber ?? 'Nincs ilyen számla.')
+```
+
+A `nullIfNotFound()` csak a `not_found` hibát cseréli `null`-ra, minden mást továbbdob. A partnerkereső indexe körülbelül egy percet késik: egy épp létrehozott partner a `partners.list({ query })` találatai között még hiányozhat, de `partners.get(id)`-vel már megvan.

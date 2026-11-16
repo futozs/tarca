@@ -1,0 +1,57 @@
+---
+title: Partner megadása
+description: A számla vevője azonosítóval vagy partneradatokkal. Mit keres a tárca a kiállítás előtt, mikor hoz létre új partnert, és mit jelent a Billingo partnerkeresőjének késése.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/ListPartner
+---
+
+A `partner` mező kétféle lehet:
+
+- **Azonosító** (`partner: 1234`): a tárca változatlanul elküldi `partner_id`-ként. Nincs plusz kérés.
+- **Partneradatok** (`PartnerInput`): a tárca a `partners.findOrCreate()`-tel keres egy pontosan ilyen partnert, és ha nincs, létrehozza. A számlán már az azonosítója megy.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.create({
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+    emails: ['vevo@example.hu'],
+    taxcode: '12345678-2-42',
+    taxType: 'HAS_TAX_NUMBER',
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+})
+
+console.log(szamla.partner?.id, szamla.partner?.taxcode)
+```
+
+## Kötelező mezők
+
+A partnernek név és cím kell: `name`, `address.postCode`, `address.city`, `address.address`. Az `address.countryCode` alapból `'HU'`. Az adószám mezője `taxcode` (a Billingo így írja), a `taxType` csak nagybetűs lehet: `'HAS_TAX_NUMBER'`, `'NO_TAX_NUMBER'` vagy `'FOREIGN'`.
+
+Üres névre vagy hiányzó címre a tárca kérés nélkül `validation` hibát ad (`partner.name`, `partner.address`).
+
+## Mit keres a findOrCreate?
+
+1. `GET /partners?query=<név>`: a Billingo partnerkeresője a név szavainak elejére illeszt, kis- és nagybetűtől függetlenül. Adószámra és e-mail címre nem keres. A tárca legfeljebb három, 100 elemes oldalt néz át.
+2. Egy találatot csak akkor használ, ha minden mező, amit megadtál, egyezik a tárolttal. A szöveg elején és végén álló vagy ismétlődő szóközök, és az e-mail címek kis- és nagybetűi nem számítanak eltérésnek, az e-mail címek sorrendje igen.
+3. Ha nincs ilyen, `POST /partners` új partnert hoz létre.
+
+Ha a vevő címe megváltozott, a tárca új partnert hoz létre (a régi megmarad), így a számlán nem jelenik meg elavult cím. A Billingo a kiállításkor a partner adatait bemásolja a bizonylatba (`documentPartner`), a később módosított partner a régi számlát nem érinti.
+
+<Callout type="info" title="A partnerkereső késik">
+  Élőben egy frissen létrehozott vagy átnevezett partner nagyjából egy percig nem jelent meg a
+  keresésben. Ha ugyanannak az új vevőnek egy percen belül két számlát állítasz ki
+  partneradatokkal, a második egy másolat partnert hoz létre. A számla ettől helyes marad, csak a
+  partnerlistában lesz két egyforma vevő. Ha ez zavar, a partner azonosítóját mentsd el az első
+  számla után (`szamla.partner?.id`), és a továbbiakban azzal számlázz.
+</Callout>
+
+A `partners.guess()`-t ne használd vevőkeresésre: a Billingo ott pontos névegyezésen kívül mindig új partnert hoz létre. A részletek: [Keresés vagy létrehozás](/docs/partnerek/kereses-vagy-letrehozas/keres).
+
+## A kiállítás előtti lépések hibái
+
+A partnerkeresés és a partner létrehozása a számla `POST` kérése előtt fut. Ha ezek hibáznak, a tárca a hibát változatlanul továbbadja, számla nem ment ki, a hívás megismételhető.

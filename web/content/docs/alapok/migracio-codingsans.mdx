@@ -1,0 +1,103 @@
+---
+title: Átállás a @codingsans/billingo-client csomagról
+description: Hogyan válts a @codingsans/billingo-client csomagról a tárcára. A globális beállítás helyett kliens, a szolgáltatásmetódusok megfelelői, camelCase mezők, alapértékek, pontosan egyszeri kiállítás és hibakezelés.
+---
+
+A `@codingsans/billingo-client` a 3.0.14-es Billingo spec-ből generált kliens, 2022 óta nem jelent meg új verziója. A tárca ugyanazokat a műveleteket ismeri, és a 3.0.15 újdonságait (készlet, nyugta-adatszolgáltatás mezői, `13,5%` áfa, `simple_pay`) is. Az átállás műveletenként elvégezhető, a két csomag egy ideig együtt is futhat.
+
+## Beállítás
+
+A codingsans kliens egy globális beállítást használ, ezért egy folyamatban egy Billingo fiókot kezel:
+
+```ts
+OpenAPI.HEADERS = { 'X-API-KEY': process.env.BILLINGO_API_KEY }
+```
+
+A tárcában a kulcs egy kliens példányhoz tartozik, így több fiók is lehet egy folyamatban:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+export const tarca = createTarca({ apiKey: process.env.BILLINGO_API_KEY })
+```
+
+Kulcs nélkül a tárca a `BILLINGO_API_KEY` változót olvassa. Az `axios` és a `form-data` csomagra nincs szükség: a tárca a natív `fetch`-et használja, és Workers, Deno és Bun alatt is fut. Lásd [Kliens beállítása](/docs/alapok/kliens-beallitasa).
+
+## Metódusok
+
+A codingsans szolgáltatásainak metódusai a Billingo operationId-jét követik (`DocumentService.listDocument()`). A tárcában erőforrásonként vannak, rövidebb nevekkel:
+
+| Billingo művelet | @codingsans/billingo-client | tárca |
+| --- | --- | --- |
+| `CreateDocument` | `DocumentService.createDocument()` | `tarca.documents.create()`, `createOnce()` |
+| `ListDocument` | `DocumentService.listDocument()` | `tarca.documents.list()`, `all()` |
+| `GetDocument` | `DocumentService.getDocument()` | `tarca.documents.get()` |
+| `GetDocumentByVendorId` | `DocumentService.getDocumentByVendorId()` | `tarca.documents.getByVendorId()`, `findByVendorId()` |
+| `CancelDocument` | `DocumentService.cancelDocument()` | `tarca.documents.cancel()` |
+| `CreateDocumentFromProforma` | `DocumentService.createDocumentFromProforma()` | `tarca.documents.createFromProforma()` |
+| `DownloadDocument` | `DocumentService.downloadDocument()` | `tarca.documents.pdf()` |
+| `SendDocument` | `DocumentService.sendDocument()` | `tarca.documents.send()` |
+| `UpdatePayment` | `DocumentService.updatePayment()` | `tarca.documents.payments.replace()`, `add()` |
+| `CreateReceipt` | `DocumentService.createReceipt()` | `tarca.receipts.create()`, `createOnce()` |
+| `ListPartner`, `CreatePartner` | `PartnerService.listPartner()`, `createPartner()` | `tarca.partners.list()`, `create()`, `findOrCreate()` |
+| `ListDocumentBlock` | `DocumentBlockService.listDocumentBlock()` | `tarca.documentBlocks.list()` |
+| `GetConversionRate` | `CurrencyService.getConversionRate()` | `tarca.currencies.rate()` |
+| `GetOrganizationData` | `OrganizationService.getOrganizationData()` | `tarca.organization.get()` |
+| `Create`, `Poll`, `Download` (export) | `DocumentExportService` | `tarca.exports.create()`, `poll()`, `download()`, `run()` |
+
+Az összes művelet a tárca metódusával: [Műveletek](/docs/alapok/muveletek).
+
+## Számla kiállítása
+
+A Billingo `DocumentInsert` törzsében partner- és tömbazonosító, minden kötelező mező és tételenként `unit_price` és `unit_price_type` kell. A tárca `create()` metódusa a kényelmesebb `DocumentInput`-ot fogadja:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.create({
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+})
+
+console.log(szamla.invoiceNumber)
+```
+
+- **camelCase mezők.** A tárca camelCase-t fogad és ad vissza (`invoiceNumber`, `grossTotal`), a Billingo snake_case nevére maga alakít. Ha a meglévő kódod a spec mezőneveivel (`partner_id`, `block_id`, `invoice_number`) dolgozik, ezeket kell átírnod.
+- **Alapértékek.** A számlatömböt, a dátumokat, a fizetési módot, a nyelvet és a pénznemet a tárca kitölti. Lásd [Alapértékek](/docs/alapok/alapertekek).
+- **Partner adatokból.** A `partner` lehet azonosító, vagy a vevő adatai: a tárca megkeresi vagy létrehozza.
+- **Áfa számmal.** A `vat: 27` a `'27%'` kódra alakul; a Billingo kódjai (`'AAM'`, `'TAM'`) is működnek.
+
+Ha egy az egyben a meglévő `DocumentInsert` objektumaidat küldenéd, a `createRaw()` ezt teszi, camelCase mezőnevekkel: [Nyers küldés](/docs/bizonylatok/kiallitas/szabalyok/nyers-kuldes).
+
+## Pontosan egyszer
+
+A generált kliens a kérést egyszer küldi el, és hiba után a döntés a tiéd. A tárcában a `createOnce()` a `vendorId` alapján dönt: ha a számla már létezik, visszaadja; ha bizonytalan hiba után nem tudni, visszakeresi. Webshopban és webhookban erre érdemes átállni elsőként: [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
+
+## Hibák
+
+A tárca minden hibát `BillingoError`-ként dob. A HTTP státusz a `status` mezőben van, de érdemesebb a `category`-ra építeni (`validation`, `auth`, `rate_limit`, `network` …), mert a Billingo néhány helyen nem azt a státuszt adja, amit a spec ír: ismeretlen bizonylatra 403-at 404 helyett. A 422-es mezőhibák a `fieldErrors`-ban vannak, és a tárca saját ellenőrzése a kérés előtt, magyarul jelez. Lásd [Hibakezelés](/docs/alapok/hibakezeles).
+
+A lekérdezéseket a tárca 429, szerverhiba és hálózati hiba után magától újrapróbálja, a `Retry-After`-t betartva. Írást soha nem ismétel.
+
+## Típusok
+
+A generált típusok a tárcában is megvannak, a `Billingo` névtérben, camelCase mezőkkel és az élő API szerint javítva (`null` mezők, `createdByNav`):
+
+```ts twoslash
+import type { Billingo } from 'tarcajs'
+
+export function osszeg(szamlak: readonly Billingo.Document[]): number {
+  return szamlak.reduce((sum, szamla) => sum + (szamla.grossTotal ?? 0), 0)
+}
+```
+
+Lásd [Típusok](/docs/alapok/tipusok).
+
+## Tesztek
+
+A tárca hamis Billingót ad a tesztjeidhez, így az átállás közben a meglévő integrációs tesztjeidet futtathatod élő API nélkül: [Tesztek](/docs/tesztek).

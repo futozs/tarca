@@ -1,0 +1,53 @@
+---
+title: Szerveridő
+description: A Billingo szerverének pontos ideje a utils.serverTime() hívással. Unix idő, formázott és W3C alak, időzóna.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Util/GetServerTime
+---
+
+A `utils.serverTime()` a Billingo szerverének óráját adja vissza. Akkor hasznos, ha gyanítod, hogy a saját szervered órája elcsúszott.
+
+<Operation id="GetServerTime" methods={['utils.serverTime']} />
+
+## Kérés
+
+```ts
+tarca.utils.serverTime(options?: RequestOptions): Promise<Billingo.ServerTime>
+```
+
+Nincs paraméter, a kérés `GET /utils/time`.
+
+## Válasz
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `epoch` | `number` | Unix idő másodpercben. |
+| `formatted` | `string` | Olvasható alak, `YYYY-MM-DD HH:mm:ss`. |
+| `w3c` | `string` | ISO 8601 alak időzóna-eltolással, például `2026-11-16T03:25:35+01:00`. |
+| `timezone` | `string` | Az időzóna neve. |
+
+A négy mezőt a spec írja le. A tárca élő e2e futása (2026. november 15.) az `epoch` mezőt ellenőrzi, a többi alakját élőben nem vizsgáltuk. A hamis Billingo a `timezone` mezőben `Europe/Budapest`-et ad, a `formatted` és a `w3c` nála budapesti idő, a fenti példa is innen való.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const ido = await tarca.utils.serverTime()
+const elteresMp = Math.round(Date.now() / 1000) - (ido.epoch ?? 0)
+
+console.log(`A helyi óra ${elteresMp} másodperccel tér el a Billingótól.`)
+```
+
+A dátumokat nem kell a szerveridőből számolnod: a tárca a helyi óra alapján minden dátumot budapesti naptári napra vált, lásd [Dátumok](/docs/alapok/datumok). Ha a helyi óra sokat késik vagy siet, éjfél körül rossz napot kaphatsz, ezt a `tarcajs doctor` `clock` ellenőrzése is jelzi.
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból legfeljebb három próbálkozásig. |
+| – | `network`, `timeout` | Nem jött válasz. A tárca ezt is újrapróbálja. |
+
+## Minta
+
+A példa lekéri a szerveridőt, aztán kétszer ugyanazt a régi azonosítót. A kiemelt kérés a `GET /utils/time`:
+
+<Example slug="szerverido-es-azonosito" operation="GetServerTime" />

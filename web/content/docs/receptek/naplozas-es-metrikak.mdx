@@ -1,0 +1,163 @@
+---
+title: Naplózás és metrikák
+description: Strukturált napló, OpenTelemetry span és Prometheus metrika a tárca hookjaiból, kitakart API kulccsal és vendorId-val, telemetria nélkül.
+---
+
+A tárca a Billingón kívül semmit nem küld sehová, telemetria nincs benne. Azt, hogy hány kérés megy a Billingóhoz, mennyi bukik el, és mennyi ideig tartanak, a hookokból te gyűjtöd. A recept előbb egy kérésenként egysoros naplót mutat, utána a `tarcajs/observe` csomagrészt, amely strukturált naplót, spant és Prometheus metrikát ad.
+
+## Egy sor kérésenként
+
+```ts twoslash title="lib/tarca.ts"
+import { createTarca } from 'tarcajs'
+
+export const tarca = createTarca({
+  hooks: {
+    onComplete: (event) =>
+      console.info('billingo', event.operation, event.outcome, event.durationMs, event.attempt),
+  },
+})
+```
+
+Az `onComplete` minden próbálkozás végén fut, sikernél és hibánál is. A hookok soha nem kapják meg az API kulcsot. Egy hook, amely dob, vagy egy async hook, amely elutasít, nem töri el a kérést: a hiba az `onWarning` hookhoz kerül, az `onWarning` saját hibáját pedig a tárca elnyeli.
+
+## Napló, span és metrika
+
+```ts twoslash title="lib/tarca.ts"
+// @filename: shims.d.ts
+declare module 'pino' {
+  interface Logger {
+    info(data: object, message: string): void
+    warn(data: object, message: string): void
+    debug(data: object, message: string): void
+    error(data: object, message: string): void
+  }
+  export default function pino(): Logger
+}
+declare module '@opentelemetry/api' {
+  export const trace: { getTracer(name: string): import('tarcajs/observe').ObserveTracer }
+}
+// @filename: tarca.ts
+// ---cut---
+import { trace } from '@opentelemetry/api'
+import pino from 'pino'
+import { createTarca } from 'tarcajs'
+import { combineHooks, createMetricsRegistry, observe } from 'tarcajs/observe'
+
+export const metrikak = createMetricsRegistry()
+
+export const tarca = createTarca({
+  hooks: combineHooks(
+    observe({
+      logger: pino(),
+      tracer: trace.getTracer('tarcajs'),
+      metrics: metrikak,
+      refSalt: process.env.TARCA_REF_SALT,
+    }),
+    {
+      onDocument: (event) => {
+        console.info('új bizonylat', event.action, event.document.invoiceNumber)
+      },
+    },
+  ),
+})
+```
+
+Az `observe()` hookokat ad vissza, a `combineHooks()` ezeket a saját hookjaiddal fűzi össze. Az `onDocument` hookok egymás után, sorban futnak, a tárca megvárja őket. A naplózó bármi lehet, aminek `info`, `warn`, `debug` és `error` metódusa `(adat, üzenet)` sorrendben vár: pino, a `console`, vagy a saját wrappered.
+
+A `/metrics` végpont:
+
+```ts twoslash title="app/api/metrics/route.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const metrikak: import('tarcajs/observe').MetricsRegistry
+}
+// @filename: route.ts
+// ---cut---
+import { metrikak } from '@/lib/tarca'
+
+export function GET(request: Request): Response {
+  const token = process.env.METRICS_TOKEN
+  if (!token || request.headers.get('authorization') !== `Bearer ${token}`) {
+    return new Response('Nincs jogosultság', { status: 401 })
+  }
+  return new Response(metrikak.renderPrometheus(), {
+    headers: { 'content-type': 'text/plain; version=0.0.4' },
+  })
+}
+```
+
+## Mi kerül a naplóba
+
+<Example slug="naplozas-es-metrikak" />
+
+Egy számla kiállítása a hamis Billingón öt kérés. A napló minden sora egy kérés végét írja le. A `CreateDocument` sora, a véletlen `requestId` nélkül:
+
+```json
+{
+  "event": "tarca.request",
+  "operation": "CreateDocument",
+  "method": "POST",
+  "path": "/documents",
+  "attempt": 1,
+  "outcome": "success",
+  "durationMs": 1,
+  "willRetry": false
+}
+```
+
+Hibánál a sor `warn` szintű, és az `errorCategory`, `status`, `retryable`, `traceId` mezőt kapja. Egy újrapróbált GET minden próbálkozása külön sor, `"willRetry": true`-val. A kiállított bizonylatról egy `tarca.document` esemény szól, a típussal, a sorszámmal és a `vendorRef`-fel.
+
+A metrikák:
+
+| Metrika | Címkék | Mit számol |
+| --- | --- | --- |
+| `tarca_requests_total` | `operation`, `outcome` | Próbálkozások, `success` vagy a hiba kategóriája szerint |
+| `tarca_request_duration_ms` | `operation` | Hisztogram ezredmásodpercben |
+| `tarca_retries_total` | `operation` | Újrapróbált GET kérések |
+| `tarca_rate_limited_total` | `operation` | 429 válaszok |
+| `tarca_unexpected_response_total` | `operation` | Üres vagy nem JSON válasz ott, ahol JSON kellett |
+| `tarca_lock_errors_total` | | A `createOnce` zár tárolójának hibái |
+| `tarca_warnings_total` | `hook` | Elbukott hookok |
+| `tarca_documents_total` | `type`, `action` | Kiállított, sztornózott, módosított bizonylatok |
+
+## Mit takar ki
+
+Alapból (`redact: true`) a napló és a span sosem tartalmazza az API kulcsot. Hibánál csak a kategória, a státusz, a `traceId`, az újrapróbálhatóság és a hibás mezők **neve** kerül bele, az üzenet, a `hint` és a mezőhibák szövege nem: egy `validation` üzenet idézhet e-mail-címet, nevet vagy `vendorId`-t. A `vendorId` helyett `vendorRef: 'hmac:<16 hex>'` jelenik meg, HMAC-SHA-256 a `refSalt`-tal. Ha minden példányon ugyanazt a `TARCA_REF_SALT`-ot adod meg, ugyanaz a `vendorId` mindenhol ugyanazt a hivatkozást kapja, és a naplóban kereshető. `refSalt` nélkül a só folyamatonként véletlen.
+
+A span neve `billingo <operationId>`, az `url.template` attribútum a sablon (`/documents/vendor/{vendor_id}`), érték nélkül.
+
+## Buktatók
+
+<Callout type="info" title="A not_found nem mindig hiba">
+  A `createOnce` minden kiállítás előtt megkeresi a `vendorId`-t, és új rendelésnél a Billingo erre
+  404-et ad. Ez a metrikában `tarca_requests_total{operation="GetDocumentByVendorId",outcome="not_found"}`
+  sorként jelenik meg. Erre ne állíts riasztást. A figyelendő
+  kimenetek a `server`, a `rate_limit` és az `unexpected_response`.
+</Callout>
+
+<Callout type="warning" title="Serverless platformon a metrika példányonkénti">
+  A `createMetricsRegistry()` a folyamat memóriájában számol. Egy hosszan futó Node.js szerveren
+  ez rendben van, Vercelen vagy Workersben viszont minden példány a sajátját látja, és a
+  `/metrics` végpont mindig annak a példánynak a számait adja, amelyik épp a kérést kapta. Ott a naplót vagy a spanokat gyűjtsd,
+  a metrikát a naplókezelőd számolja belőlük.
+</Callout>
+
+<Callout type="warning" title="A saját naplód se írja ki a hibaüzenetet">
+  Ha a hookokon kívül, például egy `catch` ágban naplózol, a `BillingoError` szövegét ott se írd
+  ki nyersen. A `category`, a `status`, az `operation` és a `traceId` elég ahhoz, hogy a Billingo
+  ügyfélszolgálata megtalálja a kérést.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Megfigyelhetőség" href="/docs/kiegeszitok/megfigyelhetoseg">
+    Az observe összes opciója, a span attribútumok és a combineHooks.
+  </Card>
+  <Card title="Hookok" href="/docs/alapok/hookok">
+    Az onRequest, onResponse, onError, onComplete és onDocument eseményei.
+  </Card>
+  <Card title="Bizonylatnapló" href="/docs/kiegeszitok/bizonylatnaplo">
+    Saját, append-only nyilvántartás az onDocument hookból.
+  </Card>
+</Cards>

@@ -1,0 +1,66 @@
+---
+title: Válasz
+description: A documents.cancel() a sztornó bizonylatot adja vissza, negatív végösszeggel és új sorszámmal. Mi változik az eredeti számlán, milyen hibák jöhetnek, és hogyan ellenőrizd a bizonytalan sztornót.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CancelDocument
+---
+
+A `cancel()` nem az eredeti számlát adja vissza, hanem az újonnan kiállított **sztornó bizonylatot** (`Billingo.Document`). A Billingo 200-zal válaszol.
+
+| Mező | Érték a sztornó bizonylaton |
+| --- | --- |
+| `type` | `cancellation`, nyugtánál `receipt_cancellation`. |
+| `invoiceNumber` | Új sorszám ugyanabban a számlatömbben, például `2026-2`. |
+| `grossTotal` | Az eredeti végösszege negatívan, például `-50800`. |
+| `relatedDocuments` | Az eredeti kapcsolódó bizonylatai és maga az eredeti. |
+
+Az eredeti számla ezután (`documents.get(id)`):
+
+| Mező | Új érték |
+| --- | --- |
+| `cancelled` | `true` |
+| `correctionType` | `canceled` |
+| `paymentStatus` | `none`. A rögzített befizetéseket a Billingo törli. |
+
+Az `onDocument` hook `cancelled` eseményt kap: a `document` a sztornó, a `sourceId` az eredeti azonosítója.
+
+A sztornózott számla `vendorId`-ja foglalt marad. Ha ugyanazt a rendelést újra számláznád, új `vendorId` kell.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Üres ok vagy hibás e-mail cím, kérés előtt. |
+| 400 | `validation` | `Cannot cancel the document (id:…)`: a számlához módosító számla készült, vagy ez maga a módosító. A tárca magyar `hint`-et tesz rá. |
+| 400 | `validation` | Már sztornózott vagy nem sztornózható bizonylat. A hamis Billingo ugyanezt az üzenetet adja; élőben nem mértük. |
+| 403 | `forbidden` | Ismeretlen azonosító, vagy csak olvasó kulcs. |
+| 402 | `subscription` | Éles profilon nincs API kiegészítő. |
+| – | `network`, `timeout`, `server`, `unexpected_response` | Nem tudni, elkészült-e a sztornó. |
+
+A 400-as hiba `hint` mezője megmondja, mit tegyél: módosító számla után újabb módosító számlával helyesbíts, különben nézd meg a `get(id)` válaszában a `cancelled` és a `correctionType` mezőt.
+
+## Bizonytalan kimenet
+
+Hálózati hiba, időtúllépés, szerverhiba vagy értelmezhetetlen válasz után ne küldd újra vakon: kérd le az eredeti számlát, és nézd meg, sztornózva van-e.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+async function sztornoz(id: number): Promise<void> {
+  try {
+    await tarca.documents.cancel(id, { reason: 'A vevő elállt a vásárlástól.' })
+  } catch (error) {
+    const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+    if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+    const eredeti = await tarca.documents.get(id)
+    if (!eredeti.cancelled) throw error
+  }
+}
+
+await sztornoz(szamlaId)
+```
+
+Ha a `cancelled` `true`, a sztornó elkészült, csak a válasz veszett el. Ilyenkor a sztornó bizonylatot a [listában](/docs/bizonylatok/lista) találod meg, és az `onDocument` hook nem futott le rá. A [bizonylatnapló](/docs/kiegeszitok/bizonylatnaplo) `reconcile()` lépése pótolja.

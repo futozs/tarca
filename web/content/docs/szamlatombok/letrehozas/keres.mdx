@@ -1,0 +1,90 @@
+---
+title: Kérés
+description: A documentBlocks.create() bemenete, a tömb nevének szabálya, a kötelező előtag és típus, és a törzs, amit a tárca elküld.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/CreateDocumentBlock
+---
+
+<Operation id="CreateDocumentBlock" methods={['documentBlocks.create']} />
+
+```ts
+tarca.documentBlocks.create(input: DocumentBlockInput, options?: { signal?: AbortSignal }): Promise<Billingo.DocumentBlockSchema>
+```
+
+A végpont csak a 3.0.15-ös specben szerepel.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const tomb = await tarca.documentBlocks.create({
+  name: 'Webshop',
+  prefix: 'WEB',
+  type: 'invoice',
+})
+
+console.log(tomb.id)
+```
+
+## Mezők
+
+Az „Alapérték” oszlop azt mutatja, mit tárol a Billingo, ha a mezőt kihagyod.
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező.** Csak betű, szám és szóköz. |
+| `prefix` | `prefix` | – | **Kötelező**, de lehet `''`. A sorszám előtagja: `WEB` előtaggal az első számla `WEB / 2026-000001`. |
+| `type` | `type` | – | **Kötelező.** `'invoice'`, `'receipt'`, `'offer'`, `'order_form'`, `'waybill'`, `'certificate_of_completion'` vagy `'dossier'`. |
+| `invoiceNumberFormat` | `invoice_number_format` | `'default'` | `'default'` vagy `'short_with_hyphen'`. |
+| `senderName` | `sender_name` | `''` | A bizonylatot kísérő e-mail feladójának neve. |
+| `senderEmail` | `sender_email` | `null` | A feladó e-mail címe. |
+| `bccEmail` | `bcc_email` | `null` | Titkos másolat címzettje. |
+| `bankAccountId` | `bank_account_id` | `null` | A tömbhöz rendelt bankszámla azonosítója. |
+| `createInvoiceFromPaidProforma` | `create_invoice_from_paid_proforma` | `false` | Fizetett díjbekérőből számla készüljön-e. |
+| `fulfillmentDateFromProformaPaymentDate` | `fulfillment_date_from_proforma_payment_date` | `false` | A teljesítés dátuma a díjbekérő fizetésének napja legyen-e. |
+| `attachXmlToInvoicePdf` | `attach_xml_to_invoice_pdf` | `false` | Az XML csatolása a számla PDF-jéhez. |
+| `advancePaidInstant` | `advance_paid_instant` | `false` | Az előlegszámla azonnal fizetettnek számítson-e. |
+| `financialFulfillmentHighlight` | `financial_fulfillment_highlight` | `'basic'` | `'basic'`, `'highlighted'` vagy `'paid_stamp'`. |
+| `entitlementsInDocumentComment` | `entitlements_in_document_comment` | `false` | Az áfamentességi jogcímek a megjegyzésbe kerüljenek-e. |
+
+A `customField1` és a `customField2` létrehozáskor csak olvasható, a `DocumentBlockInput` típusban nincs is benne. Ha kell, a létrehozás után a [Módosítás](/docs/szamlatombok/modositas/keres) állítja be. Ugyanez igaz a `templateId`, a `normalNotificationId`, a `proformaNotificationId` és a `generated` mezőre.
+
+## Helyi ellenőrzés
+
+A Billingo a tömb nevére csak betűt, számot és szóközt enged, mást 422-vel utasít el:
+
+```json
+{
+  "message": "Validation Failed",
+  "errors": [
+    {
+      "field": "name",
+      "message": "The Invoice pad name may only contain letters and numbers and space."
+    }
+  ]
+}
+```
+
+Ezt a választ élőben a `TARCA-E2E` név kapta. A tárca ezért kérés előtt ellenőrzi a nevet, és `validation` hibát dob `fieldErrors`-szal, ha üres, vagy kötőjelet, pontot, aláhúzást vagy más jelet tartalmaz. Az ékezetes betű megengedett.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  await tarca.documentBlocks.create({ name: 'Web-shop', prefix: 'WEB', type: 'invoice' })
+} catch (error) {
+  if (isBillingoError(error)) console.log(error.fieldErrors[0]?.message)
+}
+```
+
+Az előtagot és a típust a Billingo ellenőrzi. Üres törzsre élőben ezt adta: „The Invoice pad prefix field must be present.” és „The type field is required.”
+
+## Ami a dróton megy
+
+```json
+{ "name": "Webshop", "prefix": "WEB", "type": "invoice" }
+```
+
+A tárca a létrehozást **nem ismétli** magától, mert egy második kérés második tömböt hozna létre.

@@ -1,0 +1,74 @@
+---
+title: Ismétlődő időszakok
+description: A tarcajs/batch számlázási időszakai heti, havi, negyedéves és éves előfizetéshez, budapesti dátumokkal, csúszás nélküli hónapvégekkel és a vendorId-hoz való kulccsal.
+---
+
+A Billingo saját ismétlődő számlái (`recurringId`) nem érhetők el az API v3-ban. Az időszakot ezért a kódod számolja, és a [tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas) állítja ki. A `tarcajs/batch` időszak-függvényei ehhez adnak budapesti dátumokat és egy stabil kulcsot.
+
+```ts twoslash
+import { billingPeriod, billingPeriodAt, billingPeriodsBetween } from 'tarcajs/batch'
+
+const havi = { interval: 'month', anchor: '2026-01-31', paymentDueInDays: 8 } as const
+
+console.log(billingPeriod(havi, 1))
+console.log(billingPeriodAt(havi, new Date('2026-03-05T10:00:00Z')))
+console.log(
+  billingPeriodsBetween({ interval: 'quarter', anchor: '2026-01-01' }, '2026-01-01', '2026-12-31'),
+)
+```
+
+A január 31-i kezdetű havi előfizetés második időszaka (`index: 1`) 2026. február 28-tól március 30-ig tart, a fizetési határidő március 8. A negyedéves időszakok kulcsai `quarter:2026-01-01`, `quarter:2026-04-01`, `quarter:2026-07-01` és `quarter:2026-10-01`.
+
+## Az időszak
+
+```ts
+{ index, interval, start, end, dueDate?, key }
+```
+
+| Mező | Leírás |
+| --- | --- |
+| `index` | Hányadik időszak a kezdettől, 0-tól. |
+| `interval` | `'week'`, `'month'`, `'quarter'` vagy `'year'`. |
+| `start`, `end` | Az első és az utolsó nap, budapesti `ÉÉÉÉ-HH-NN` dátum, mindkettő az időszak része. |
+| `dueDate` | `start` plusz `paymentDueInDays`, ha megadtad. |
+| `key` | `<interval>:<start>`, a `vendorId` része lehet. |
+
+**Hónapvégek:** a havi időszak nem csúszik el. A január 31-i kezdet februárban 28-át (szökőévben 29-ét), márciusban újra 31-ét adja. A negyedéves és az éves ugyanígy.
+
+## Függvények
+
+| Függvény | Mit ad |
+| --- | --- |
+| `billingPeriod(options, index)` | Az `index`-edik időszak. |
+| `billingPeriodAt(options, date)` | Az az időszak, amelybe a dátum esik (`Date` vagy `ÉÉÉÉ-HH-NN`, budapesti nappal). |
+| `billingPeriodsBetween(options, from, to)` | Az összes időszak, amely `from` és `to` között kezdődik. |
+| `todayPeriod(options, now?)` | A mai budapesti napot tartalmazó időszak. |
+
+Az `options` `{ interval, anchor, paymentDueInDays? }`, ahol az `anchor` az első időszak kezdőnapja. Érvénytelen bemenet (ismeretlen `interval`, lehetetlen dátum) `validation` hiba.
+
+## Számla egy időszakra
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { todayPeriod } from 'tarcajs/batch'
+
+const tarca = createTarca()
+const honap = todayPeriod({ interval: 'month', anchor: '2026-01-01', paymentDueInDays: 8 })
+
+const { document } = await tarca.documents.createOnce({
+  vendorId: `SUB-41-${honap.start}`,
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [
+    { name: `Havi díj (${honap.start} – ${honap.end})`, quantity: 1, netUnitPrice: 9_900, vat: 27 },
+  ],
+  fulfillmentDate: honap.end,
+  dueDate: honap.dueDate ?? honap.end,
+})
+
+console.log(document.invoiceNumber)
+```
+
+Az előfizetés azonosítója és az időszak kezdete együtt adja a `vendorId`-t, így ugyanarra a hónapra a második futás a meglévő számlát kapja vissza.

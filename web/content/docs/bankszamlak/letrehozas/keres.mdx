@@ -1,0 +1,56 @@
+---
+title: Kérés
+description: A bankAccounts.create() bemenete, a BankAccountInput mezői a Billingo neveivel és alapértékeivel, és a törzs, amit a tárca elküld.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/CreateBankAccount
+---
+
+<Operation id="CreateBankAccount" methods={['bankAccounts.create']} />
+
+```ts
+tarca.bankAccounts.create(input: BankAccountInput, options?: { signal?: AbortSignal }): Promise<Billingo.BankAccount>
+```
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bankszamla = await tarca.bankAccounts.create({
+  name: 'Euró számla',
+  accountNumber: '11111111-22222222-44444444',
+  accountNumberIban: 'HU00111111112222222244444444',
+  swift: 'ABCDHUHB',
+  currency: 'EUR',
+})
+
+console.log(bankszamla.id)
+```
+
+## Mezők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező.** A bankszámla megnevezése a Billingóban. |
+| `accountNumber` | `account_number` | – | **Kötelező.** Belföldi bankszámlaszám. |
+| `currency` | `currency` | – | **Kötelező.** Pénznem, `Billingo.Currency`. |
+| `accountNumberIban` | `account_number_iban` | `''` | IBAN. |
+| `swift` | `swift` | `''` | SWIFT (BIC) kód. |
+| `needQr` | `need_qr` | `false` | A spec elavultnak jelöli. |
+
+A tárca a bemenetet nem ellenőrzi előre, a számlaszám formátumát sem: a hiányzó kötelező mezőket a Billingo jelzi 422-vel. A számlaszámot ezért a saját kódodban ellenőrizd, mielőtt elküldöd.
+
+## Ami a dróton megy
+
+A camelCase mezőkből snake_case lesz. A fenti hívás törzse a hamis Billingo felvétele szerint:
+
+```json
+{
+  "name": "Euró számla",
+  "account_number": "11111111-22222222-44444444",
+  "account_number_iban": "HU00111111112222222244444444",
+  "swift": "ABCDHUHB",
+  "currency": "EUR"
+}
+```
+
+A tárca a létrehozást **nem ismétli** magától, mert egy második kérés második bankszámlát hozna létre.

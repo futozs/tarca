@@ -1,0 +1,83 @@
+---
+title: Kérés
+description: A receipts.create() bemenete mezőről mezőre, a Billingo snake_case mezőivel és az alapértékekkel. Bruttó árú és termékes tételek, a nyugta áfakulcsai, a helyi ellenőrzés és a dróton küldött JSON.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceipt
+---
+
+```ts
+tarca.receipts.create(input: ReceiptInput, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+tarca.receipts.createOnce(input: ReceiptOnceInput, options?: CreateOnceOptions): Promise<DocumentOnceResult>
+```
+
+Kötelező csak a tételek listája. A `createOnce()`-hoz a `vendorId` is, az opciói ugyanazok, mint a számlánál ([Pontosan egyszer: Kérés](/docs/bizonylatok/pontosan-egyszer/keres)).
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const nyugta = await tarca.receipts.create({
+  items: [
+    { name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 },
+    { name: 'Croissant', grossUnitPrice: 750, vat: 5 },
+  ],
+  paymentMethod: 'bankcard',
+})
+
+console.log(nyugta.invoiceNumber, nyugta.grossTotal)
+```
+
+## Mezők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `items` | `items` | – | **Kötelező**, legalább egy tétel. |
+| `type` | `type` | `'receipt'` | `'receipt'` vagy `'draft'`, lásd [Piszkozat](/docs/nyugtak/piszkozat). |
+| `vendorId` | `vendor_id` | – | A te azonosítód, a számlákkal közös térben egyedi. |
+| `blockId` | `block_id` | `defaults.receiptBlockId`, különben az első `receipt` típusú tömb | A nyugtatömb. Számlatömbbel a Billingo 422-t ad. |
+| `paymentMethod` | `payment_method` | `defaults.paymentMethod`, különben `'cash'` | Fizetési mód. |
+| `partner` | `partner_id` | – | Elhagyható. Azonosító, vagy partneradatok, amelyeket a `findOrCreate()` alakít azonosítóvá. |
+| `name` | `name` | – | A vevő neve. Élőben partner nélkül nem jelent meg a nyugtán. |
+| `emails` | `emails` | – | A vevő e-mail címei. |
+| `currency` | `currency` | `defaults.currency`, alapból `'HUF'` | Pénznem. |
+| `conversionRate` | `conversion_rate` | – | Nem forintos nyugtához kötelező. |
+| `electronic` | `electronic` | `defaults.electronic`, alapból `false` | A tárca mindig elküldi: élőben nélküle 422 jön, pedig a spec opcionálisnak írja. |
+
+Ha a számláid átutalásosak, a nyugtáid pedig kártyásak, a `defaults.paymentMethod` mindkettőre érvényes: ilyenkor a nyugtán add meg a `paymentMethod`-ot.
+
+## Tételek
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező**, nem üres. |
+| `grossUnitPrice` | `unit_price` | – | **Kötelező.** Bruttó egységár. Nyugtán nincs nettó ár. |
+| `vat` | `vat` | – | **Kötelező.** `5`, `18`, `27` (→ `'5%'`, `'18%'`, `'27%'`), vagy `'none'`, `'AAM'`, `'TAM'`. |
+| `quantity` | `quantity` | `1` | Mennyiség. |
+| `unit` | `unit` | `'db'` | Mennyiségi egység. |
+| `productId` | `product_id` | – | Tárolt termék, `quantity`-vel (alapból `1`). |
+
+A nyugta áfalistája szűkebb a számláénál. Egy `13.5` vagy `'EU'` áfakulcs kérés nélkül `validation` hibát ad `items.0.vat` mezővel, és az üzenet felsorolja a hat elfogadott értéket.
+
+## Helyi ellenőrzés
+
+Kérés nélkül `validation` hiba jön, ha üres a tétellista (`items`), egy tétel neve üres, az ára vagy a mennyisége nem véges szám, ismeretlen az áfa, a fizetési mód vagy a pénznem, nem forintos nyugtán hiányzik az árfolyam (`conversionRate`), a partner neve üres vagy a címe hiányzik, vagy a `vendorId` üres, `.` vagy `..`.
+
+## Mi megy a dróton
+
+A fenti példa két kérést küld: a nyugtatömb lekérését (kliensenként egyszer) és a nyugtát. A hamis Billingo ezt a törzset rögzítette:
+
+```json
+{
+  "type": "receipt",
+  "payment_method": "bankcard",
+  "currency": "HUF",
+  "electronic": false,
+  "items": [
+    { "name": "Kávé", "unit_price": 600, "vat": "27%", "quantity": 2, "unit": "db" },
+    { "name": "Croissant", "unit_price": 750, "vat": "5%", "quantity": 1, "unit": "db" }
+  ],
+  "block_id": 2
+}
+```
+
+A nyugta tételén nincs `unit_price_type`: a nyugta ára mindig bruttó. Partner nélkül `partner_id` sem megy.

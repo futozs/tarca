@@ -1,0 +1,57 @@
+---
+title: Másolás
+description: Egy meglévő bizonylat másolása új piszkozatba a documents.copy() metódussal. A másolat sorszám nélküli piszkozat ugyanazokkal a tételekkel, megjegyzéssel és dátumokkal.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/DocumentCopy
+---
+
+A `copy()` egy kiállított számlából, díjbekérőből vagy piszkozatból új piszkozatot készít. Ismétlődő, kézzel átnézett számlákhoz hasznos: a múlt havi számla másolatát a Billingo felületén átírod és kiállítod.
+
+<Operation id="DocumentCopy" methods={['documents.copy']} />
+
+## Kérés
+
+```ts
+tarca.documents.copy(id: number, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+```
+
+A tárca `POST /documents/{id}/copy` kérést küld, törzs nélkül. Az egyetlen bemenet a másolandó bizonylat azonosítója.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+const masolat = await tarca.documents.copy(szamlaId)
+
+console.log(masolat.id, masolat.type, masolat.invoiceNumber === '')
+```
+
+## Válasz
+
+A Billingo 200-zal válaszol (nem 201-gyel, ahogy a többi létrehozó művelet), és az új piszkozatot adja:
+
+| Mező | Érték |
+| --- | --- |
+| `id` | Új azonosító. |
+| `type` | `draft`, akkor is, ha számlát vagy díjbekérőt másoltál. |
+| `invoiceNumber` | `''`, a piszkozatnak nincs sorszáma. |
+| `items`, `comment`, `fulfillmentDate`, `dueDate` | Az eredetiből átvéve. |
+| `partner` | Az eredeti partnere. |
+
+A másolatot a [Piszkozat](/docs/bizonylatok/piszkozat) metódusaival kezeled: a `finalizeDraft()` kiállítja (a teljes bizonylattal), a `deleteDraft()` törli. Az `onDocument` hook `copied` eseményt kap, `sourceId` az eredeti azonosítója.
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 403 | `forbidden` | Ismeretlen azonosító, vagy csak olvasó kulcs. |
+| 402 | `subscription` | Éles profilon a piszkozathoz legalább Basic alapcsomag kell. |
+| – | `network`, `timeout`, `server`, `unexpected_response` | Nem tudni, elkészült-e a másolat. A tárca nem ismétli meg. A Billingo felületén vagy a piszkozatok között nézd meg, mielőtt újra másolnál. |
+
+Nyugta másolását élőben nem próbáltuk.
+
+## Minta
+
+A példa kiállít egy számlát, lemásolja, majd a másolatot törli. Az **Elküldött kérések** fülön a `POST /documents/1/copy` törzs nélkül megy, a válasz 200.
+
+<Example slug="bizonylat-masolasa" />

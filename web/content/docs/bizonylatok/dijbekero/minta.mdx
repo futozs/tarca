@@ -1,0 +1,9 @@
+---
+title: Minta
+description: Díjbekérő, belőle fizetett számla, végül a díjbekérő archiválása, a ténylegesen elküldött kérésekkel és a Billingo válaszaival.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocumentFromProforma
+---
+
+A díjbekérő `000001` sorszámot kap, a belőle készült számla `2026-1`-et, és `paid` állapotban jön létre. Az **Elküldött kérések** fülön a `create-from-proforma` törzsében látod, hogy a tárca a `dueInDays: 0`-ból a mai napot küldte `due_date`-ként, az `archive` kérés pedig törzs nélkül megy, és 204 a válasza.
+
+<Example slug="dijbekero-szamla" />

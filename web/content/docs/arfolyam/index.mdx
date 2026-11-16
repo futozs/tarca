@@ -1,0 +1,32 @@
+---
+title: Árfolyam
+description: Két pénznem közti árfolyam lekérése a Billingótól egy adott napra a currencies.rate() hívással, devizás számlához és devizás költséghez.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Currency/GetConversionRate
+---
+
+A `currencies.rate()` megmondja, mennyit ér egy pénznem egysége a másikban egy adott napon a Billingo szerint. Akkor van rá szükséged, ha devizás bizonylatot állítasz ki vagy devizás költséget rögzítesz, és a forintos értéket a Billingo árfolyamával számolnád.
+
+<Operation id="GetConversionRate" methods={['currencies.rate']} />
+
+```ts
+const { rate } = await tarca.currencies.rate({ from: 'EUR', to: 'HUF', date: '2026-11-13' })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/arfolyam/keres">
+    A pénznemek, a budapesti nap és a query paraméterek.
+  </Card>
+  <Card title="Válasz" href="/docs/arfolyam/valasz">
+    A ConversionRate mezői, a conversation_rate elírás és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/arfolyam/minta">
+    Euró–forint és forint–euró árfolyam a hamis Billingo ellen.
+  </Card>
+</Cards>
+
+<Callout type="info" title="Devizás számlához nem kötelező">
+  Devizás számlánál a `conversionRate` mezőt te adod meg, bármilyen forrásból. Ha a Billingo
+  árfolyamát tennéd rá, előbb kérd le ezzel a hívással a teljesítés napjára. A szabályok a
+  [Deviza](/docs/bizonylatok/kiallitas/szabalyok/deviza) oldalon vannak, a devizás költség példája a
+  [Költség létrehozása](/docs/koltsegek/letrehozas/keres#devizás-költség) oldalon.
+</Callout>

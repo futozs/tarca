@@ -1,0 +1,64 @@
+---
+title: Válasz
+description: A spendings.list() Page objektuma, a SpendingListItem mezői, a lista és a lekérés közti különbség, valamint a listázásnál előforduló hibák.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingList
+---
+
+A `list()` egy `Page<Billingo.SpendingListItem>` objektumot ad vissza. A sorrendet élőben nem mértük, a hamis Billingo a legújabb költséget adja elöl.
+
+```ts
+const oldal = await tarca.spendings.list({ paymentStatus: 'unpaid' })
+```
+
+## Page
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `data` | `readonly SpendingListItem[]` | Az oldal költségei. |
+| `total` | `number` | Az összes találat a szűrőkkel, nem csak ezen az oldalon. |
+| `perPage` | `number` | Oldalméret. Élőben `25`, ha nem adtál meg mást. |
+| `currentPage` | `number` | Az aktuális oldal száma. |
+| `lastPage` | `number` | Az utolsó oldal száma. Üres találatnál is `1`. |
+
+A Billingo a válaszban `prev_page_url` és `next_page_url` mezőt is küld, az első és az utolsó oldalon `null` értékkel. A tárca ezeket nem adja tovább, a lapozáshoz a `currentPage` és a `lastPage` elég. Részletek: [Lapozás](/docs/alapok/lapozas).
+
+## SpendingListItem
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A költség azonosítója. Ezzel kéred le, módosítod és törlöd. |
+| `organizationId` | `number` | A Billingo cég azonosítója, amelyhez a kulcs tartozik. |
+| `category` | `Billingo.Category` | A kategória, például `'office_rent'`. |
+| `invoiceNumber` | `string` | A szállító számlájának száma, ahogy rögzítetted. |
+| `invoiceDate`, `fulfillmentDate`, `dueDate` | `string` | Kelt, teljesítés és fizetési határidő, `YYYY-MM-DD`. |
+| `paidAt` | `string \| null` | A fizetés napja, vagy `null`, ha még nincs kifizetve. |
+| `currency` | `Billingo.Currency` | A számla pénzneme. |
+| `conversionRate` | `number` | Az árfolyam, forintnál `1`. |
+| `totalGross`, `totalVatAmount` | `number` | Bruttó összeg és áfa a számla pénznemében. |
+| `totalGrossLocal`, `totalVatAmountLocal` | `number` | Ugyanez forintban, pontosan úgy, ahogy `totalGrossHuf` és `totalVatAmountHuf` néven elküldted. |
+| `paymentMethod` | `Billingo.SpendingPaymentMethod` | A fizetés módja. |
+| `comment` | `string \| null` | Megjegyzés. |
+| `partner` | `Billingo.SpendingPartner \| null` | A szállító, ha `partnerId`-val rögzítetted, különben `null`. |
+| `createdByNav` | `boolean` | `true`, ha a költséget a Billingo a NAV-tól vette át. API-n rögzítettnél `false`. |
+
+A listaelemben nincs `items` mező, a lekérésben és a létrehozás válaszában van (élőben üres tömb volt). A `createdByNav` viszont a listában és a lekérésben jön, a létrehozás és a módosítás válaszában nem.
+
+<Callout type="info" title="A partner lehet null">
+  A spec nem engedi, de a Billingo a `partner` mezőt `null` értékkel küldi, ha a költségnek nincs
+  szállítója. A `Billingo.SpendingListItem` típus ezt már jelzi, ezért `!= null` feltétellel
+  ellenőrizd, ne `!== undefined`-dal.
+</Callout>
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `RangeError` | Hibás dátum, `page` vagy `perPage`. A tárca kérést nem küld. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 402 | `subscription` | Az előfizetés nem engedi a műveletet. |
+| 422 | `validation` | A Billingo elutasított egy szűrőértéket. A tárca típusai csak a spec értékeit engedik, ezért ez ritka. |
+| 429 | `rate_limit` | Túl sok kérés. A tárca újrapróbálja, és ha a Billingo küld `Retry-After` fejlécet, annyit vár. |
+| 5xx | `server` | Billingo oldali hiba. A tárca újrapróbálja, alapból legfeljebb három próbálkozásig. |
+| – | `network`, `timeout` | Nem jött válasz. A tárca ezt is újrapróbálja, mert a lista olvasás. |
+
+A listázás nem módosít semmit, ezért bármelyik hiba után megismételheted. A kategóriákról a [Hibakategóriák](/docs/hibak) oldalain olvashatsz bővebben.

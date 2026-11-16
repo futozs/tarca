@@ -1,0 +1,91 @@
+---
+title: Hamis Billingo
+description: A createFakeBillingoFetch() memóriában futó Billingo v3 egy fetch függvény mögött, mind az 57 művelettel. Drótformátum, élőben mért útválasztás és hibák, beállítások, és mely részletek nincsenek élőben igazolva.
+---
+
+A `createFakeBillingoFetch()` egy `fetch` függvényt ad, amely Billingóként viselkedik. A saját `createTarca()` hívásodnak adod át, így a kódod a valódi klienssel, a valódi beállításaival fut, csak a hálózat helyén a hamis Billingo áll.
+
+```ts
+createFakeBillingoFetch(options?: FakeBillingoOptions): FakeBillingo
+```
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
+
+const billingo = createFakeBillingoFetch({
+  taxCode: '12345678-2-42',
+  hufRates: { EUR: 390 },
+  stock: { POLO: 25 },
+})
+const tarca = createTarca({ apiKey: 'teszt-kulcs', fetch: billingo.fetch, retryDelayMs: 0 })
+
+const profil = await tarca.organization.get()
+const arfolyam = await tarca.currencies.rate({ from: 'EUR', to: 'HUF' })
+
+console.log(profil.taxCode, profil.hasNavConnection, arfolyam.rate)
+console.log(
+  billingo.requests.map((request) => `${request.method} ${request.path} ${request.status}`),
+)
+```
+
+A `retryDelayMs: 0` a GET-ismétlések várakozását kapcsolja ki, így a [szimulált hibák](/docs/tesztek/hibak-szimulalasa) nem lassítják a tesztet.
+
+## A drótformátum
+
+- snake_case JSON mindkét irányban, `X-API-KEY` fejléc kötelező.
+- Laravel lapozás: `page`, `per_page` (1–100, alapból 25), a válaszban `total`, `per_page`, `current_page`, `last_page`, és a `prev_page_url`, `next_page_url` csak `?page=N` alakkal, a lista két végén `null`. A legújabb elem van elöl.
+- Hibatörzsek Billingo alakban: 4xx-nél `{ error: { message } }`, 5xx-nél `{ error: { message, trace_id } }`, 422-nél `{ message: 'Validation Failed', errors: [{ field, message }] }` Laravel üzenetekkel. Az ismert Billingo üzenetek a `FAKE_BILLINGO_MESSAGES` objektumban vannak.
+- Bináris válaszok: a PDF `application/pdf`, a blokknyomtatós PDF `application/octet-stream` (mint élesben), az export CSV `text/csv; charset=UTF-8`. Csak ezeken van `x-ratelimit-limit: 300` és `x-ratelimit-remaining` fejléc, a JSON válaszokon nincs, ahogy élesben sem.
+
+## Útválasztás, ahogy élesben mértük
+
+| Kérés | Válasz |
+| --- | --- |
+| Ismeretlen útvonal | 404 `{ error: { message: '' } }`, a kulcs ellenőrzése előtt |
+| Rossz HTTP metódus | 405 `The PATCH method is not supported for this route. Supported methods: …`, a kulcs ellenőrzése előtt |
+| Hiányzó vagy ismeretlen kulcs | 401 `Authorization information (Header: X-API-KEY or X-TOKEN) is missing or invalid.` |
+| Ismeretlen vagy idegen numerikus azonosító | 403 a Billingo jogosultsági üzenetével, nem 404 |
+| Ismeretlen partner, termék vagy költség | 404 `Partner is not found.`, `Product is not found.`, `Spending is not found.` |
+| Ismeretlen `vendorId` | 404 `Document is not found.` |
+
+## A friss állapot
+
+Egy új hamis Billingo egy új fejlesztői teszt profilnak felel meg: adószám `00000000-0-00`, `has_nav_connection: false`, az előfizetés holnapig (budapesti idő szerint) érvényes, és két számlatömb van: 1 `Számlák` (`invoice`, előtag nélkül) és 2 `Nyugták` (`receipt`, `NYT` előtaggal). Az azonosítók erőforrásonként 1-től indulnak.
+
+## Beállítások
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `now` | `() => new Date()` | A hamis Billingo órája: dátumok, sorszámév, előfizetés, NAV késleltetés. |
+| `apiKeys` | bármilyen nem üres kulcs | Csak ezeket a kulcsokat fogadja el, a többire 401. |
+| `taxCode` | `00000000-0-00` | A profil adószáma. |
+| `hasNavConnection` | `false` | NAV-kapcsolat. Nélküle az adószám-ellenőrzés 401-et ad a NAV üzenettel (`nav_unavailable`). |
+| `subscription` | holnapig, funkciók nélkül | `{ expirationDate?, features? }`. |
+| `hufRates` | EUR 390, USD 360, GBP 460, CHF 410 | Forint egy egységre, az árfolyam-lekérdezéshez. |
+| `taxpayers` | nincs | Az adószám-ellenőrzés válaszai, adószám vagy az első 8 jegy szerint. |
+| `legacyIds` | levezetett azonosító | `{ [v2Id]: v3Id }` párok a régi azonosító átváltásához. |
+| `stock` | nincs | `{ [sku]: készlet }`. Megadva bekapcsolja a készletkezelést, különben a készlet-lekérdezés 400 `Automatic order processing is disabled`, mint a teszt profilon. |
+| `navRecordDelayMs` | `10000` | Ennyi ideig nincs NAV rekord egy friss bizonylathoz (404 `NavOnlineSzamla is not found.`). |
+| `faults` | nincs | Előre beállított hibák, lásd [Hibák szimulálása](/docs/tesztek/hibak-szimulalasa). |
+
+## Mit tud?
+
+- **Bizonylatok és nyugták:** az összegeket az élőben mért kerekítéssel számolja, tömbönként, típusonként és évenként sorszámoz (`2026-1`, előtaggal `PREFIX / 2026-000001`, díjbekérő `000001`, nyugta `NYT-2026-1`), a `vendor_id` egyedi (400 `Duplicate vendor id. (id:…)`), a piszkozatnak nincs sorszáma, a nyugta partner nélkül a közös `Magánszemély` partnert kapja.
+- **Bizonylat-műveletek:** PDF, blokknyomtatás, nyilvános link, NAV-állapot, kiküldés, emlékeztetők, sztornó (a módosított számlára 400 `Cannot cancel the document`), másolat, archiválás, díjbekérőből számla, módosító számla, befizetések teljes cserével.
+- **Partnerek:** a keresés a név szavainak elejére illeszt, név szerint rendez. A hamis Billingo indexe nem késik, élesben egy friss partner körülbelül egy percig nem látszik a keresőben.
+- **Termékek, költségek, bankszámlák, számlatömbök, export** az élő alapértékekkel és hibaüzenetekkel. Az export csak `simple_csv` formátumot ad, adatsor nélkül.
+
+## Ami nincs élőben igazolva
+
+Ezeket a hamis Billingo feltevésként valósítja meg. A saját tesztedben ne építs rájuk:
+
+- a nem piszkozat bizonylat törlése 400-at ad;
+- a törzsben ismeretlen hivatkozás 422 `The selected … is invalid.`;
+- a `none` áfás nyugtatétel 501;
+- a `discount` tárolódik, de nem csökkenti az összeget;
+- a `type=invoice` lista mindent ad, ami nem nyugtatömbben van, a `query` a sorszámra vagy a partner nevére illeszt;
+- a nem díjbekérő archiválásának és átalakításának, a sztornózott bizonylat módosításának 400-as üzenete, a címzett 422-es üzenete és a piszkozat PDF fájlneve;
+- a partnerkeresés szóhatárai írásjeleknél és a keresőszavak sorrendje.
+
+Az élőben mért tényeket a Billingo saját leírásától eltérő esetekkel együtt az egyes műveletek oldalai írják le, például [Sztornó](/docs/bizonylatok/sztorno) és [Partnerek](/docs/partnerek).

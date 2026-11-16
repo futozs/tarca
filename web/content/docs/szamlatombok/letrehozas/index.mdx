@@ -1,0 +1,23 @@
+---
+title: Létrehozás
+description: Új számlatömb a documentBlocks.create() metódussal. A név szabálya, a kötelező előtag és típus, a 201-es válasz a Billingo alapértékeivel és a sorszám formája.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/CreateDocumentBlock
+---
+
+Új számlatömböt a `documentBlocks.create()` hoz létre. A végpont csak a 3.0.15-ös specben szerepel. Az előtag és a típus kötelező. A névben csak betű, szám és szóköz lehet, ezt a tárca kérés előtt ellenőrzi.
+
+```ts
+const tomb = await tarca.documentBlocks.create(adatok)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/szamlatombok/letrehozas/keres">
+    A név szabálya, a kötelező előtag és típus, és az elküldött törzs.
+  </Card>
+  <Card title="Válasz" href="/docs/szamlatombok/letrehozas/valasz">
+    A 201-es válasz a Billingo alapértékeivel, a sorszám formája és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/szamlatombok/letrehozas/minta">
+    Új tömb `WEB` előtaggal, benne egy számla `WEB / 2026-000001` sorszámmal.
+  </Card>
+</Cards>

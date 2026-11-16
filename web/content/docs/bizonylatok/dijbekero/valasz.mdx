@@ -1,0 +1,53 @@
+---
+title: Válasz
+description: A createFromProforma() a díjbekérőből készült számlát adja, fizetett állapotban és a díjbekérőre mutató relatedDocuments mezővel. Az archive() üres választ ad. A hibák és a bizonytalan kimenet kezelése.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocumentFromProforma
+---
+
+## Számla a díjbekérőből
+
+A Billingo 201-gyel válaszol, a törzs a teljes számla (`Billingo.Document`, mezői a [kiállításnál](/docs/bizonylatok/kiallitas/valasz)). A díjbekérőből jövő eltérések:
+
+| Mező | Érték |
+| --- | --- |
+| `type` | `invoice` |
+| `invoiceNumber` | A számlatömb következő sorszáma, például `2026-1`. A díjbekérő számozása ettől független. |
+| `paymentStatus` | `paid`: a Billingo a díjbekérőből készült számlát fizetettnek tekinti. |
+| `relatedDocuments` | `[{ id, invoiceNumber }]`: a díjbekérő, például `000001`. |
+| `items`, `partner` | A díjbekérőből átvéve. |
+
+Az `onDocument` hook `converted` eseményt kap, `sourceId` a díjbekérő azonosítója.
+
+## Archiválás
+
+Az `archive()` `Promise<void>`: a Billingo 204-gyel, törzs nélkül válaszol.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Hibás dátum a bemenetben, kérés előtt. |
+| 400 | `validation` | Nem díjbekérőt adtál meg. Az élő üzenetet nem mértük; a hamis Billingo `Only proforma documents can be converted to invoice.` és `Only proforma documents can be archived.` szöveget ad. |
+| 402 | `subscription` | Éles profilon a díjbekérőhöz legalább Basic alapcsomag kell. |
+| 403 | `forbidden` | Ismeretlen azonosító, vagy csak olvasó kulcs. |
+| – | `network`, `timeout`, `server`, `unexpected_response` | A számla elkészülhetett. Ne hívd újra vakon. |
+
+A `createFromProforma()` számla, ezért bizonytalan hiba után ugyanaz a kockázat, mint a kiállításnál: egy második hívás második számlát állíthat ki. A `createFromProforma()` nem fogad `vendorId`-t, így a számlát nem a `findByVendorId()`-val keresed vissza. Keresd a díjbekérő partnerének friss számlái között, és nézd a `relatedDocuments` mezőt:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const dijbekeroId: number
+declare const partnerId: number
+
+const oldal = await tarca.documents.list({ partnerId, type: 'invoice', perPage: 20 })
+const szamla = oldal.data.find((bizonylat) =>
+  bizonylat.relatedDocuments?.some((kapcsolt) => kapcsolt.id === dijbekeroId),
+)
+
+console.log(szamla?.invoiceNumber ?? 'Még nincs számla ebből a díjbekérőből.')
+```
+
+A lista 15–30 másodpercet késik, ezért egy hiányzó számla ennyi idő után is lehet ott. Ha a vevő online fizetett, egyszerűbb a [fizetésből bizonylat](/docs/fizetesek) útja, amely `vendorId`-val állít ki.

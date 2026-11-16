@@ -1,0 +1,67 @@
+---
+title: Kérés
+description: A documents.payments list, replace, add és clear metódusa. A PaymentInput mezői a Billingo snake_case neveivel, a teljes csere a PUT /documents/{id}/payments kérésben.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/UpdatePayment
+---
+
+```ts
+tarca.documents.payments.list(id: number): Promise<Billingo.PaymentHistory[]>
+tarca.documents.payments.replace(id: number, payments: readonly PaymentInput[]): Promise<Billingo.PaymentHistory[]>
+tarca.documents.payments.add(id: number, payment: PaymentInput): Promise<Billingo.PaymentHistory[]>
+tarca.documents.payments.clear(id: number): Promise<void>
+```
+
+Mindegyik utolsó, opcionális paramétere `{ signal?: AbortSignal }`.
+
+| Metódus | Kérés | Mit csinál? |
+| --- | --- | --- |
+| `list(id)` | `GET /documents/{id}/payments` | A rögzített befizetések. |
+| `replace(id, payments)` | `PUT /documents/{id}/payments` | Lecseréli a teljes listát. Amit kihagysz, törlődik. Az üres tömb mindent töröl. |
+| `add(id, payment)` | `GET`, majd `PUT` | A meglévők végére fűzi az újat. |
+| `clear(id)` | `DELETE /documents/{id}/payments` | Minden befizetést töröl. |
+
+## PaymentInput
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+const befizetesek = await tarca.documents.payments.replace(szamlaId, [
+  { date: '2026-11-10', price: 100_000, paymentMethod: 'wire_transfer' },
+  { date: new Date(), price: 90_500, paymentMethod: 'bankcard', voucherNumber: 'K-1001' },
+])
+
+console.log(befizetesek.length)
+```
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `date` | `date` | – | **Kötelező.** A befizetés napja, `Date` vagy `'YYYY-MM-DD'`, budapesti nap. |
+| `price` | `price` | – | **Kötelező.** Az összeg a számla pénznemében, véges szám. |
+| `paymentMethod` | `payment_method` | – | **Kötelező.** Fizetési mód, a `Billingo.PaymentMethod` egyike. |
+| `voucherNumber` | `voucher_number` | Billingo: `''` | Bizonylatszám, például a pénztárbizonylat száma. |
+| `conversionRate` | `conversion_rate` | Billingo: `1` | Devizás befizetés árfolyama. Pozitív szám. |
+
+A fenti `replace()` törzse csupasz tömb, boríték nélkül:
+
+```json
+[
+  { "date": "2026-11-10", "price": 100000, "payment_method": "wire_transfer" },
+  { "date": "2026-11-16", "price": 90500, "payment_method": "bankcard", "voucher_number": "K-1001" }
+]
+```
+
+A második elem `date` mezője a futtatás napja.
+
+## Helyi ellenőrzés
+
+Hibás dátum, nem véges összeg, ismeretlen fizetési mód vagy nem pozitív árfolyam kérés nélkül `validation` hibát ad. A mezők neve `replace()`-nél `payments.0.date`, `add()`-nál `payment.price`.
+
+## A Billingo útmutatója és a valóság
+
+Az útmutató a befizetés hozzáadását `POST`-tal, egyetlen objektummal írja le. Élőben a `POST /documents/{id}/payments` 405-öt ad: a helyes kérés a `PUT` csupasz tömbbel. A tárca ezt küldi.
+
+Egyik metódust sem ismétli meg a tárca, kivéve a `list()` lekérdezést.

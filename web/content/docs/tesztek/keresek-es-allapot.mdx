@@ -1,0 +1,61 @@
+---
+title: Kérések és állapot
+description: A hamis Billingo requests naplója, a count és counts számlálók és a data nézet megmutatja, milyen kéréseket küldött a kódod, mit tartalmaztak, és mi lett belőlük a hamis Billingóban.
+---
+
+A hamis Billingo minden kérést naplóz, és az állapotát is olvashatóvá teszi. A tesztben így azt nézed, amit a Billingo kapott volna, a kódod belsejét nem kell ismerned.
+
+```ts twoslash
+import { createMockTarca } from 'tarcajs/testing'
+
+const tarca = createMockTarca()
+
+await tarca.documents.createOnce({
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+})
+
+const kiallitas = tarca.billingo.requests.find((request) => request.operation === 'CreateDocument')
+
+console.log(tarca.billingo.counts())
+console.log(kiallitas?.status, kiallitas?.body)
+console.log(tarca.billingo.data.documents.get(1)?.vendorId)
+```
+
+## requests
+
+Minden kérés egy bejegyzés, a beérkezés sorrendjében:
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `operation` | `OperationId \| undefined` | A Billingo művelet (`'CreateDocument'`). Ismeretlen útvonalnál `undefined`. |
+| `method` | `string` | `GET`, `POST`, `PUT`, `DELETE`. |
+| `path` | `string` | Az útvonal a `/v3` után, kitöltött azonosítókkal (`/documents/1/cancel`). |
+| `query` | `Record<string, string>` | A query string. |
+| `body` | `unknown` | A küldött JSON törzs úgy, ahogy a dróton ment, snake_case kulcsokkal. |
+| `status` | `number \| 'network' \| 'timeout'` | A válasz státusza, vagy a szimulált hiba. |
+| `faulted` | `boolean` | Szimulált hiba volt-e. |
+
+Az API kulcs nincs a naplóban. A `body` a dróton küldött alak: a fenti példában `vendor_id`, `partner_id`, `block_id`, és a tételeknél `unit_price`, `unit_price_type: 'net'`. A tárca saját tesztjei is így ellenőrzik, hogy minden kérés megfelel a Billingo spec-nek.
+
+## count() és counts()
+
+- `count()`: az összes kérés száma.
+- `count('CreateDocument')`: egy művelet kéréseinek száma, a szimulált hibákkal együtt.
+- `counts()`: műveletenként, például `{ GetDocumentByVendorId: 1, ListDocumentBlock: 1, ListPartner: 1, CreatePartner: 1, CreateDocument: 1 }` a fenti példánál.
+
+A legfontosabb állítás egy számlázó tesztben az, hogy egy rendelésre hány kiállító kérés ment ki: `count('CreateDocument')` vagy `count('CreateReceipt')`. Ha ez újrafuttatás vagy szimulált hiba után is 1, a kódod nem állít ki duplán.
+
+## data
+
+A `data` csak olvasható `Map` nézetek az erőforrásokra: `documents`, `partners`, `products`, `spendings`, `bankAccounts`, `documentBlocks`, `documentExports`. A kulcs az azonosító (az exportnál a UUID).
+
+A `data.documents` értéke `{ document, vendorId, issuedAt, modifiedAt, archived?, payments? }`: a `document` a Billingo válasza camelCase alakban, a `payments` a rögzített befizetések. A `data` mindig az aktuális állapotot mutatja: egy sztornó után az eredeti bizonylat `cancelled: true`, és a sztornó is ott van új azonosítóval.
+
+## reset()
+
+A `billingo.reset()` friss teszt profilra állítja vissza a hamis Billingót: üres napló, újrakezdett azonosítók és sorszámok, a `faults` opció hibái újra beütemezve. A `createMockTarca()` `reset()` függvénye ezt is meghívja, és a hívásnaplót is üríti.

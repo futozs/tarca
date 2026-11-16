@@ -1,0 +1,71 @@
+---
+title: Kérés
+description: A partners.update() bemenete. A Billingo PUT kérése teljes csere, ezért a teljes partnert kell elküldeni, azonosító nélkül.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/UpdatePartner
+---
+
+<Operation id="UpdatePartner" methods={['partners.update']} />
+
+```ts
+tarca.partners.update(id: number, replacement: PartnerReplacement, options?: { signal?: AbortSignal }): Promise<Billingo.Partner>
+```
+
+A `PartnerReplacement` ugyanaz, mint a létrehozás `PartnerInput` típusa: a név és a cím kötelező, a többi mező opcionális. A mezők táblája a [Létrehozás](/docs/partnerek/letrehozas/keres) oldalon van.
+
+<Callout type="warning" title="Teljes csere, nem részleges módosítás">
+  A Billingo a `PUT /partners/{id}` törzsével felülírja a teljes partnert. Ami kimarad, az
+  kiürül: élőben a kihagyott `phone` `''`, az `emails` `[]`, az `iban` `''` lett. Egy mező
+  módosításához előbb kérd le a partnert, és az egészet küldd vissza.
+</Callout>
+
+## Egy mező módosítása
+
+Kérd le a partnert, vedd ki belőle az azonosítót, és a módosított mezővel együtt küldd vissza:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const uj = await tarca.partners.create({
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  emails: ['vevo@example.hu'],
+  phone: '+36 1 234 5678',
+})
+const partnerId = uj.id ?? 0
+
+const { id: _, ...partner } = await tarca.partners.get(partnerId)
+const modositott = await tarca.partners.update(partnerId, {
+  ...partner,
+  address: { ...partner.address, postCode: '1052', address: 'Váci utca 10.' },
+})
+
+console.log(modositott.phone, modositott.emails)
+```
+
+Az azonosítót azért veszed ki, mert a `replacement` típusa nem tartalmaz `id` mezőt, és a tárca a partnernél nem szűri ki helyetted. A számlatömböknél más a helyzet, ott a `get()` eredménye változtatás nélkül visszaküldhető, lásd [Számlatömb módosítása](/docs/szamlatombok/modositas/keres).
+
+## Szabályok
+
+- A név és a cím három mezője itt is kötelező, hiányukra 422 jön.
+- Az országkódot a tárca `'HU'`-ra állítja, ha a `replacement` címéből hiányzik.
+- A `taxType` csak nagybetűvel érvényes, a kisbetűs érték `''`-ként tárolódik.
+- A tárca a PUT-ot nem ismétli magától. Ugyanazzal a törzzsel megismételve ugyanazt az állapotot kapod, de ezt neked kell eldöntened.
+- Az átnevezett partnert a Billingo keresője 20–60 másodpercig még a régi néven találhatja meg.
+
+## Ami a dróton megy
+
+A tárca a teljes `replacement`-et snake_case-re alakítva küldi. Ha csak a nevet és a címet adod meg, csak ezek mennek el, és a Billingo minden mást kiürít:
+
+```json
+{
+  "name": "Vevő Kft.",
+  "address": {
+    "country_code": "HU",
+    "post_code": "1111",
+    "city": "Budapest",
+    "address": "Fő utca 1."
+  }
+}
+```

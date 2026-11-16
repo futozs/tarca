@@ -1,0 +1,48 @@
+---
+title: "network: hálózati hiba"
+description: "A network kategória: a kérésre nem jött válasz, mert a kapcsolat megszakadt vagy fel sem épült. GET-nél a tárca újrapróbálja, írás után a vendorId alapján kell megnézni, létrejött-e a bizonylat."
+---
+
+| | |
+| --- | --- |
+| HTTP | nincs |
+| Újrapróbálja a tárca? | GET kérést igen, írást nem |
+| `retryable` | `true` |
+
+## Mikor jön elő
+
+A `fetch` hibát dobott: DNS, TLS, megszakadt kapcsolat, a szerver bezárta a socketet. A tárca üzenete `Hálózati hiba a Billingo elérésekor.`, az eredeti hiba a `cause` mezőben van. A `signal`-lal megszakított kérés nem `network`: az `AbortError` változatlanul továbbmegy.
+
+## Mit tesz a tárca
+
+- **GET:** újrapróbálja, összesen legfeljebb `maxAttempts` kérés.
+- **POST, PUT, DELETE:** nem. Nem tudod, hogy a kérés eljutott-e a Billingóhoz: lehet, hogy a számla elkészült, és csak a válasz veszett el.
+- **`createOnce`:** kétszer megkeresi a bizonylatot a `vendorId` alapján, és ha megvan, `created: true`-val visszaadja.
+
+## Mi a teendő
+
+Sima `create` után keresd meg a bizonylatot a `vendorId` alapján, mielőtt bármit újra küldenél:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+const vendorId = 'ORDER-1001'
+
+try {
+  await tarca.documents.create({
+    vendorId,
+    partner: {
+      name: 'Vevő Kft.',
+      address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+    },
+    items: [{ name: 'Webfejlesztés', quantity: 10, netUnitPrice: 15_000, vat: 27 }],
+  })
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'network') throw error
+  const meglevo = await tarca.documents.findByVendorId(vendorId)
+  console.log(meglevo ? `Elkészült: ${meglevo.invoiceNumber}` : 'Nem készült el.')
+}
+```
+
+Ezt a `createOnce` magától megteszi, ezért kiállításhoz azt használd. A lista erre nem jó: a `documents.list()` 15–30 másodpercet késik, a `findByVendorId()` nem. Hogyan teszteld: [Hibák szimulálása](/docs/tesztek/hibak-szimulalasa).

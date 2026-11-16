@@ -1,0 +1,110 @@
+---
+title: Részleges visszatérítés
+description: Részleges visszatérítéskor visszatérítésenként egy módosító számla, pontosan egyszer, ledger tárolóval. A createModificationOnce() és az allocateRefund(), és mikor ad a tárca csak javaslatot.
+---
+
+Egy `partially-refunded` eseményre az `issueForPayment()` visszatérítésenként egy módosító számlát állít ki a fizetés számlájához. Ehhez `ledger` kell: egy `setIfAbsent`-et ismerő tároló. A Billingo módosító számlájának ugyanis nincs `vendorId`-ja, és a bizonylatlista 15–30 másodpercet késik, így egy újraküldött webhook a Billingóból nem látná, hogy a módosító már elkészült.
+
+<Example slug="reszleges-visszaterites" />
+
+Az **Elküldött kérések** fülön az első visszatérítés négy kérés: a számla keresése `vendorId`-val, a számla lekérése, a módosítók keresése a listában, végül a `POST /documents/1/create-modification-document`. Az újraküldött eseménynél csak a `vendorId` keresés megy ki, a ledger már tudja a módosító azonosítóját.
+
+## Az eredmény
+
+```ts
+{ kind: 'modification', vendorId, originalId, created, modifications: [{ refundId, modificationId, created, amount, grossTotal }] }
+```
+
+A módosító áfakulcsonként egy sort tartalmaz, 1-es mennyiséggel és negatív bruttó egységárral. Ha az áfakulcshoz egyetlen tétel tartozik, a sor a tétel nevét kapja, különben `Visszatérítés (27%)` lesz a neve. A megjegyzése a `(Visszatérítés <vendorId> <refundId>)` jelölő. Ha a `refundId` 40 karakternél hosszabb, vagy az angol betűkön, számokon és a `_.:-` jeleken kívül mást is tartalmaz, a helyére a kivonata kerül (`h` és 16 hexa jegy). A példa számlájának egy tétele van (`Termék vagy szolgáltatás`, mert a fizetés nem hozott tételeket), a Billingónak ezt küldi:
+
+```json
+{
+  "comment": "(Visszatérítés STRIPE-pi_3QhB7d re_1)",
+  "payment_method": "stripe",
+  "items": [
+    {
+      "name": "Termék vagy szolgáltatás",
+      "quantity": 1,
+      "unit": "db",
+      "vat": "27%",
+      "unit_price": -5000,
+      "unit_price_type": "gross"
+    }
+  ]
+}
+```
+
+## Mikor csak javaslat?
+
+A tárca a következő esetekben nem állít ki bizonylatot, hanem `refund-proposal` eredményt ad egy javasolt tételbontással (`refunds: [{ refundId, amount, items }]`) és az okkal (`reason`):
+
+| Helyzet | Miért? |
+| --- | --- |
+| Nincs `ledger` | Tartós tároló nélkül egy újraküldés második módosítót állítana ki. |
+| A bizonylat nyugta | A Billingo nyugtához nem ad módosító bizonylatot, nyugtát csak sztornózni lehet. |
+| A számlán több áfakulcs van, és nincs `refundItems` vagy `partialRefund: 'proportional'` | Hogy a visszatérítés melyik tételre szól, azt csak te tudod. |
+
+A javaslatot naplózd, és jelezd a könyvelődnek. Ha a fizetésnek még nincs bizonylata, `in_progress` jön, mint a [teljes visszatérítésnél](/docs/fizetesek/visszaterites). `refunds` nélküli eseményre az eredmény `skipped`.
+
+## Melyik tételből mennyi?
+
+| `partialRefund` | Viselkedés |
+| --- | --- |
+| `'auto'` (alapértelmezett) | Egy áfakulcsnál a teljes összeg arra a kulcsra; több kulcsnál javaslat, hacsak nincs `refundItems`. |
+| `'proportional'` | A számla tételei arányában osztja szét, az `allocateRefund()` szabályával. |
+| `'skip'` | Nem ír, `skipped` eredményt ad. |
+
+A `refundItems(context)` saját tételeket ad egy visszatérítéshez: `context.refund` a visszatérítés, `context.document` a számla, `context.items` a számla tételei váltóegységben. Pozitív bruttó egységárral add vissza a visszatérített tételeket, a tárca fordítja negatívba. `undefined` esetén a `partialRefund` szabálya érvényes.
+
+```ts twoslash
+import { allocateRefund } from 'tarcajs/payments'
+
+console.log(
+  allocateRefund(
+    [
+      { name: 'Póló', vat: '27%', grossMinor: 1_270_000 },
+      { name: 'Könyv', vat: '5%', grossMinor: 630_000 },
+    ],
+    500_000,
+  ),
+)
+```
+
+Az `allocateRefund(items, refundMinor, { refundedBeforeMinor })` egész váltóegységben, pontosan osztja szét a visszatérítést. A fenti 5 000 Ft-ból 3 342,11 Ft jut a pólóra és 1 657,89 Ft a könyvre. A felosztás útfüggetlen: két egymás utáni részleges visszatérítés összesen ugyanazt adja, mint egy nagy, és egy tételre sem jut több, mint az eredeti összege. Ha a visszatérítések összege meghaladná a bizonylatét, `validation` hiba.
+
+## A createModificationOnce()
+
+Az `issueForPayment()` a `createModificationOnce()` függvénnyel állítja ki a módosítót. Saját folyamatban közvetlenül is hívhatod:
+
+```ts twoslash
+import { createTarca, type KeyValueStore } from 'tarcajs'
+import { createModificationOnce } from 'tarcajs/payments'
+
+declare const ledger: KeyValueStore
+
+const tarca = createTarca()
+
+const modosito = await createModificationOnce(tarca, {
+  documentId: 1,
+  vendorId: 'ORDER-1001',
+  refundId: 'visszaru-1',
+  ledger,
+  items: [{ name: 'Visszáru', quantity: 1, grossUnitPrice: -5_000, vat: 27 }],
+})
+```
+
+1. A ledger kulcsa `refundLedgerKey(vendorId, documentId, refundId)` = `tarca:refund:<sha256>`, értéke `{ state: 'pending' | 'done', modificationId, grossTotal }`, 30 napig él.
+2. Ha a bejegyzés `done`, azonnal visszaadja (`created: false`).
+3. Különben lefoglalja a kulcsot, és a `documents.list({ partnerId, startDate })` találatai között (legfeljebb 5 oldal) keres egy módosítót, amely az eredetire hivatkozik, és a megjegyzésében ott a jelölő. Így egy lejárt vagy elveszett ledger bejegyzés sem vezet második módosítóhoz.
+4. Csak ezután küldi a POST-ot a jelölővel, majd `done`-ra állítja a bejegyzést.
+
+Végleges Billingo hiba (4xx) vagy helyi `validation` után felszabadítja a foglalást. Bizonytalan hiba (hálózat, időtúllépés, 5xx, `unexpected_response`) után megtartja, és a listából próbálja megtalálni. Ha nem találja, `in_progress` hibát ad, a webhook 500-zal válaszol, és az újraküldés rendezi. A ledger olvasási hibája `store_unavailable`, kérés előtt. A ledger `setIfAbsent` nélkül `configuration` hiba.
+
+<Callout type="warning" title="Ne töröld kézzel a ledger kulcsait">
+  Amíg egy visszatérítés folyamatban van, a `tarca:refund:` kulcs az egyetlen, ami megakadályozza a
+  második módosító számlát. A bizonylatlista `type` szűrője csak `invoice` és `receipt` értéket
+  fogad, ezért a tárca a partner összes bizonylatát nézi át, legfeljebb 500-at: ha a partnernek a
+  számla óta ennél több bizonylata van, egy régi módosító kimaradhat a keresésből.
+</Callout>
+
+Melyik tároló alkalmas ledgernek: [Tárolók](/docs/kiegeszitok/tarolok). A módosító számla Billingo oldali részletei: [Módosító számla](/docs/bizonylatok/modosito).

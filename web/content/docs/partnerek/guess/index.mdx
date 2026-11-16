@@ -1,0 +1,23 @@
+---
+title: Guess végpont
+description: A Billingo POST /partners/guess végpontja a partners.guess() metódussal. Pontos névegyezésen kívül új partnert hoz létre, és mindig 201-et ad.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/Partners/PartnerGuess
+---
+
+A `partners.guess()` a Billingo `POST /partners/guess` végpontját hívja, amely csak a 3.0.15-ös specben szerepel. Pontos névegyezésnél a meglévő partnert adja vissza, minden más esetben újat hoz létre. A tárca saját partnerkeresése, a [`findOrCreate()`](/docs/partnerek/kereses-vagy-letrehozas), ezért nem erre épül.
+
+```ts
+const partner = await tarca.partners.guess(vevo)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/partnerek/guess/keres">
+    A bemenet, és mikor hoz létre új partnert a Billingo.
+  </Card>
+  <Card title="Válasz" href="/docs/partnerek/guess/valasz">
+    Mindig 201, a `taxType` mindig üres: így választod szét a meglévő és az új partnert.
+  </Card>
+  <Card title="Minta" href="/docs/partnerek/guess/minta">
+    Pontos névvel a meglévő partner, névrészlettel egy új.
+  </Card>
+</Cards>

@@ -1,0 +1,58 @@
+---
+title: Kérés
+description: A products.list() és a products.all() paraméterei, a keresés a termék nevében és a lapozás.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/ListProduct
+---
+
+<Operation id="ListProduct" methods={['products.list', 'products.all']} />
+
+```ts
+tarca.products.list(query?: ProductListQuery, options?: { signal?: AbortSignal }): Promise<Page<Billingo.Product>>
+```
+
+```ts
+tarca.products.all(query?: Omit<ProductListQuery, 'page'>, options?: { signal?: AbortSignal }): AsyncGenerator<Billingo.Product>
+```
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const oldal = await tarca.products.list({ query: 'kávé', perPage: 50 })
+console.log(oldal.total)
+
+for await (const termek of tarca.products.all()) {
+  console.log(termek.id, termek.name, termek.grossUnitPrice)
+}
+```
+
+## Mezők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `query` | `query` | – | Keresés a termék nevében. |
+| `page` | `page` | `1` | Az oldal sorszáma. Az `all()` nem fogadja. |
+| `perPage` | `per_page` | Billingo: `25`, `all()`: `100` | Oldalanként hány termék jöjjön, legfeljebb 100. |
+
+## Mire talál a `query`?
+
+Élőben a név egyik szavára talált: a `TARCA-PROBE mwhwjef5 termék` nevű terméket a `query=mwhwjef5` megadta. Hogy szó közepére is illeszt-e, vagy a partnerekhez hasonlóan csak a szavak elejére, azt nem mértük. A Billingo changelogja szerint EAN és SKU szerint is lehet keresni, ezt élőben nem ellenőriztük. A keresés a 3,5 másodperce létrehozott terméket már megtalálta, a partnereknél látott indexkésést itt nem tapasztaltuk.
+
+A tárca hamis Billingója a névben bárhol illeszt, kis- és nagybetűtől függetlenül.
+
+## Helyi ellenőrzés
+
+A tárca kérés előtt `RangeError`-t dob, ha a `page` nem legalább 1 egész szám, vagy ha a `perPage` nem 1 és 100 közötti egész szám. Lásd [Lapozás](/docs/alapok/lapozas).
+
+## Ami a dróton megy
+
+```text
+GET /v3/products?per_page=50&query=k%C3%A1v%C3%A9
+```
+
+Az `all()` 100-as oldalakkal lapoz:
+
+```text
+GET /v3/products?page=1&per_page=100
+```

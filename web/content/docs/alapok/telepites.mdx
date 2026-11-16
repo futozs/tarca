@@ -1,6 +1,6 @@
 ---
 title: Telepítés és az első számla
-description: A tarcajs csomag telepítése, a Billingo API kulcs beállítása, a fejlesztői teszt profil, és az első számla kiállítása néhány sorból.
+description: A tarcajs csomag telepítése, a Billingo API kulcs beállítása, a fejlesztői teszt profil, és az első számla kiállítása néhány sorból, Node, Bun, Deno és Cloudflare Workers alatt.
 official: https://developers.billingo.hu/post/api-v3
 ---
 
@@ -10,11 +10,13 @@ official: https://developers.billingo.hu/post/api-v3
 npm install tarcajs
 ```
 
-A csomag Node.js 22-től, Bun, Deno és Cloudflare Workers alatt fut, ESM és CommonJS buildként. Futásidejű függősége nincs: a natív `fetch`-et használja.
+A csomag Node.js 22-től, Bun, Deno és Cloudflare Workers alatt fut, ESM és CommonJS buildként. Futásidejű függősége nincs: a natív `fetch`-et használja. A típusok a csomagban vannak, külön `@types` csomag nem kell.
 
 ## API kulcs
 
-Az API kulcsot a Billingo felületén, az [API kulcsok](https://app.billingo.hu/api-key) oldalon hozhatod létre. Az API-t csak megfelelő Billingo előfizetéssel lehet használni. A tárca a kulcsot a `BILLINGO_API_KEY` környezeti változóból olvassa:
+A kulcsot a Billingo felületén hozod létre: Beállítások → API kulcsok → Új API kulcs, a **V3** változattal. Olvasó és író jogú kulcs kell, ha számlát is kiállítasz. A részletek: [Hitelesítés](/docs/alapok/hitelesites).
+
+A tárca a kulcsot a `BILLINGO_API_KEY` környezeti változóból olvassa:
 
 ```dotenv title=".env"
 BILLINGO_API_KEY=a-te-api-kulcsod
@@ -26,68 +28,41 @@ import { createTarca } from 'tarcajs'
 export const tarca = createTarca()
 ```
 
-Ha sehol nincs kulcs, a `createTarca()` azonnal `configuration` kategóriájú `BillingoError`-t dob, nem az első kérésnél.
+Ha sehol nincs kulcs, a `createTarca()` azonnal `configuration` kategóriájú `BillingoError`-t dob, nem az első kérésnél. Egy folyamatban elég egyszer létrehozni a klienst, és mindenhol azt használni.
 
-<Callout type="tip" title="Fejlesztői teszt profil">
-  Fejlesztéshez a Billingo ingyenes fejlesztői teszt profilját használd. NAV kapcsolata nincs, a
-  bizonylatain „TESZT” felirat van. Éles profilon a kiállított számlát a Billingo azonnal beküldi a
-  NAV-nak, és utána csak sztornózni lehet.
+<Callout type="tip" title="Fejlesztéshez a teszt profil">
+  A Billingo ingyenes fejlesztői teszt profilján nincs NAV kapcsolat, a bizonylatokon „TESZT”
+  felirat van, és előfizetés sem kell. Éles profilon a kiállított számlát a Billingo azonnal
+  beküldi a NAV-nak, és utána csak sztornózni lehet. Lásd [Teszt profil](/docs/alapok/teszt-profil).
 </Callout>
 
 ## Az első számla
 
 <Example slug="szamla" />
 
-A partnert a tárca megkeresi, vagy ha még nincs, létrehozza. A számlatömböt, a teljesítés napját, a 8 napos fizetési határidőt és az áfakódot is ő tölti ki, a hibás adatot pedig még a kérés előtt, magyar üzenettel jelzi. A számlát a Billingo állítja ki és sorszámozza.
+Egy hívásból négy kérés lesz: a tárca lekéri az első számlatömböt, név szerint megkeresi a partnert, és mivel még nincs ilyen, létrehozza, végül kiállítja a számlát. A teljesítés napját, a 8 napos határidőt, az átutalásos fizetési módot és az áfakódot is ő tölti ki. A sorszámot és az összegeket a Billingo adja.
 
-## Alapbeállítások
+Webshopból és webhookból ugyanezt a `createOnce()`-szal tedd, a rendelésed azonosítójával: [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
 
-Ami minden bizonylaton ugyanaz, azt elég egyszer megadni a `defaults` opcióban:
-
-```ts twoslash
-import { createTarca } from 'tarcajs'
-
-export const tarca = createTarca({
-  defaults: {
-    blockId: 123456,
-    bankAccountId: 7890,
-    paymentMethod: 'wire_transfer',
-    language: 'hu',
-    currency: 'HUF',
-    dueInDays: 8,
-    electronic: true,
-    sendEmail: true,
-  },
-})
-```
-
-- A `blockId` nélkül a tárca az első `invoice` típusú számlatömböt használja (egyszer kérdezi le, utána megjegyzi), nyugtához az első `receipt` típusút, vagy a `receiptBlockId`-t.
-- Nyugtánál is a `defaults.paymentMethod` érvényes, ha a nyugta nem ad meg fizetési módot. Ha egyik sincs megadva, a nyugta `cash`, a számla `wire_transfer`.
-- A `dueInDays` a mai budapesti naptól számít. A `sendEmail` a bizonylat `settings.shouldSendEmail` beállítása.
-- Hibás érték esetén a `createTarca()` azonnal `configuration` hibát dob.
-
-## Több fiók és a kulcs ellenőrzése
-
-Minden `createTarca()` hívás saját kulccsal és beállításokkal dolgozik, így egy folyamatban több Billingo fiók is kezelhető:
+## A kulcs ellenőrzése
 
 ```ts twoslash
 import { createTarca } from 'tarcajs'
 
-declare const kulcsok: { bolt: string; etterem: string }
+const tarca = createTarca()
 
-const bolt = createTarca({ apiKey: kulcsok.bolt })
-const etterem = createTarca({ apiKey: kulcsok.etterem })
-
-if (!(await etterem.verifyCredentials())) {
-  throw new Error('Az étterem Billingo kulcsa érvénytelen.')
+if (!(await tarca.verifyCredentials())) {
+  throw new Error('A Billingo nem fogadta el az API kulcsot.')
 }
 ```
 
-A `verifyCredentials()` `false` értéket ad, ha a Billingo elutasítja a kulcsot. Minden más hibát (hálózat, előfizetés) továbbdob.
+A `verifyCredentials()` egy `GET /organization` kérést küld. `false` az eredmény, ha a Billingo elutasítja a kulcsot (401); minden más hibát (hálózat, előfizetés) továbbdob.
 
-## Cloudflare Workers
+Parancssorból ugyanezt az `npx tarcajs doctor` végzi el: ellenőrzi a kulcsot, a profilt, a NAV-kapcsolatot és a számlatömböket. Részletek: [Parancssor](/docs/kiegeszitok/parancssor).
 
-Workers alatt nincs `process.env`, ezért a kulcsot az `apiKey` opcióval add át:
+## Cloudflare Workers és Deno
+
+Workers alatt a kulcs a kérés `env` paraméterében érkezik, ezért az `apiKey` opcióval add át:
 
 ```ts twoslash title="src/index.ts"
 import { createTarca } from 'tarcajs'
@@ -100,6 +75,18 @@ export default {
 }
 ```
 
-## A beállítás ellenőrzése
+Denóban az npm csomagot az `npm:` előtaggal importálod (`import { createTarca } from 'npm:tarcajs'`). A kulcsot add át az `apiKey` opcióval, például `Deno.env.get('BILLINGO_API_KEY')` értékével. A tárca a `process.env`-et csak akkor olvassa, ha a futtatókörnyezetben létezik. Több futtatókörnyezetről: [Serverless és edge](/docs/kiegeszitok/serverless-es-edge).
 
-Az `npx tarcajs doctor` három olvasó kéréssel ellenőrzi a kulcsot, a profilt, a NAV-kapcsolatot és a számlatömböket. Részletek: [Parancssor](/docs/kiegeszitok/parancssor).
+## Hová tovább?
+
+<Cards>
+  <Card title="Kliens beállítása" href="/docs/alapok/kliens-beallitasa">
+    Időkorlát, újrapróbálás, saját fetch és hookok.
+  </Card>
+  <Card title="Alapértékek" href="/docs/alapok/alapertekek">
+    Számlatömb, bankszámla, fizetési mód, határidő egy helyen.
+  </Card>
+  <Card title="Bizonylatok" href="/docs/bizonylatok">
+    Díjbekérő, előleg, deviza, sztornó, befizetés, PDF.
+  </Card>
+</Cards>

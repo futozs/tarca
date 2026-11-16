@@ -1,0 +1,9 @@
+---
+title: Minta
+description: Számla kiállítása, sztornózása indokkal, majd az eredeti számla lekérése, a ténylegesen elküldött kérésekkel.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CancelDocument
+---
+
+A példa kiállít egy 50 800 Ft-os számlát, sztornózza, majd lekéri az eredetit. A sztornó `2026-2` sorszámot és −50 800 Ft végösszeget kap, az eredeti `cancelled` mezője `true`. Az **Elküldött kérések** fülön a sztornó `POST /documents/1/cancel` kérésként megy, a törzsében csak a `cancellation_reason` szerepel, mert címzettet a példa nem adott meg.
+
+<Example slug="sztorno" />

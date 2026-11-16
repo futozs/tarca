@@ -1,0 +1,86 @@
+---
+title: Kérés
+description: A partners.create() bemenete, a PartnerInput mezői a Billingo snake_case neveivel és alapértékeivel, és a törzs, amit a tárca elküld.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/CreatePartner
+---
+
+<Operation id="CreatePartner" methods={['partners.create', 'partners.findOrCreate']} />
+
+```ts
+tarca.partners.create(input: PartnerInput, options?: { signal?: AbortSignal }): Promise<Billingo.Partner>
+```
+
+A `PartnerInput` a Billingo `Partner` sémája azonosító nélkül, opcionális országkóddal. Számlázáshoz általában nem ezt hívod, hanem a [`findOrCreate()`](/docs/partnerek/kereses-vagy-letrehozas/keres)-et, amely csak akkor hoz létre partnert, ha még nincs meg ugyanazokkal az adatokkal.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const partner = await tarca.partners.create({
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  emails: ['vevo@example.hu'],
+  taxcode: '12345678-2-42',
+  taxType: 'HAS_TAX_NUMBER',
+  customBillingSettings: { paymentMethod: 'wire_transfer', dueDays: 15 },
+})
+
+console.log(partner.id)
+```
+
+## Mezők
+
+Az „Alapérték” oszlop azt mutatja, mit tárol a Billingo, ha a mezőt kihagyod.
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `name` | `name` | – | **Kötelező.** A partner neve. |
+| `address.postCode` | `address.post_code` | – | **Kötelező.** Irányítószám. |
+| `address.city` | `address.city` | – | **Kötelező.** Település. |
+| `address.address` | `address.address` | – | **Kötelező.** Utca, házszám. |
+| `address.countryCode` | `address.country_code` | `'HU'` (a tárca tölti ki) | Kétbetűs országkód, `Billingo.Country`. |
+| `emails` | `emails` | `[]` | E-mail címek, ide küldi a Billingo a bizonylatot. |
+| `taxcode` | `taxcode` | `''` | Adószám. A mező neve a Billingo írásmódja, nem `taxCode`. |
+| `taxType` | `tax_type` | `''` | `'HAS_TAX_NUMBER'`, `'NO_TAX_NUMBER'` vagy `'FOREIGN'`, csak nagybetűvel. |
+| `phone` | `phone` | `''` | Telefonszám. |
+| `iban` | `iban` | `''` | IBAN. |
+| `swift` | `swift` | `''` | SWIFT kód. |
+| `accountNumber` | `account_number` | `''` | Belföldi bankszámlaszám. |
+| `generalLedgerNumber` | `general_ledger_number` | `''` | Főkönyvi szám. |
+| `groupMemberTaxNumber` | `group_member_tax_number` | `''` | Csoporttag adószáma. |
+| `internalComment` | `internal_comment` | `''` | Belső megjegyzés, a bizonylatra nem kerül ki. |
+| `customBillingSettings` | `custom_billing_settings` | minden mező `null` | Partnerre szabott számlázás: `paymentMethod`, `documentForm`, `dueDays`, `documentCurrency`, `templateLanguageCode`, `discount`, `customLabel`. |
+| `giroSettings` | `giro_settings` | `giroDefaultSettings: true`, a többi `false` | GIRO beállítások. |
+| `partnerShipping` | `partner_shipping` | `match: true`, `mode: 'none'` | Szállítási név és cím. |
+| `partnerShowType` | `partner_show_type` | `'show_all'` | `'show_all'`, `'show_incoming'` vagy `'show_outgoing'`. |
+
+## Szabályok
+
+- A név és a cím három mezője kötelező. Bármelyik hiányára a Billingo 422-t ad, a tárca ezt nem ellenőrzi előre (a `findOrCreate()` az üres nevet igen).
+- A `taxType` kisbetűs változatát (`'has_tax_number'`) a Billingo nem utasítja el, hanem `''`-ként tárolja. A tárca típusa ezért csak a nagybetűs értékeket engedi.
+- Belföldi adószámos vevőnél add meg a `taxcode`-ot és a `taxType: 'HAS_TAX_NUMBER'` értéket is. Külföldi partnernél `'FOREIGN'` kell: a Billingo uniós áfakulcsot csak ilyen partnernek enged a számlán.
+- A tárca a létrehozást **nem ismétli** magától, mert egy második kérés második partnert hozna létre.
+
+## Ami a dróton megy
+
+A tárca a camelCase mezőket snake_case-re alakítja, és az országkódot `'HU'`-ra állítja, ha nem adtad meg. A fenti hívás törzse a hamis Billingo felvétele szerint:
+
+```json
+{
+  "name": "Vevő Kft.",
+  "address": {
+    "country_code": "HU",
+    "post_code": "1111",
+    "city": "Budapest",
+    "address": "Fő utca 1."
+  },
+  "emails": ["vevo@example.hu"],
+  "taxcode": "12345678-2-42",
+  "tax_type": "HAS_TAX_NUMBER",
+  "custom_billing_settings": {
+    "payment_method": "wire_transfer",
+    "due_days": 15
+  }
+}
+```

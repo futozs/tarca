@@ -1,0 +1,34 @@
+---
+title: Szabályok és beállítások
+description: A számla mezőinek részletes szabályai a tárcában és a Billingóban, tételektől és áfakódoktól a dátumokon, a partneren és a devizán át a kerekítésig és a nyers küldésig.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A [Kérés](/docs/bizonylatok/kiallitas/keres) oldal felsorolja a `DocumentInput` mezőit. Ezek az oldalak azt írják le, mi történik velük: mit számol a tárca, mit a Billingo, és hol tér el az élő API attól, amit a spec ír.
+
+<Cards>
+  <Card title="Tételek és áfa" href="/docs/bizonylatok/kiallitas/szabalyok/tetelek-es-afa">
+    Nettó és bruttó ár, termékes tétel, áfakulcsok és kódok, jogcím, kedvezmény.
+  </Card>
+  <Card title="Dátumok és határidő" href="/docs/bizonylatok/kiallitas/szabalyok/datumok-es-hatarido">
+    Teljesítés, kelte, `dueDate` vagy `dueInDays`, budapesti nap.
+  </Card>
+  <Card title="Partner megadása" href="/docs/bizonylatok/kiallitas/szabalyok/partner-megadasa">
+    Azonosító vagy partneradatok, és mit csinál a `findOrCreate()` a kiállítás előtt.
+  </Card>
+  <Card title="Deviza" href="/docs/bizonylatok/kiallitas/szabalyok/deviza">
+    Euró és más pénznem, kötelező árfolyam, forintosított összegek.
+  </Card>
+  <Card title="Fizetés és megjelenés" href="/docs/bizonylatok/kiallitas/szabalyok/fizetes-es-megjelenes">
+    Fizetési mód, nyelv, e-számla, bankszámla, számlatömb.
+  </Card>
+  <Card title="Értesítés és rendelésszám" href="/docs/bizonylatok/kiallitas/szabalyok/ertesites-es-rendelesszam">
+    `sendEmail`, `orderNumber`, megjegyzés, a nyers `settings`, és miben más a `vendorId`.
+  </Card>
+  <Card title="Kerekítés" href="/docs/bizonylatok/kiallitas/szabalyok/kerekites">
+    Hogyan számol a Billingo áfakulcsonként, forintban és devizában.
+  </Card>
+  <Card title="Nyers küldés" href="/docs/bizonylatok/kiallitas/szabalyok/nyers-kuldes">
+    `createRaw()`: a generált `DocumentInsert` típus, alapértékek és ellenőrzés nélkül.
+  </Card>
+</Cards>

@@ -1,0 +1,11 @@
+---
+title: Minta
+description: A partners.guess() pontos névvel és névrészlettel a hamis Billingo ellen. Az első a meglévő partnert adja üres taxType mezővel, a második újat hoz létre.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/Partners/PartnerGuess
+---
+
+A példa létrehoz egy adószámos partnert, aztán kétszer hívja a `guess()`-t. A pontos név a meglévő partnert adja vissza, de a `taxType` a válaszban üres. A név eleje már új partnert hoz létre, holott a cím ugyanaz.
+
+<Example slug="partner-guess" />
+
+A **Billingo válasz** fülön mindkét `PartnerGuess` 201-et kap, a meglévő partnerre és az újra is. A hamis Billingo keresőindexe nem késik; élőben egy frissen létrehozott partnerre a pontos név is duplikátumot adhatna.

@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Adószámos belföldi partner létrehozása a hamis Billingo ellen, az elküldött snake_case törzzsel és a 201-es válasz alapértékeivel.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/CreatePartner
+---
+
+A példa egy adószámos belföldi partnert hoz létre, majd kiírja, mit tárolt a Billingo azokban a mezőkben, amelyeket nem adott meg: az ország `HU`, a telefonszám üres szöveg, a fizetési határidő `null`.
+
+<Example slug="partner-letrehozas" />
+
+Az **Elküldött kérések** fülön a `country_code: "HU"` mezőt keresd: a hívás nem adta meg, a tárca tette bele. A **Billingo válasz** fülön a 201-es státuszt és a kitöltött alapértékeket látod.

@@ -1,106 +1,73 @@
 ---
 title: Bizonylatok
-description: Számla, díjbekérő, előleg- és végszámla, devizás számla, sztornó és módosító számla, befizetés, PDF és kiküldés a tárca documents erőforrásával, futtatható példákkal.
-official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+description: Számla, díjbekérő, előleg- és végszámla, piszkozat, sztornó, módosító számla, befizetés, PDF, kiküldés és NAV-állapot a tárca documents erőforrásával.
+official: https://developers.billingo.hu/post/api-v3
 ---
 
-A számlát a Billingo állítja ki és sorszámozza. Éles profilon azonnal beküldi a NAV-nak, ezért kiállított számlát törölni nem lehet, csak sztornózni.
-
-<Operation id="CreateDocument" methods={['documents.create', 'documents.createOnce']} />
-
-## Számla
+A Billingóban minden számlaféle bizonylat (`document`): a számla, a díjbekérő, az előleg- és a végszámla, a piszkozat, a sztornó és a módosító számla is. A tárcában ezeket a `tarca.documents` kezeli, a nyugtákat a `tarca.receipts` ([Nyugták](/docs/nyugtak)).
 
 ```ts twoslash
 import { createTarca } from 'tarcajs'
 
 const tarca = createTarca()
 
-const szamla = await tarca.documents.create({
-  partner: 1234,
-  items: [
-    { name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 },
-    { name: 'Tankönyv', quantity: 2, grossUnitPrice: 4_200, vat: 5 },
-  ],
-  fulfillmentDate: '2026-11-15',
-  dueInDays: 15,
-  comment: 'Köszönjük a megrendelést!',
-  orderNumber: 'RENDELES-1001',
+const { document, created } = await tarca.documents.createOnce({
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
 })
 
-console.log(szamla.invoiceNumber, szamla.grossTotal)
+console.log(document.invoiceNumber, document.grossTotal, created)
 ```
 
-- A `partner` egy meglévő partner azonosítója, vagy egy partner adatai. Az adatokat a `partners.findOrCreate()` keresi meg, és csak akkor hoz létre új partnert, ha nincs pontosan ilyen (lásd [Partnerek](/docs/partnerek)).
-- A `type` alapból `'invoice'`; lehet `'proforma'`, `'advance'` és `'draft'` is.
-- A dátumok `YYYY-MM-DD` szövegek vagy `Date` értékek, a tárca a budapesti napra váltja őket. A teljesítés alapból a mai nap, a határidőt a `dueDate` vagy a `dueInDays` adja meg, a kettő közül csak az egyik.
-- Webshopból és webhookból a `createOnce()` hívást használd a rendelés azonosítójával: [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
+A számlát a Billingo állítja ki és sorszámozza. Éles profilon azonnal beküldi a NAV-nak, ezért kiállított számlát törölni nem lehet, csak sztornózni vagy módosító számlával helyesbíteni. Törölni csak piszkozatot lehet.
 
-### Árak és áfa
+<Callout type="warning" title="Számlát ne küldj újra kézzel">
+  A tárca a `POST /documents` kérést soha nem ismétli meg. Ha egy kiállítás hálózati hibával vagy
+  időtúllépéssel ér véget, nem tudhatod, elkészült-e a számla. Webshopból és webhookból ezért a
+  `createOnce()`-t használd a rendelésed azonosítójával: [Pontosan
+  egyszer](/docs/alapok/pontosan-egyszer).
+</Callout>
 
-- Tételenként pontosan az egyik árat add meg: `netUnitPrice` (nettó egységár) vagy `grossUnitPrice` (bruttó egységár). Az egység alapból `db`.
-- A `vat` lehet szám (`27` → `'27%'`, `5.5` → `'5,5%'`) vagy a Billingo saját kódja (`'AAM'`, `'TAM'`, `'EU'`, `'EUK'`, `'F.AFA'` és a többi a `Billingo.Vat` típusban).
-- A `{ productId, quantity }` tétel a Billingóban tárolt termék nevét, árát és áfáját használja.
-- Az összegeket a Billingo számolja, áfakulcsonként kerekítve. Bruttó egységárnál a nettó egységárat hat tizedesre számolja (1270 Ft bruttó 27%-kal: 1000.000001).
+## Mit szeretnél?
 
-## Díjbekérő, majd számla
+| Feladat | Metódus | Oldal |
+| --- | --- | --- |
+| Számla, díjbekérő vagy előlegszámla kiállítása | `documents.create()` | [Kiállítás](/docs/bizonylatok/kiallitas) |
+| Kiállítás dupla számla nélkül | `documents.createOnce()` | [Pontosan egyszer](/docs/bizonylatok/pontosan-egyszer) |
+| Egy bizonylat azonosítóval vagy `vendorId`-val | `get()`, `getByVendorId()`, `findByVendorId()` | [Lekérés](/docs/bizonylatok/lekeres) |
+| Szűrt lista, lapozás | `list()`, `all()` | [Lista és szűrés](/docs/bizonylatok/lista) |
+| Piszkozat véglegesítése vagy törlése | `finalizeDraft()`, `deleteDraft()` | [Piszkozat](/docs/bizonylatok/piszkozat) |
+| Meglévő bizonylat másolása piszkozatba | `copy()` | [Másolás](/docs/bizonylatok/masolas) |
+| Díjbekérőből számla, díjbekérő archiválása | `createFromProforma()`, `archive()` | [Díjbekérő](/docs/bizonylatok/dijbekero) |
+| Előleg levonása a végszámlán | `create({ advanceInvoiceIds })` | [Előleg- és végszámla](/docs/bizonylatok/elolegszamla) |
+| Számla érvénytelenítése | `cancel()` | [Sztornó](/docs/bizonylatok/sztorno) |
+| Összeg vagy tétel helyesbítése | `createModification()` | [Módosító számla](/docs/bizonylatok/modosito) |
+| Befizetés rögzítése | `payments.add()`, `replace()`, `list()`, `clear()` | [Befizetések](/docs/bizonylatok/befizetes) |
+| PDF, blokknyomtatás, nyilvános link | `pdf()`, `posPdf()`, `publicUrl()` | [PDF és link](/docs/bizonylatok/pdf) |
+| Kiküldés e-mailben, emlékeztetők | `send()`, `reminders()` | [Kiküldés és emlékeztetők](/docs/bizonylatok/kuldes) |
+| NAV-állapot | `navStatus()` | [NAV-állapot](/docs/bizonylatok/nav-statusz) |
 
-<Example slug="dijbekero-szamla" />
+## Egy számla életútja
 
-A díjbekérőből készült számla fizetettként jön létre (`paymentStatus: 'paid'`), a `relatedDocuments` mezőjében ott a díjbekérő. Az `archive()` a díjbekérőt archiválja, utána nem jelenik meg a listában.
+1. **Kiállítás.** A `create()` vagy a `createOnce()` megkeresi a számlatömböt és a partnert, majd elküldi a számlát. A Billingo sorszámot ad (`2026-1`), kiszámolja az összegeket, és éles profilon beküldi a NAV-nak.
+2. **Kiküldés.** Ha a `sendEmail` igaz, a Billingo maga küldi ki. Később a `send()` bármelyik címre elküldi.
+3. **Fizetés.** Átutalásos számlánál a befizetést a `payments.add()` rögzíti, a `paymentStatus` ettől lesz `partially_paid`, majd `paid`.
+4. **Javítás.** Hibás számlát a `cancel()` érvénytelenít, vagy a `createModification()` helyesbít. Módosító számla után a Billingo a sztornót elutasítja, ezért előbb dönts, melyik utat választod.
 
-## Előleg- és végszámla
+A díjbekérő és az előleg külön utat jár be: a [Díjbekérő](/docs/bizonylatok/dijbekero) és az [Előleg- és végszámla](/docs/bizonylatok/elolegszamla) oldal írja le.
 
-<Example slug="eloleg-vegszamla" />
+## Amit élőben mértünk
 
-A végszámla automatikusan kap egy negatív előlegsort. Sztornózni fordított sorrendben lehet: előbb a végszámlát, aztán az előleget.
+- Ismeretlen vagy törölt azonosítóra a Billingo 403-at ad (`forbidden`), nem 404-et. Ismeretlen `vendorId`-ra viszont 404-et, ezért a [Lekérés](/docs/bizonylatok/lekeres) a `findByVendorId()`-t ajánlja.
+- A lista később konzisztens: egy friss számla 15–30 másodperc múlva jelent meg benne.
+- A piszkozat véglegesítése 201-et ad, a spec 200-at ír. A befizetések törlése 200 `[]`, az útmutató 204-et ír.
+- A sztornó metódusa `POST`. Az útmutatóban szereplő `PUT` 405-öt ad.
 
-## Devizás számla
-
-<Example slug="devizas-szamla" />
-
-Nem forintos számlához kötelező az árfolyam, nélküle a tárca kérés nélkül hibát ad. Az árfolyamot a `currencies.rate()` adja a Billingótól. A forintos összegeket (`summary.netAmountLocal` és a többi) a Billingo számolja.
-
-## Sztornó és módosító számla
-
-<Example slug="sztorno" />
-
-- A `cancel()` a sztornó bizonylatot adja vissza (`type: 'cancellation'`, nyugtánál `'receipt_cancellation'`, negatív végösszeggel). Az eredeti számla `cancelled: true` lesz.
-- A `createModification()` módosító számlát állít ki, a tételei a különbözetek. Módosító számla után sem az eredetit, sem a módosítót nem lehet sztornózni: a Billingo 400-as hibát ad, a tárca magyar tippel adja tovább. Ilyenkor újabb módosító számlával lehet helyesbíteni.
-
-## Befizetés
-
-<Example slug="befizetes" />
-
-A számla `paymentStatus` mezője a befizetések szerint `partially_paid`, `paid` vagy `outstanding` lesz. A Billingo a befizetéseket csak egyben tudja cserélni: a `replace()` a teljes listát írja felül, az `add()` előbb lekéri a meglévőket, és a végükre fűzi az újat. Egy számla befizetéseit egyszerre csak egy folyamat írja, különben elveszhet egy befizetés.
-
-## PDF és blokknyomtatás
-
-<Example slug="pdf" />
-
-- Kiállítás után a PDF néhány másodpercig készülhet, a Billingo ilyenkor 202-t ad. A `pdf()` kivárja, alapból legfeljebb 30 másodpercig (`maxWaitMs`).
-- A `posPdf()` 58 vagy 80 mm széles blokknyomtatóra készít PDF-et.
-- A PDF tárhelyre mentéséhez lásd a [PDF mentése](/docs/receptek/pdf-mentese) receptet.
-
-## Kiküldés és NAV-állapot
-
-```ts twoslash
-import { createTarca } from 'tarcajs'
-
-const tarca = createTarca()
-
-await tarca.documents.send(4321, { emails: ['vevo@ceg.hu', 'konyveles@ceg.hu'] })
-
-const nav = await tarca.documents.navStatus(4321)
-if (nav === null) console.log('A Billingónak még nincs NAV rekordja erről a számláról.')
-```
-
-A `send()` pontosan a megadott címekre küldi a bizonylatot. Közvetlenül a kiállítás után néhány másodpercig nincs NAV rekord: a Billingo ilyenkor 404-et ad, a `navStatus()` `null` értéket. A fejlesztői teszt profilon a státusz `no_online_szamla_settings`.
-
-## Lekérdezés és lista
-
-- A `findByVendorId()` `null` értéket ad, ha nincs ilyen bizonylat; a `getByVendorId()` ilyenkor `not_found` hibát dob.
-- A törölt vagy ismeretlen azonosítóra a `get()` 403-as, `forbidden` hibát kap, nem 404-et.
-- A `list()` egy oldalt ad, az `all()` végigmegy az összesen. A friss bizonylat akár fél perc késéssel jelenik meg a listában.
+A teljes lista: [Élő eltérések](/docs/alapok/eles-elteresek).
 
 ## A bizonylatok műveletei
 

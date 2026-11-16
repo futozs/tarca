@@ -1,0 +1,105 @@
+---
+title: Lekérés
+description: Egy termék lekérése azonosító alapján a products.get() hívással, a Product mezői mindkét árral és a 404 törölt termékre.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/GetProduct
+---
+
+<Operation id="GetProduct" methods={['products.get']} />
+
+## Kérés
+
+```ts
+tarca.products.get(id: number, options?: { signal?: AbortSignal }): Promise<Billingo.Product>
+```
+
+Az egyetlen bemenet a termék azonosítója: `GET /v3/products/{id}`, törzs nélkül. Olvasás, ezért a tárca 429, 5xx, hálózati hiba és időtúllépés után magától újrapróbálja.
+
+## Válasz
+
+A Billingo 200-zal és a teljes termékkel válaszol.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A termék azonosítója. |
+| `name` | `string` | Név. |
+| `comment` | `string` | Megjegyzés, `''`, ha nincs. |
+| `currency` | `Billingo.Currency` | Pénznem. |
+| `vat` | `Billingo.Vat` | Áfakulcs Billingo kódként (`'27%'`). |
+| `netUnitPrice` | `number` | Nettó egységár. |
+| `grossUnitPrice` | `number` | Bruttó egységár. A lekért termékben mindkét ár megvan. |
+| `unit` | `string` | Mennyiségi egység. |
+| `sku`, `ean` | `string` | Cikkszám és vonalkód, `''`, ha nincs. |
+| `generalLedgerNumber`, `generalLedgerTaxcode` | `string` | Főkönyvi adatok. |
+| `entitlement` | `Billingo.Entitlement \| null` | Áfamentesség jogcíme. |
+| `purchasePrice` | `number \| null` | Beszerzési ár. Itt beállítás nélkül `0`, a létrehozás válaszában `null`. |
+| `connectProductId` | `number \| null` | Kapcsolt termék azonosítója. |
+| `isManage`, `isGenerateEraseCode`, `applyDiscount`, `applyQuantity`, `isConnectProduct`, `isDepositFee` | `boolean` | Jelzők, alapból `false`. |
+
+Mivel mindkét ár benne van, a lekért terméket nem küldheted vissza változtatás nélkül az `update()`-nek: előbb hagyd el az egyik árat, lásd [Módosítás](/docs/termekek/modositas/keres).
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 404 | `not_found` | Törölt termék. A Billingo üzenete: `Product is not found.` |
+| 403 | `forbidden` | A hivatalos Billingo MCP mérése szerint ismeretlen vagy más céghez tartozó azonosítóra. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból összesen három kísérlettel. |
+
+Törölt termékre a 404 élőben mért érték, ezért a `nullIfNotFound()` itt működik. Egy soha nem létezett azonosítóra viszont 403 is jöhet, amit a `nullIfNotFound()` továbbdob.
+
+## Minta
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+const uj = await tarca.products.create({
+  name: 'Kávé 250 g',
+  currency: 'HUF',
+  vat: '27%',
+  unit: 'db',
+  netUnitPrice: 1_000,
+})
+
+const termek = await tarca.products.get(uj.id ?? 0)
+console.log(termek.netUnitPrice, termek.grossUnitPrice, termek.purchasePrice)
+
+await tarca.products.delete(uj.id ?? 0)
+console.log(await nullIfNotFound(tarca.products.get(uj.id ?? 0)))
+```
+
+A `get()` válasza a hamis Billingóból, a dróton ahogy jön:
+
+```json
+{
+  "id": 1,
+  "name": "Kávé 250 g",
+  "comment": "",
+  "currency": "HUF",
+  "vat": "27%",
+  "net_unit_price": 1000,
+  "gross_unit_price": 1270,
+  "unit": "db",
+  "general_ledger_number": "",
+  "general_ledger_taxcode": "",
+  "entitlement": null,
+  "ean": "",
+  "sku": "",
+  "is_manage": false,
+  "purchase_price": 0,
+  "is_generate_erase_code": false,
+  "connect_product_id": null,
+  "apply_discount": false,
+  "apply_quantity": false,
+  "is_connect_product": false,
+  "is_deposit_fee": false
+}
+```
+
+A törlés utáni lekérés válasza, amelyet a `nullIfNotFound()` `null`-ra fordít:
+
+```json
+{ "error": { "message": "Product is not found." } }
+```

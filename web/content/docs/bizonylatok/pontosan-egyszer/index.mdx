@@ -1,0 +1,32 @@
+---
+title: Pontosan egyszer
+description: A documents.createOnce() referenciája. A vendorId alapján keres, csak akkor állít ki, ha nincs ilyen bizonylat, bizonytalan hiba után visszakeres, és zárral több szerver között is véd.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+A `createOnce()` a `create()` párja webshophoz és webhookhoz: ugyanarra a `vendorId`-ra legfeljebb egy bizonylatot állít ki, akárhányszor hívod. Hogy miért kell ez, és mikor használd, az [Alapok: Pontosan egyszer](/docs/alapok/pontosan-egyszer) oldal mutatja be. Ez az oldal a metódus pontos működését írja le.
+
+```ts
+const { document, created } = await tarca.documents.createOnce({ vendorId: 'ORDER-1001', partner, items })
+```
+
+A `createOnce()` két Billingo műveletre épül: a `GET /documents/vendor/{vendor_id}` lekérésre ([Lekérés](/docs/bizonylatok/lekeres)) és a `POST /documents` kiállításra ([Kiállítás](/docs/bizonylatok/kiallitas)). Nyugtához ugyanez a `receipts.createOnce()`.
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/pontosan-egyszer/keres">
+    A vendorId szabályai, az opciók, a zár és a kérések sorrendje.
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/pontosan-egyszer/valasz">
+    Mit jelent a created, milyen hibák jöhetnek, és mikor hívd újra.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/pontosan-egyszer/minta">
+    Két hívás egy rendelésre, és egy elveszett válasz a hamis Billingóval.
+  </Card>
+</Cards>
+
+<Callout type="info" title="A vendorId sztornó után is foglalt">
+  A Billingo a sztornózott bizonylat `vendorId`-ját nem engedi újra felhasználni. Ha egy
+  sztornózott rendelést újra számláznál, adj neki új `vendorId`-t, például `ORDER-1001-2`. A
+  `createOnce()` a régi azonosítóra a sztornózott számlát adja vissza `created: false` értékkel,
+  `document.cancelled: true` mellett.
+</Callout>

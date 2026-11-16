@@ -1,20 +1,92 @@
 ---
 title: Receptek
-description: Bemásolható integrációs minták a tárcához. Stripe webhook Next.js útvonalként, és a kiállított számla PDF-jének mentése tárhelyre.
+description: Bemásolható integrációs minták a tárcához. Webshop számlázás, Stripe webhook, díjbekérő, részletfizetés, nyugta, PDF és export, előfizetés, Workers, MCP, tesztek és metrikák.
 ---
 
-A receptek teljes, működő fájlok, nem kódrészletek. Next.js App Router projektre készültek, de a tárca hívásai bármilyen szerveren ugyanígy működnek. Mindegyik ugyanazt a mintát követi: a bizonylaton a rendelés vagy a fizetés azonosítója a `vendorId`, és írást semmi nem küld újra ciklusban.
+A receptek teljes, bemásolható fájlok. A legtöbb Next.js App Router projekthez készült, de a tárca hívásai bármilyen szerveren ugyanígy működnek. Az Express, a NestJS és a Fastify bekötésére külön recept van, és van egy Cloudflare Worker is. Két szabály mindegyikben közös: a bizonylat `vendorId`-ja a rendelés vagy a fizetés saját azonosítójából készül, és írást egyik recept sem ismétel ciklusban.
 
 <Callout type="info" title="Mit kell magadnak megírnod?">
-  A receptek a `@/lib/tarca` modulból importálják a klienst, ez a [Telepítés](/docs/alapok/telepites)
-  oldal `lib/tarca.ts` fájlja. A titkokat környezeti változóból olvassák.
+  A receptek a `@/lib/tarca` modulból importálják a klienst, ezt a [Közös kliens](/docs/receptek/kozos-kliens)
+  recept írja le. A `@/lib/rendelesek`, a `@/lib/elofizetesek` és a hasonló modulok a saját
+  adatbázis-rétegedet jelölik: ezeket a függvényeket neked kell megírnod, a receptek csak a nevüket
+  és a szerepüket rögzítik.
 </Callout>
+
+## Kezdés
+
+<Cards>
+  <Card title="Közös kliens" href="/docs/receptek/kozos-kliens">
+    Egy szerveroldali kliens alapbeállításokkal és hibanaplózással, a többi recept ezt importálja.
+  </Card>
+  <Card title="Kulcs ellenőrzése induláskor" href="/docs/receptek/kulcs-ellenorzes-indulaskor">
+    Rossz kulcs vagy teszt profil élesben: kiderül a szerver indulásakor.
+  </Card>
+</Cards>
+
+## Számlázás
+
+<Cards>
+  <Card title="Webshop rendelésből számla" href="/docs/receptek/webshop-rendeles">
+    Egy rendelésre egy számla, akárhányszor fut le a kód, hibakezeléssel.
+  </Card>
+  <Card title="Díjbekérő, majd számla" href="/docs/receptek/dijbekero-fizeteskor">
+    Díjbekérő a megrendeléskor, fizetett számla az átutalás után.
+  </Card>
+  <Card title="Részletfizetés" href="/docs/receptek/reszletfizetes">
+    Részletekben érkező átutalások, a kivonat újraolvasásakor is egyszer.
+  </Card>
+  <Card title="Pénztári nyugta" href="/docs/receptek/penztari-nyugta">
+    Nyugta a pultnál és 80 mm-es blokk, dupla nyugta nélkül.
+  </Card>
+  <Card title="Havi előfizetés" href="/docs/receptek/havi-elofizetes">
+    Hónap elején minden előfizetőnek számla, a Billingo percenkénti keretén belül.
+  </Card>
+</Cards>
+
+## Fizetések
 
 <Cards>
   <Card title="Stripe webhook" href="/docs/receptek/stripe-webhook">
-    Fizetett Checkoutból nyugta vagy számla, visszatérítéskor sztornó, egy Next.js útvonalban.
-  </Card>
-  <Card title="PDF mentése tárhelyre" href="/docs/receptek/pdf-mentese">
-    A kiállított számla PDF-je dátum szerinti kulccsal S3-ra, Cloudflare R2-re vagy a lemezre.
+    Fizetésből nyugta vagy számla, visszatérítéskor sztornó vagy módosító számla.
   </Card>
 </Cards>
+
+SimplePay, Barion, Revolut és PayPal webhookja ugyanígy működik, csak a kezelő más: [Fizetésből bizonylat](/docs/fizetesek).
+
+## Fájlok
+
+<Cards>
+  <Card title="PDF mentése tárhelyre" href="/docs/receptek/pdf-mentese">
+    A számla PDF-je S3-ra, R2-re vagy a lemezre, webhookban a válasz után.
+  </Card>
+  <Card title="Havi export" href="/docs/receptek/havi-export">
+    Az előző hónap számlái CSV-ben a könyvelőnek, cron feladatból.
+  </Card>
+</Cards>
+
+## Futtatás
+
+<Cards>
+  <Card title="Express, NestJS, Fastify" href="/docs/receptek/express-nestjs-fastify">
+    A webhookok bekötése Node.js keretrendszerek alá, a nyers törzzsel.
+  </Card>
+  <Card title="Cloudflare Workers" href="/docs/receptek/cloudflare-workers">
+    Worker, Durable Object zárral és R2-be mentett PDF-fel.
+  </Card>
+  <Card title="Számlázás AI asszisztensből" href="/docs/receptek/mcp-asszisztens">
+    MCP szerver Claude Desktopban és Claude Code-ban, írás csak megerősítéssel.
+  </Card>
+</Cards>
+
+## Tesztelés és megfigyelés
+
+<Cards>
+  <Card title="Egységtesztek" href="/docs/receptek/egysegtesztek">
+    Vitest tesztek mock klienssel: dupla webhook, elveszett válasz, 503.
+  </Card>
+  <Card title="Naplózás és metrikák" href="/docs/receptek/naplozas-es-metrikak">
+    Strukturált napló, OpenTelemetry és Prometheus, kitakart adatokkal.
+  </Card>
+</Cards>
+
+A bizonylatnapló (saját nyilvántartás minden kiállított számláról) a [Bizonylatnapló](/docs/kiegeszitok/bizonylatnaplo), az összes oldal bejárása a [Lapozás](/docs/alapok/lapozas) oldalon van.

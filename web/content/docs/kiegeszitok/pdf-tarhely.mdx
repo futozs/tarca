@@ -1,0 +1,113 @@
+---
+title: PDF tárhely
+description: A tarcajs/storage a bizonylat PDF-jét dátum szerinti kulccsal menti S3-ba, Cloudflare R2-be, Vercel Blobba, Supabase-be, UploadThingre vagy memóriába, a tarcajs/storage/fs pedig lemezre. Kulcsok, adapterek és hibák.
+---
+
+A Billingo a PDF-et bármikor újra kiadja, de egy saját példány gyorsabb, és a Billingótól függetlenül is megvan. A `storeDocumentPdf()` letölti a bizonylat PDF-jét, kiszámolja a kulcsát, és elmenti a megadott tárhelyre. Futtatókörnyezet-független: az S3 aláírás (SigV4) `fetch`-csel és WebCrypto-val megy, SDK nélkül.
+
+<Example slug="pdf-tarhely" />
+
+A kulcs `szamlak/2026/11/2026-1.pdf`: a mappa a bizonylat típusából, az év és a hónap a kelte napjából, a fájlnév a sorszámból jön.
+
+```ts
+storeDocumentPdf(tarca, storage, documentOrId, options?: { key?, maxWaitMs?, signal? }): Promise<StoredFile>
+```
+
+- A `documentOrId` a bizonylat, vagy az azonosítója. Azonosítónál, saját `key` nélkül, előbb `documents.get(id)` jön, mert a kulcshoz a típus, a kelte és a sorszám kell.
+- A letöltés a `documents.pdf(id, { maxWaitMs, signal })`, amely kivárja a Billingo 202-es „még készül” válaszát (alapból legfeljebb 30 000 ms), utána `not_ready` hibát ad, lásd [A fájl még készül](/docs/hibak/not-ready).
+- A `tarca` szerkezeti típus (`DocumentPdfSource`): csak a `documents.get` és a `documents.pdf` kell belőle.
+- Az eredmény `{ key, url?, size, contentType }`.
+
+## Kulcsok
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { documentPdfKey } from 'tarcajs/storage'
+
+const tarca = createTarca()
+const szamla = await tarca.documents.get(1)
+
+console.log(documentPdfKey(szamla, { prefix: 'bolt' }))
+```
+
+A `documentPdfKey(document, { prefix? })` alakja `<prefix>/<mappa>/ÉÉÉÉ/HH/<sorszám>.pdf`. A sorszámból a tárca kiveszi az ékezeteket, és minden más karaktert, mint `A-Za-z0-9._-`, kötőjelre cserél, az egymás melletti kötőjeleket egyre vonja össze (`PREFIX / 2026-000001` → `PREFIX-2026-000001`).
+
+| Bizonylat típusa | Mappa |
+| --- | --- |
+| `invoice` | `szamlak` |
+| `proforma` | `szamlak/dijbekero` |
+| `advance` | `szamlak/elolegszamla` |
+| `modification` | `szamlak/modosito` |
+| `cancellation` | `szamlak/sztorno` |
+| `receipt` | `nyugtak` |
+| `receipt_cancellation` | `nyugtak/sztorno` |
+| `offer`, `order_form`, `waybill`, `dossier` | `arajanlatok`, `megrendelok`, `szallitolevelek`, `dossziek` |
+| `cert_of_completion`, `d_cert_of_completion` | `teljesitesigazolasok` |
+
+Piszkozatra (`draft` és társai, vagy sorszám nélküli bizonylat), ismeretlen típusra és hiányzó keltére `StorageError` jön (`operation: 'key'`), lehetetlen dátumra `RangeError`.
+
+Minden kulcs átmegy az `assertStorageKey()` ellenőrzésen: elutasítja az üres, 1024 karakternél hosszabb, `/`-rel kezdődő, `\`-t vagy vezérlőkaraktert tartalmazó kulcsot, és az üres, `.` vagy `..` szakaszt, százalékkódolva is (`%2e%2e`). Ezeket egyes SDK-k útvonallépésnek vennék.
+
+## Adapterek
+
+| Adapter | Mihez | Aláírt link |
+| --- | --- | --- |
+| `s3FetchStorage({ bucket, region, accessKeyId, secretAccessKey, endpoint?, … })` | AWS S3, Cloudflare R2, MinIO, Backblaze, saját SDK nélkül | igen, legfeljebb 7 nap |
+| `s3Storage({ client, bucket, commands, getSignedUrl? })` | a saját AWS SDK v3 kliensed | ha megadod a `getSignedUrl`-t |
+| `r2BindingStorage(bucket)` | Cloudflare Workers R2 kötés | nincs |
+| `vercelBlobStorage({ put, del?, head?, access })` | `@vercel/blob` függvényei | privát tárolónál nincs `url` |
+| `supabaseStorage({ client, bucket, public? })` | Supabase Storage | igen |
+| `uploadthingStorage({ utapi })` | UploadThing, a kulcs a `customId` (legfeljebb 128 karakter) | igen, legfeljebb 7 nap |
+| `memoryStorage()` | tesztek, egy folyamat | `memory://` link |
+| `fsStorage({ directory })` a `tarcajs/storage/fs`-ből | lemez, csak Node.js | ha megadod a `publicBaseUrl`-t |
+
+Mindegyik ismeri a `prefix` opciót. Az adapter felülete (`StorageAdapter`): `put(key, bytes, { contentType })`, és ha tudja, `get(key)`, `delete(key)`, `getUrl(key, { expiresInSeconds? })`.
+
+### Cloudflare R2 kulccsal
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { s3FetchStorage, storeDocumentPdf } from 'tarcajs/storage'
+
+const tarca = createTarca()
+const storage = s3FetchStorage({
+  bucket: 'szamlak',
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
+})
+
+const fajl = await storeDocumentPdf(tarca, storage, 1)
+const link = await storage.getUrl(fajl.key, { expiresInSeconds: 3_600 })
+
+console.log(fajl.key, link)
+```
+
+Saját `endpoint` mellett az adapter útvonal stílusú címet használ (`https://<endpoint>/<bucket>/<kulcs>`), AWS-en virtual-hosted címet. A hiányzó `bucket`, `region` vagy kulcs `configuration` hiba létrehozáskor.
+
+### Lemezre
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { storeDocumentPdf } from 'tarcajs/storage'
+import { fsStorage } from 'tarcajs/storage/fs'
+
+const tarca = createTarca()
+const storage = fsStorage({ directory: './szamla-pdf' })
+
+const fajl = await storeDocumentPdf(tarca, storage, 1)
+
+console.log(storage.pathFor(fajl.key))
+```
+
+Az `fsStorage` ideiglenes fájlon keresztül, atomikusan ír, és nem ír, olvas vagy töröl a `directory` mappán kívül, szimbolikus linken át sem. Csak Node.js-en fut, ezért külön belépési pont.
+
+## Hibák
+
+- **`StorageError`** `{ operation: 'put' | 'get' | 'delete' | 'getUrl' | 'key', key, status?, cause }`. Az üzenetekben nincs hozzáférési kulcs. Az `isStorageError(error)` ismeri fel.
+- A `storePdf(storage, key, bytes)` csak `%PDF`-fel kezdődő tartalmat ment, mást `StorageError`-ral elutasít, és nem ment semmit. Az `isPdf(bytes)` ezt nézi.
+- A Billingo hibái (`not_ready`, `forbidden` …) `BillingoError`-ként jönnek, mentés előtt.
+- Saját adapterhez a `guardStorageCall(service, operation, key, call)` adja ugyanezt a hibakezelést. A `signAwsRequest()` és a `presignAwsUrl()` más SigV4 hívásokhoz is használható, az AWS közzétett tesztvektoraival ellenőrizve.
+
+Egy teljes folyamat a kiállítástól a mentésig: [PDF mentése recept](/docs/receptek/pdf-mentese).

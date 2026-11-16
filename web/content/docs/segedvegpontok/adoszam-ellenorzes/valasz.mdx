@@ -1,0 +1,142 @@
+---
+title: Válasz
+description: A utils.checkTaxNumber() TaxNumberCheckResponse eredménye, a result értékei, az adózó címei, és a nav_unavailable hiba teszt profilon.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Util/CheckTaxNumber
+---
+
+A sikeres válasz `Billingo.TaxNumberCheckResponse`. Ezt a választ élőben nem tudtuk mérni, mert a fejlesztői teszt profilnak nincs NAV-kapcsolata: a mezők a 3.0.15-ös specből származnak.
+
+```ts
+const valasz = await tarca.utils.checkTaxNumber('12345678-2-42')
+```
+
+## TaxNumberCheckResponse
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `taxNumber` | `string` | A lekérdezett adószám. |
+| `result` | `Billingo.CheckTaxNumberMessage` | Az eredmény, lásd lent. |
+| `taxpayerName` | `string \| null \| undefined` | Az adózó neve a NAV szerint. |
+| `taxpayerShortName` | `string \| null \| undefined` | Rövid név, ha van. |
+| `addresses` | `readonly Billingo.TaxpayerAddress[] \| null \| undefined` | Az adózó címei. |
+
+### A result értékei
+
+| `result` | Jelentés |
+| --- | --- |
+| `'validation_ok'` | Az adószám létezik, a név és a címek ki vannak töltve. |
+| `'non_exist_tax_number'` | Nincs ilyen adószám. |
+| `'invalid_tax_number'` | Érvénytelen adószám. |
+| `'no_online_szamla_settings'` | A profilnak nincs NAV Online Számla beállítása. |
+| `'external_nav_service_unreachable'` | A NAV nem volt elérhető. |
+| `'postal_code_of_this_tax_number_is_invalid.'` | A NAV-nál tárolt irányítószám hibás (a pont az érték része). |
+
+A `result` nem hiba: a spec szerint ezekre a Billingo 200-zal válaszol, és a tárca nem dob. Hogy mit kezdesz velük, a te kódod dönti el.
+
+### TaxpayerAddress
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `type` | `'HQ' \| 'SITE' \| 'BRANCH'` | Székhely, telephely vagy fióktelep. |
+| `countryCode`, `postalCode`, `city` | `string` | Ország, irányítószám, település. |
+| `streetName`, `publicPlaceCategory` | `string` | Közterület neve és jellege (például `utca`). |
+| `number`, `building`, `staircase`, `floor`, `door`, `lotNumber`, `region` | `string \| null \| undefined` | Házszám, épület, lépcsőház, emelet, ajtó, helyrajzi szám, megye. |
+
+## A vevő címe a válaszból
+
+```ts twoslash
+import { createTarca, type PartnerInput } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function vevoAdoszambol(adoszam: string): Promise<PartnerInput | undefined> {
+  const valasz = await tarca.utils.checkTaxNumber(adoszam)
+  const szekhely = valasz.addresses?.find((cim) => cim.type === 'HQ') ?? valasz.addresses?.[0]
+  if (valasz.result !== 'validation_ok' || !valasz.taxpayerName || !szekhely) return undefined
+  return {
+    name: valasz.taxpayerName,
+    address: {
+      postCode: szekhely.postalCode,
+      city: szekhely.city,
+      address: [szekhely.streetName, szekhely.publicPlaceCategory, szekhely.number]
+        .filter(Boolean)
+        .join(' '),
+    },
+    taxType: 'HAS_TAX_NUMBER',
+    taxcode: valasz.taxNumber,
+  }
+}
+```
+
+A visszaadott `PartnerInput` mehet a [`documents.create()`](/docs/bizonylatok) `partner` mezőjébe. A partner megadásának szabályai a [Partner megadása](/docs/bizonylatok/kiallitas/szabalyok/partner-megadasa) oldalon vannak.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Az adószám nem `NNNNNNNN-N-NN` alakú. Kérés nem ment ki. |
+| 401 | `nav_unavailable` | A profilnak nincs élő NAV-kapcsolata, például fejlesztői teszt profilon. A kulcs érvényes. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 402 | `subscription` | Az előfizetés nem engedi a műveletet. |
+| 422 | `validation` | A Billingo elutasította az adószám formátumát. A helyi ellenőrzés mellett nem fordul elő. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból legfeljebb három próbálkozásig. |
+| – | `network`, `timeout` | Nem jött válasz. A tárca ezt is újrapróbálja. |
+
+A két 401-et a tárca a Billingo üzenete alapján választja szét: ha az üzenet NAV-kapcsolatról szól, a kategória `nav_unavailable`, és a `hint` elmagyarázza, hogy nem kulcshiba. A `nav_unavailable` nem `retryable`: amíg a profilon nincs NAV-összekötés, ugyanez a válasz jön. A kategória részletei a [nav_unavailable](/docs/hibak/nav-unavailable) oldalon vannak.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function adoszamEllenorzes(adoszam: string) {
+  try {
+    return await tarca.utils.checkTaxNumber(adoszam)
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'nav_unavailable') return undefined
+    throw error
+  }
+}
+
+const valasz = await adoszamEllenorzes('12345678-2-42')
+
+console.log(valasz?.result ?? 'Nincs NAV-kapcsolat, az adószámot kézzel ellenőrizd.')
+```
+
+## Tesztekben
+
+A hamis Billingo alapból teszt profilként viselkedik, és `nav_unavailable` hibát ad. A `hasNavConnection: true` és a `taxpayers` opcióval a sikeres választ is kipróbálhatod:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
+
+const billingo = createFakeBillingoFetch({
+  hasNavConnection: true,
+  taxpayers: {
+    '12345678-2-42': {
+      name: 'VEVŐ KORLÁTOLT FELELŐSSÉGŰ TÁRSASÁG',
+      shortName: 'VEVŐ KFT.',
+      addresses: [
+        {
+          type: 'HQ',
+          countryCode: 'HU',
+          postalCode: '1111',
+          city: 'BUDAPEST',
+          streetName: 'FŐ',
+          publicPlaceCategory: 'UTCA',
+          number: '1.',
+        },
+      ],
+    },
+  },
+})
+const tarca = createTarca({ apiKey: 'teszt-kulcs', fetch: billingo.fetch })
+
+const ismert = await tarca.utils.checkTaxNumber('12345678-2-42')
+const ismeretlen = await tarca.utils.checkTaxNumber('87654321-1-13')
+
+console.log(ismert.result, ismert.taxpayerShortName, ismeretlen.result)
+```
+
+Az ismert adószámra `validation_ok` jön a megadott névvel, minden másra `non_exist_tax_number`. A `taxpayers` kulcsa a teljes adószám vagy a 8 jegyű törzsszám lehet. A hamis Billingo többi beállítása a [Hamis Billingo](/docs/tesztek/hamis-billingo) oldalon van.

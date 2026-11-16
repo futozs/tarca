@@ -1,0 +1,90 @@
+---
+title: Kérés
+description: A documentBlocks.update() bemenete. Nem dokumentált, élőben ellenőrzött PUT teljes cserével; a lekért tömb változtatás nélkül visszaküldhető, a tárca kihagyja a null mezőket.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/ListDocumentBlock
+---
+
+<Operation id="UpdateDocumentBlock" methods={['documentBlocks.update']} />
+
+<Callout type="info" title="Nem dokumentált útvonal">
+  A `PUT /document-blocks/{id}` egyik Billingo specben sincs benne. A tárca élőben, a fejlesztői
+  teszt profilon mérte ki a viselkedését (2026. november 15.): a kötelező mezőket, a teljes cserét
+  és a `null` e-mail mezők elutasítását.
+</Callout>
+
+```ts
+tarca.documentBlocks.update(id: number, replacement: DocumentBlockReplacement, options?: { signal?: AbortSignal }): Promise<Billingo.DocumentBlockSchema>
+```
+
+A `DocumentBlockReplacement` a teljes tömb: a `name`, a `prefix` és a `type` kötelező, minden más opcionális. A partnerrel és a termékkel szemben a `get()` eredménye **változtatás nélkül** visszaküldhető, mert a tárca három dolgot kihagy a törzsből:
+
+- az `id`-t,
+- a `picPath`-ot, amely csak olvasható,
+- minden `null` értékű mezőt. Élőben a `senderEmail: null` és a `bccEmail: null` 422-t kapott („The Sender email must be a valid email address.”).
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const tomb = await tarca.documentBlocks.get(1)
+const modositott = await tarca.documentBlocks.update(1, {
+  ...tomb,
+  customField1: 'Rendelésszám',
+  senderName: 'Minta Bolt',
+})
+
+console.log(modositott.customField1, modositott.senderName)
+```
+
+<Callout type="warning" title="Teljes csere">
+  Ami kimarad, az visszaáll az alapértékére: élőben a kihagyott `customField1` és `customField2`
+  `''` lett, a kihagyott `senderName` szintén. Egy mező módosításához mindig a lekért tömbből
+  indulj ki.
+</Callout>
+
+## Mezők
+
+A létrehozás mezői ([Létrehozás](/docs/szamlatombok/letrehozas/keres)), és ezek, amelyek csak itt írhatók:
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `customField1` | `custom_field1` | `''` | Első egyedi mező. |
+| `customField2` | `custom_field2` | `''` | Második egyedi mező. |
+| `templateId` | `template_id` | `0` | Számlakép azonosítója. |
+| `normalNotificationId` | `normal_notification_id` | `0` | Számla értesítő sablonja. |
+| `proformaNotificationId` | `proforma_notification_id` | `0` | Díjbekérő értesítő sablonja. |
+| `generated` | `generated` | `false` | A spec szerint csak olvasható. |
+| `id`, `picPath` | – | – | Elfogadja, de nem küldi el. |
+
+## Helyi ellenőrzés
+
+A név szabálya ugyanaz, mint a létrehozásnál: csak betű, szám és szóköz, különben `validation` hiba kérés nélkül. Az előtag nélküli (`prefix` hiányzó) törzsre élőben 422 jött („The Invoice pad prefix field must be present.”), az üres szöveg viszont megfelel.
+
+## Ami a dróton megy
+
+A fenti hívás törzse a hamis Billingo felvétele szerint. Az `id`, a `pic_path`, a `sender_email`, a `bcc_email` és a `bank_account_id` hiányzik, mert a lekért tömbben `null` vagy csak olvasható:
+
+```json
+{
+  "name": "Számlák",
+  "prefix": "",
+  "type": "invoice",
+  "custom_field1": "Rendelésszám",
+  "custom_field2": "",
+  "template_id": 0,
+  "normal_notification_id": 0,
+  "proforma_notification_id": 0,
+  "generated": false,
+  "invoice_number_format": "default",
+  "sender_name": "Minta Bolt",
+  "create_invoice_from_paid_proforma": false,
+  "fulfillment_date_from_proforma_payment_date": false,
+  "attach_xml_to_invoice_pdf": false,
+  "advance_paid_instant": false,
+  "financial_fulfillment_highlight": "basic",
+  "entitlements_in_document_comment": false
+}
+```
+
+A tárca a PUT-ot nem ismétli magától.

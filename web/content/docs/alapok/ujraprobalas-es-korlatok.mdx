@@ -1,0 +1,63 @@
+---
+title: Újrapróbálás és korlátok
+description: Mikor ismétel a tárca és mikor nem. Csak a lekérdezések ismétlődnek, exponenciális várakozással és a Retry-After betartásával. A Billingo percenkénti kéréskorlátja, a havi írási keret és a PDF 202-es válasza.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+## Mit ismétel a tárca?
+
+| | Lekérdezés (GET) | Írás (POST, PUT, DELETE) |
+| --- | --- | --- |
+| 429 (`rate_limit`) | ismétli | nem |
+| 5xx (`server`) | ismétli | nem |
+| hálózati hiba (`network`) | ismétli | nem |
+| időtúllépés (`timeout`) | ismétli | nem |
+| 4xx, `validation`, `auth`, `forbidden` | nem | nem |
+| 202, PDF még készül (`not_ready`) | a `documents.pdf()` várja ki | – |
+
+Egy lekérdezés összesen legfeljebb `maxAttempts` kérést küld (alapból 3: az első és két ismétlés, legfeljebb 5). Írásnál a `maxAttempts` nem számít: mindig egy kérés megy ki.
+
+Miért nem ismétel írást? Ha egy `POST /documents` kérés időtúllépéssel ér véget, a Billingo lehet, hogy már kiállította a számlát. Egy második kérés második számlát jelentene, amelyet éles profilon a NAV megkap, és csak sztornózni lehet. A biztonságos ismétlés a `createOnce()`: [Pontosan egyszer](/docs/alapok/pontosan-egyszer).
+
+## Várakozás az ismétlések között
+
+- Az első ismétlés előtt `retryDelayMs` (alapból 1 000 ms), utána mindig a duplája: 1 s, 2 s, 4 s.
+- Minden várakozás ±20%-ot ingadozik, hogy több folyamat ne egyszerre próbálkozzon újra.
+- Ha a Billingo `Retry-After` fejlécet küld, és az hosszabb, a tárca azt várja ki.
+- Ha a `Retry-After` egy percnél hosszabb várakozást kér, a tárca nem vár: azonnal `rate_limit` hibát ad, `retryAfterMs` mezővel.
+- A `signal` a várakozást is megszakítja.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca({ maxAttempts: 5, retryDelayMs: 500 })
+
+const oldal = await tarca.documents.list({ paymentStatus: 'outstanding' })
+
+console.log(oldal.total)
+```
+
+Az ismétléseket az `onError` hook `willRetry` mezője mutatja: [Hookok](/docs/alapok/hookok).
+
+## A Billingo korlátai
+
+| Korlát | Érték | Mit tesz a tárca? |
+| --- | --- | --- |
+| Kérés percenként, kulccsal | 300 | 429 után lekérdezést ismétel, írást nem. |
+| Kérés percenként, kulcs nélkül | 60 | – |
+| Havi API keret | díjcsomagtól függ, csak az írások számítanak | Hogy túllépéskor milyen választ ad a Billingo, az nincs dokumentálva, és nem mértük. |
+| Elemek oldalanként | 100 | Nagyobb `perPage` `RangeError`. Lásd [Lapozás](/docs/alapok/lapozas). |
+
+A percenkénti korlát kulcsonként minden kérést számol, a GET-eket is. Egy `createOnce()` partneradatokkal 2–6 kérés: `vendorId` keresés, számlatömb (kliensenként egyszer), partnerkeresés 1–3 oldalon, partner létrehozása, számla. Tömeges kiállításnál ezért a `runBatch()` alapból percenként 30 tételt indít: [Tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas).
+
+## Rate limit fejlécek
+
+A spec minden válaszra `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` és `Retry-After` fejlécet ír. Élőben JSON válaszon egyik sem jött. Bináris válaszon (PDF, POS PDF, export letöltése) kettő: `x-ratelimit-limit: 300` és `x-ratelimit-remaining`. Reset időpont sosem. Ezért a tárca `rateLimit` adata csak a letöltéseknél van kitöltve, és a 429 után a tárca a saját várakozási idejét használja, ha `Retry-After` nincs.
+
+## A PDF 202-es válasza
+
+Kiállítás után a PDF néhány másodpercig készülhet, ilyenkor a Billingo 202-t ad. A szállítási réteg ezt nem ismétli; a `documents.pdf()` várja ki 1, 2, 4, … másodperces szünetekkel, alapból legfeljebb 30 másodpercig (`maxWaitMs`). Élőben 202-t nem kaptunk: a PDF 1,6 másodperccel a kiállítás után már letölthető volt. Lásd [PDF és link](/docs/bizonylatok/pdf).
+
+## Időkorlát
+
+Egy kérés alapból 30 másodpercig várhat válaszra (`timeoutMs`). Az ismétlések saját időkorlátot kapnak, így egy lekérdezés legrosszabb esetben `maxAttempts × timeoutMs` plusz a várakozások ideje.

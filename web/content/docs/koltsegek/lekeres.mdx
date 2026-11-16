@@ -1,0 +1,63 @@
+---
+title: Lekérés
+description: Egy költség lekérése azonosító alapján a spendings.get() hívással. A válaszban ott a createdByNav mező, amely a létrehozás válaszából hiányzik.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingShow
+---
+
+A `spendings.get()` egy költséget ad vissza az azonosítója alapján. A létrehozás válaszához képest egy mezővel több van benne: a `createdByNav`.
+
+<Operation id="SpendingShow" methods={['spendings.get']} />
+
+## Kérés
+
+```ts
+tarca.spendings.get(id: number, options?: RequestOptions): Promise<Billingo.SpendingShow>
+```
+
+Az `id` a költség azonosítója, a `create()` vagy a `list()` válaszából. Törzs és query nincs, a kérés `GET /spendings/{id}`. Olvasás, ezért a tárca hálózati hibánál, 429-nél és 5xx-nél magától újrapróbálja.
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+const koltseg = await nullIfNotFound(tarca.spendings.get(1))
+
+if (koltseg === null) console.log('Nincs ilyen költség.')
+else console.log(koltseg.invoiceNumber, koltseg.paidAt, koltseg.createdByNav)
+```
+
+## Válasz
+
+A `Billingo.SpendingShow` a [létrehozás válaszának](/docs/koltsegek/letrehozas/valasz#billingospending) mezőit tartalmazza, és még egyet:
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `createdByNav` | `boolean` | `true`, ha a költséget a Billingo a NAV-tól vette át bejövő számlaként, `false`, ha kézzel vagy API-n rögzítették. |
+
+<Callout type="info" title="created_by_nav, nem is_created_by_nav">
+  A 3.0.15-ös spec a `GET /spendings/{id}` válaszában `is_created_by_nav` mezőt ír. A Billingo
+  élőben `created_by_nav` néven küldi (2026. november 15., és a hivatalos Billingo MCP felvétele is
+  így mutatja). A tárca típusa ezért `createdByNav`. A létrehozás és a módosítás válaszában ez a
+  mező nincs benne.
+</Callout>
+
+A `partner` itt is `null` lehet, a `paidAt` pedig `null`, amíg a költség nincs kifizetve.
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 404 | `not_found` | Nincs ilyen azonosítójú költség, vagy már törölted. A hamis Billingo így válaszol (`Spending is not found.`), élőben nem mértük. |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 402 | `subscription` | Az előfizetés nem engedi a műveletet. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, ezt csak az utolsó próbálkozás után kapod meg. |
+| – | `network`, `timeout` | Nem jött válasz, a tárca ezt is újrapróbálja. |
+
+A `nullIfNotFound()` a `not_found` hibát `null`-ra cseréli, minden mást továbbdob. Ismeretlen bizonylatazonosítóra a Billingo élőben 403-at ad, nem 404-et. A költségnél ezt nem mértük: ha élőben itt is 403 jönne, azt `forbidden` hibaként kapod meg, nem `null`-ként.
+
+## Minta
+
+A példa rögzít egy költséget, majd lekéri. A kiemelt kérés a lekérés:
+
+<Example slug="koltseg-rogzitese" operation="SpendingShow" />
+
+A válasz utolsó mezője a `created_by_nav: false`, amely a `POST` válaszában nem szerepel.

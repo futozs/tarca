@@ -1,0 +1,34 @@
+---
+title: Sztornó
+description: Kiállított számla vagy nyugta érvénytelenítése sztornó bizonylattal a documents.cancel() metódussal. Ok, értesítendő címek, a POST metódus és a módosító számla utáni tiltás.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CancelDocument
+---
+
+Kiállított számlát nem lehet törölni, csak sztornózni: a Billingo egy sztornó bizonylatot állít ki, amely az eredeti összegeit ellentétes előjellel tartalmazza, és éles profilon ezt is beküldi a NAV-nak.
+
+<Operation id="CancelDocument" methods={['documents.cancel']} />
+
+```ts
+const sztorno = await tarca.documents.cancel(szamla.id ?? 0, { reason: 'A vevő elállt a vásárlástól.' })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/sztorno/keres">
+    Az ok, az értesítendő címek, és mi megy a dróton.
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/sztorno/valasz">
+    A sztornó bizonylat, az eredeti új állapota, és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/sztorno/minta">
+    Számla, sztornó, és az eredeti számla sztornózott állapota.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Módosító számla után nincs sztornó">
+  Ha egy számlához már készült módosító számla, a Billingo sem az eredetit, sem a módosítót nem
+  engedi sztornózni: 400 `Cannot cancel the document` hibát ad. Ilyenkor egy újabb [módosító
+  számlával](/docs/bizonylatok/modosito) helyesbíts. Díjbekérőt és piszkozatot sem lehet
+  sztornózni: a díjbekérőt archiváld, a piszkozatot töröld.
+</Callout>
+
+Nyugta sztornója ugyanez a metódus, a különbségeket a [Nyugták: Sztornó](/docs/nyugtak/sztorno) oldal írja le.

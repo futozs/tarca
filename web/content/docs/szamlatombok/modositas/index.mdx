@@ -1,0 +1,23 @@
+---
+title: Módosítás
+description: Számlatömb módosítása a documentBlocks.update() metódussal. Nem dokumentált, élőben ellenőrzött PUT teljes cserével, a kiürülő mezők és a null e-mailre adott 422.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/ListDocumentBlock
+---
+
+A `PUT /document-blocks/{id}` egyik Billingo specben sincs benne, a viselkedését élőben mértük ki. A `documentBlocks.update()` a teljes tömböt cseréli: a `name`, a `prefix` és a `type` kötelező. A lekért tömböt változtatás nélkül visszaküldheted, mert a tárca kihagyja a törzsből a csak olvasható és a `null` értékű mezőket.
+
+```ts
+const tomb = await tarca.documentBlocks.update(id, { ...regi, name: 'Webshop 2027' })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/szamlatombok/modositas/keres">
+    A teljes tömb, és mit hagy ki a tárca a törzsből.
+  </Card>
+  <Card title="Válasz" href="/docs/szamlatombok/modositas/valasz">
+    A tömb a csere után, a kiürülő mezők és a `null` e-mailre adott 422.
+  </Card>
+  <Card title="Minta" href="/docs/szamlatombok/modositas/minta">
+    A Számlák tömb módosítása, majd egy csak kötelező mezős PUT.
+  </Card>
+</Cards>

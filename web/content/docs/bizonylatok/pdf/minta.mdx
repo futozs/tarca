@@ -1,0 +1,15 @@
+---
+title: Minta
+description: Egy számla A4-es PDF-je, 80 mm-es blokknyomtatós változata és nyilvános linkje, a válaszok tartalomtípusával és fájlnevével.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/DownloadDocument
+---
+
+Az első példa a számla PDF-jét és a 80 mm-es blokknyomtatós változatát tölti le. A **Billingo válasz** fülön a két letöltés fejlécét érdemes megnézni: a PDF `application/pdf`, a blokk `application/octet-stream` típussal jön, mindkettőn ott az `x-ratelimit-limit` és az `x-ratelimit-remaining`.
+
+<Example slug="pdf" />
+
+## Nyilvános link
+
+A link bejelentkezés nélkül nyitja meg a bizonylatot, ezért úgy kezeld, mint magát a PDF-et: csak a vevőnek küldd el.
+
+<Example slug="nyilvanos-link" />

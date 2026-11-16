@@ -1,0 +1,70 @@
+---
+title: Hibák szimulálása
+description: A hamis Billingo fail() függvényével hálózati hibát, időtúllépést, 202-t vagy tetszőleges HTTP státuszt kérhetsz a következő kérésekre, az afterSuccess pedig elveszett választ szimulál egy sikeres írás után.
+---
+
+A hamis Billingo a drót szintjén szimulál hibát: a valódi kliens kapja, ugyanúgy, mint élesben. Így látszik, mit ismétel a tárca magától (csak GET-et), mit nem (írást soha), és hogyan talál vissza a `createOnce` egy elveszett válasz után.
+
+<Example slug="hiba-szimulalas" />
+
+A szervezet lekérése két hálózati hiba után a harmadik kérésre sikerül. Az 500-as írási hibánál egy kiállító kérés ment ki, ismétlés nem. Az időtúllépésnél a számla elkészült, a válasz elveszett, a `createOnce` a `vendorId` alapján megtalálta (`created: true`).
+
+## fail()
+
+```ts
+billingo.fail(fault: FakeBillingoFault, options?: { operation?, times?, afterSuccess? }): void
+```
+
+| Hiba | Mit kap a kliens? | Kategória |
+| --- | --- | --- |
+| `'network'` | a `fetch` `TypeError`-t dob | `network` |
+| `'timeout'` | a `fetch` `TimeoutError` nevű `DOMException`-t dob | `timeout` |
+| `'notReady'` | 202 `Document PDF has not generated yet.` | `not_ready` |
+| `{ status: 400–599, message? }` | ez a státusz Billingo alakú hibatörzzsel | a státusz szerint: 401 `auth`, 402 `subscription`, 403 `forbidden`, 404 `not_found`, 422 `validation`, 429 `rate_limit`, 5xx `server` |
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `operation` | bármelyik | Csak ennek a műveletnek a kérésére hat (`'CreateDocument'`, `'GetDocument'` …). Ismeretlen név `TypeError`. |
+| `times` | `1` | Ennyi egymás utáni kérésre. |
+| `afterSuccess` | `false` | A művelet előbb lefut (az állapot megváltozik), és csak utána jön a hiba. A `notReady` mellett nem kérhető (`TypeError`), mert a 202 a válasz helyett jön. |
+
+A hibák sorban (FIFO) várnak, és a kulcs ellenőrzése után hatnak: hiányzó kulcsra így is 401 jön. A `faults` opcióval a létrehozáskor is beállíthatod őket (`[{ fault: 'network', operation: 'GetDocument' }]`), a `reset()` ezeket újra beütemezi.
+
+## Mit ismétel a tárca?
+
+| Helyzet | Viselkedés |
+| --- | --- |
+| GET, `network`, `timeout`, 429 vagy 5xx | Újrapróbálja, összesen legfeljebb `maxAttempts` (alapból 3) kérés. |
+| GET, 202 | Nem ismétli. A `documents.pdf()` maga várja ki, legfeljebb `maxWaitMs` ideig. |
+| POST, PUT, DELETE, bármilyen hiba | Soha nem ismétli. |
+| `createOnce`, bizonytalan hiba (`network`, `timeout`, `server`, `unexpected_response`) | Legfeljebb kétszer visszakeresi a `vendorId`-t; ha megvan, `created: true`, különben az eredeti hiba megy tovább. |
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { createFakeBillingoFetch } from 'tarcajs/testing'
+
+const billingo = createFakeBillingoFetch()
+const tarca = createTarca({ apiKey: 'teszt-kulcs', fetch: billingo.fetch, retryDelayMs: 0 })
+
+const { document } = await tarca.documents.createOnce({
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 1, netUnitPrice: 15_000, vat: 27 }],
+})
+
+billingo.fail('notReady', { operation: 'DownloadDocument', times: 2 })
+const pdf = await tarca.documents.pdf(document.id ?? 0, { maxWaitMs: 10_000 })
+
+console.log(pdf.filename, billingo.count('DownloadDocument'))
+```
+
+A PDF két 202-es válasz után a harmadik kérésre jön meg (`2026-1.pdf`). A `documents.pdf()` közben 1, majd 2 másodpercet vár, ezt a `retryDelayMs` nem befolyásolja.
+
+## A kliens szintjén
+
+A `createMockTarca()` `failNext()` függvénye a metódushívást dobja el, mielőtt kérés menne ki, vagy `afterSuccess` esetén a sikeres hívás után. A tárca ismétlése és helyreállítása ezt nem látja, ezért arra jó, amikor a saját kódod hibakezelését teszteled, nem a tárcáét. Lásd [Mock kliens](/docs/tesztek/mock-tarca).
+
+Az egyes hibakategóriák jelentése és kezelése: [Hibakategóriák](/docs/hibak).

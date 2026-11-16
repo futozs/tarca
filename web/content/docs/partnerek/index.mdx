@@ -1,41 +1,54 @@
 ---
 title: Partnerek
-description: Partner keresése vagy létrehozása számlázáshoz a findOrCreate hívással, valamint a partnerek listája, módosítása és törlése a tárcában.
+description: Vevők és szállítók a Billingóban a tárca partners API-jával. Keresés vagy létrehozás számlázáshoz, lista, lekérés, teljes cserés módosítás, törlés és a guess végpont.
 official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/ListPartner
 ---
 
-Számlázáshoz nem kell előre partnert létrehoznod: ha a `documents.create()` partner adatait kapja, a tárca a `partners.findOrCreate()` hívással keresi meg vagy hozza létre.
+A Billingo minden bizonylatot egy partnerhez köt. A tárcában a `tarca.partners` kezeli őket: a hat Billingo művelet mellé egy saját hívást is ad, a `findOrCreate()`-et, amely számlázás előtt megkeresi a vevőt, vagy létrehozza, ha még nincs meg ugyanazokkal az adatokkal.
 
-<Example slug="partner" />
-
-- Név szerint keres, és csak akkor használja a meglévő partnert, ha minden megadott mezője pontosan egyezik. Különben újat hoz létre, így a számlára soha nem kerül régi cím vagy adószám.
-- A Billingo keresője késik: a pár másodperce létrehozott vagy átnevezett partnert akár egy percig sem találja. Ilyenkor legfeljebb egy fölösleges partner jön létre, rossz számla nem.
-- Az ország alapból `HU`. Az adószám mezőjének neve a Billingo írásmódja szerint `taxcode`.
-
-## Lista, módosítás, törlés
-
-```ts twoslash
-import { createTarca } from 'tarcajs'
-
-const tarca = createTarca()
-
-const talalatok = await tarca.partners.list({ query: 'vevő' })
-
-const adatok = {
-  name: 'Vevő Kft.',
-  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
-  taxType: 'HAS_TAX_NUMBER',
-  taxcode: '12345678-2-41',
-} as const
-
-const partner = await tarca.partners.create(adatok)
-await tarca.partners.update(partner.id ?? 0, { ...adatok, phone: '+36 1 234 5678' })
-await tarca.partners.delete(partner.id ?? 0)
+```ts
+const { partner, created } = await tarca.partners.findOrCreate(vevo)
 ```
 
-- A `query` csak a névben keres, a szavak elejére illesztve, adószámra és e-mail címre nem.
-- Az `update()` a teljes partnert várja, azonosító nélkül: ami kimarad, az törlődik.
-- A bizonylattal rendelkező partner is törölhető, a bizonylatok megtartják az adatait.
-- A `guess()` nem keresés: pontos névegyezésen kívül mindig új partnert hoz létre. Kereséshez a `list()` és a `findOrCreate()` való.
+Számlához nem kell külön meghívnod: ha a `documents.create()` vagy a `createOnce()` partner adatait kapja azonosító helyett, a tárca maga hívja a `findOrCreate()`-et. Lásd [Számla kiállítása](/docs/bizonylatok/kiallitas).
+
+<Cards>
+  <Card title="Keresés vagy létrehozás" href="/docs/partnerek/kereses-vagy-letrehozas/keres">
+    findOrCreate: mikor használ meglévő partnert, és mikor hoz létre újat.
+  </Card>
+  <Card title="Lista és keresés" href="/docs/partnerek/lista/keres">
+    Lapozás és névkeresés, ami csak a szavak elejére illeszt.
+  </Card>
+  <Card title="Létrehozás" href="/docs/partnerek/letrehozas/keres">
+    A partner mezői, a `taxcode` írásmód és a nagybetűs `taxType`.
+  </Card>
+  <Card title="Lekérés" href="/docs/partnerek/lekeres">
+    Egy partner azonosító alapján, 404 a törölt partnerre.
+  </Card>
+  <Card title="Módosítás" href="/docs/partnerek/modositas/keres">
+    PUT teljes cserével: ami kimarad, az kiürül.
+  </Card>
+  <Card title="Törlés" href="/docs/partnerek/torles">
+    Bizonylattal rendelkező partner is törölhető.
+  </Card>
+  <Card title="Guess végpont" href="/docs/partnerek/guess/keres">
+    Upsert, nem keresés: miért nem erre épít a tárca.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="A Billingo keresője késik">
+  A frissen létrehozott vagy átnevezett partnert a `list({ query })` élőben 20–60 másodpercig
+  gyakran nem találja, törlés után pedig a `total` percekig a régi számot mutatja. Ne építs
+  „létezik-e már?” döntést egy közvetlenül előtte futó keresésre.
+</Callout>
+
+## Élő eltérések röviden
+
+- A `query` csak a partner **nevében** keres, a szavak elejére illesztve. Adószámra és e-mail címre nem talál.
+- Az adószám mezője a Billingo írásmódja szerint `taxcode`, nem `taxCode`.
+- A `taxType` csak nagybetűvel érvényes (`'HAS_TAX_NUMBER'`, `'NO_TAX_NUMBER'`, `'FOREIGN'`). Más értéket a Billingo hiba nélkül `''`-ként tárol, ezért a tárca típusa csak ezt a hármat és az üres szöveget engedi.
+- Az `update()` teljes csere, a kihagyott telefonszám `''`, az e-mail lista `[]` lesz.
+- A `guess()` pontos névegyezésen kívül mindig új partnert hoz létre, és mindig 201-et ad.
+- A törlés puha: a partner eltűnik, a bizonylatai megtartják a beágyazott másolatát.
 
 <OperationTable pathPrefix="/partners" />

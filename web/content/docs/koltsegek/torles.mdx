@@ -1,0 +1,56 @@
+---
+title: Törlés
+description: Költség végleges törlése a spendings.delete() hívással. A Billingo 204-gyel, törzs nélkül válaszol, és a törölt költség nem állítható vissza.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingDelete
+---
+
+A `spendings.delete()` véglegesen törli a költséget. A kiállított bizonylatokkal ellentétben a költség törölhető, mert a Billingo nem jelenti a NAV-nak.
+
+<Operation id="SpendingDelete" methods={['spendings.delete']} />
+
+<Callout type="warning" title="Nincs visszaállítás">
+  A törölt költséget az API-n nem lehet visszahozni. Ha később szükséged lehet rá, a törlés előtt
+  kérd le a `spendings.get()` hívással, és mentsd el az adatait.
+</Callout>
+
+## Kérés
+
+```ts
+tarca.spendings.delete(id: number, options?: RequestOptions): Promise<void>
+```
+
+Az `id` a költség azonosítója. A kérés `DELETE /spendings/{id}`, törzs nélkül.
+
+## Válasz
+
+A Billingo 204-gyel, törzs nélkül válaszol (élőben mérve 2026. november 15-én), a metódus `undefined` értékkel teljesül. A törlés utáni `get()`-re a hamis Billingo 404-et ad, élőben ezt nem mértük.
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 404 | `not_found` | Nincs ilyen költség, vagy már törölted (a hamis Billingo szerint, élőben nem mértük). |
+| 401 | `auth` | Hiányzó vagy érvénytelen API kulcs. |
+| 403 | `forbidden` | Csak olvasási jogú kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca írást nem ismétel, a hibát azonnal megkapod. |
+| – | `network`, `timeout` | Nem jött válasz. Lehet, hogy a törlés megtörtént. |
+
+A törlés ismételhető: ha a költség már nincs meg, a második kérés nem töröl semmit. Egy bizonytalan hiba után küldd el újra, és a `not_found` választ vedd sikernek. A hamis Billingo a második törlésre 404-et ad; ha élőben más jönne, a lenti függvény azt továbbdobja:
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function torol(id: number) {
+  await nullIfNotFound(tarca.spendings.delete(id))
+}
+
+await torol(1)
+```
+
+## Minta
+
+A példa rögzít, módosít, majd töröl egy költséget. A kiemelt kérés a törlés:
+
+<Example slug="koltseg-modositasa" operation="SpendingDelete" />
+
+A 204-es válasznak nincs törzse. A példa utolsó sora a törölt költséget kéri le, és `null`-t ír ki, mert a hamis Billingo 404-gyel válaszol.

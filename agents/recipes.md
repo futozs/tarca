@@ -60,7 +60,7 @@ export async function invoiceOrder(order: Order) {
 ```
 
 - `vendorId` is the idempotency key. Derive it from your own order or payment ID, never from a timestamp or a random value. It stays reserved after the invoice is cancelled: re-invoicing a cancelled order needs a new `vendorId` (for example `ORDER-1001-2`).
-- `created: false` means the invoice already existed (an earlier run, or a lost response that `createOnce` recovered). Treat both the same way.
+- `created: false` means the invoice already existed: an earlier run, a parallel call or process with the same vendorId, or a 400 `Duplicate vendor id`. A lost response that `createOnce` recovered in the same call gives `created: true`. Treat `created: false` as success, not as an error.
 - If `createOnce` still throws `network`, `timeout`, `server` or `unexpected_response`, the invoice may or may not exist: retry the whole `invoiceOrder` later (the next `createOnce` finds it), never a bare `documents.create`.
 - Several servers or serverless instances: pass `createOnceLock` (a `KeyValueStore` with `setIfAbsent`, the same interface as kassza's stores) to `createTarca`.
 

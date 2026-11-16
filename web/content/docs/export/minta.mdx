@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Egy havi simple_csv export indítása, kivárása és letöltése a hamis Billingo ellen, a ténylegesen elküldött kérésekkel és a CSV fejlécével.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/DocumentExport/Create
+---
+
+A példa a november 1. és 30. között kelt bizonylatokat exportálja `simple_csv` formátumban, aztán kiírja a fájl nevét, méretét és a fejléc első oszlopait.
+
+<Example slug="export" />
+
+Az **Elküldött kérések** fülön négy kérést látsz. A `POST /document-export` 201-es válasza a UUID azonosító, az első `poll` `pending`, a második `success`. A `download` válasza `text/csv; charset=UTF-8` típusú, `Content-Disposition` és `x-ratelimit-*` fejlécekkel. A hamis Billingo exportjában csak a fejlécsor van, adatsor nincs, és csak `simple_csv` formátumot készít: más formátumra 501-es `server` hibát ad. Lásd [Hamis Billingo](/docs/tesztek/hamis-billingo).

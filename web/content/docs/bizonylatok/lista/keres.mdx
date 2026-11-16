@@ -1,0 +1,69 @@
+---
+title: Kérés
+description: A documents.list() és documents.all() szűrői a GET /documents query paramétereivel. Dátumok budapesti napként, a lastModifiedDate formája, a perPage felső korlátja.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/ListDocument
+---
+
+```ts
+tarca.documents.list(query?: DocumentListQuery, options?: { signal?: AbortSignal }): Promise<Page<Billingo.Document>>
+tarca.documents.all(query?: Omit<DocumentListQuery, 'page'>, options?: { signal?: AbortSignal }): AsyncGenerator<Billingo.Document>
+```
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const oldal = await tarca.documents.list({
+  type: 'invoice',
+  paymentStatus: 'outstanding',
+  startDate: '2026-11-01',
+  endDate: new Date('2026-11-16T23:30:00Z'),
+  lastModifiedDate: new Date('2026-11-16T10:00:00Z'),
+  perPage: 50,
+})
+
+console.log(oldal.total, oldal.data.length)
+```
+
+A hamis Billingo ezt a query stringet rögzítette:
+
+```json
+{
+  "per_page": "50",
+  "payment_status": "outstanding",
+  "start_date": "2026-11-01",
+  "end_date": "2026-11-17",
+  "type": "invoice",
+  "last_modified_date": "2026-11-16 11:00:00"
+}
+```
+
+## Szűrők
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `page` | `page` | `1` | Az oldal sorszáma, legalább 1. Csak a `list()` fogadja. |
+| `perPage` | `per_page` | Billingo: 25, `all()`: 100 | Elemek oldalanként, 1 és 100 között. |
+| `type` | `type` | – | `'invoice'` vagy `'receipt'`. |
+| `blockId` | `block_id` | – | Csak ebből a számlatömbből. |
+| `partnerId` | `partner_id` | – | Csak ennek a partnernek. |
+| `paymentMethod` | `payment_method` | – | Fizetési mód. |
+| `paymentStatus` | `payment_status` | – | `'outstanding'`, `'partially_paid'`, `'paid'`, `'expired'` vagy `'none'`. |
+| `startDate`, `endDate` | `start_date`, `end_date` | – | A kelte szerinti időszak, `Date` vagy `'YYYY-MM-DD'`. |
+| `fulfillmentStartDate`, `fulfillmentEndDate` | `fulfillment_start_date`, `fulfillment_end_date` | – | A teljesítés napja szerinti időszak. |
+| `paidStartDate`, `paidEndDate` | `paid_start_date`, `paid_end_date` | – | A kifizetés napja szerinti időszak. |
+| `startNumber`, `endNumber` | `start_number`, `end_number` | – | Sorszám-tartomány. |
+| `startYear`, `endYear` | `start_year`, `end_year` | – | Év-tartomány. |
+| `query` | `query` | – | Keresés, élőben számlaszámra talált (`2026-1`). |
+| `lastModifiedDate` | `last_modified_date` | – | Az ennél később módosított bizonylatok. |
+
+## Dátumok
+
+- A dátumszűrők `Date`-ből a budapesti naptárnapot küldik: a `2026-11-16T23:30:00Z` Budapesten már november 17., ezért `2026-11-17` lesz.
+- A `lastModifiedDate` élőben csak `YYYY-MM-DD HH:MM:SS` alakú budapesti időt fogad el, sima dátumra vagy `T`-s időre 422-t ad. A tárca a `Date`-et erre alakítja; szövegként csak ezt az alakot engedi, mást kérés nélkül `RangeError`-ral utasít el.
+- Befizetés rögzítése is frissíti a módosítás idejét, így a `lastModifiedDate` alkalmas a változások lekövetésére.
+
+## Lapozás
+
+A `page` és a `perPage` hibás értékére (0, tört szám, 100 fölött) a tárca kérés nélkül `RangeError`-t dob. Az `all()` 100-as oldalakkal megy végig, amíg el nem fogy a lista. A lapozás általános szabályai: [Lapozás](/docs/alapok/lapozas).

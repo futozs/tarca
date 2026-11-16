@@ -1,0 +1,75 @@
+---
+title: Bizonylatnapló
+description: A tarcajs/journal hozzáfűzéses napló minden kiállított, sztornózott és módosított bizonylatról, a félbemaradt kiállítások foglalásával és a Billingo listájával való egyeztetéssel. record, track, settle, reconcile.
+---
+
+A bizonylatnapló a saját tárolódban vezeti, mit állított ki a kódod: sorszám, típus, végösszeg, pénznem, a kapcsolódó bizonylatok, és mikor rögzült. Vevőadatot nem tárol. A NAV-nak a Billingo maga jelent. A napló a te nyilvántartásod, amelyet bármikor összevethetsz a Billingóval.
+
+<Example slug="bizonylatnaplo" />
+
+A `track` lefoglalja a `vendorId`-t, és lefuttatja a kiállítást. Az `onDocument` hook már a kiállítás közben rögzíti a számlát (`source: 'hook'`), a `track` saját rögzítése pedig ezt találja meg, mert a napló azonosító szerint idempotens: egy bejegyzés lesz, és a foglalás törlődik. Az egyeztetés egy egyezést talál.
+
+```ts twoslash
+import { createTarca, type KeyValueStore } from 'tarcajs'
+import { createJournal, kvJournal } from 'tarcajs/journal'
+
+declare const store: KeyValueStore
+
+const journal = createJournal(kvJournal(store))
+const tarca = createTarca({
+  hooks: { onDocument: (event) => journal.record(event), onDocumentError: 'throw' },
+})
+
+await journal.settle(tarca)
+const egyeztetes = await journal.reconcile(tarca, { from: '2026-10-01', to: '2026-10-31' })
+
+console.log(egyeztetes.matched, egyeztetes.added, egyeztetes.missing, egyeztetes.mismatched)
+```
+
+## Tárolás
+
+- **`kvJournal(store, { prefix?, retentionDays?, reservationTtlDays? })`:** egy `KeyValueStore`-ban, `increment` kell hozzá (különben `configuration` hiba). A `prefix` alapból `tarca:journal:`, a bejegyzések 400, a foglalások 30 napig élnek. Minden napindex-helyet, bejegyzést és foglalást `setIfAbsent`-tel ír, ha a tároló tudja, különben visszaolvassa: így egy hibákat elnyelő tároló nem hagy olyan bejegyzést, amelyet egy listázás nem lát, hanem `store_unavailable` hibát ad. Melyik tároló jó: [Tárolók](/docs/kiegeszitok/tarolok).
+- **`memoryJournal()`:** memóriában, tesztekhez.
+- **Saját `JournalStorage`:** `getEntry`, `putEntry` (soha nem írhat felül), `listEntries`, `putReservation`, `deleteReservation`, `listReservations` és opcionálisan `indexEntry`.
+
+## A bejegyzés
+
+| Mező | Leírás |
+| --- | --- |
+| `id` | A Billingo bizonylat azonosítója, ez a kulcs. |
+| `vendorId` | Ha a kiállításnak volt. |
+| `number`, `type`, `action` | Sorszám, bizonylattípus, és `created`, `finalized`, `converted`, `cancelled` vagy `modified`. |
+| `date` | A kelte napja. |
+| `relatedIds` | A kapcsolódó bizonylatok, és sztornónál, módosítónál az eredeti. |
+| `grossTotal`, `netTotal`, `currency`, `conversionRate?`, `paymentStatus?` | A Billingo összegei a kiállításkor. |
+| `recordedAt` | Budapesti időbélyeg. |
+| `source` | `hook`, `track`, `settle`, `reconcile` vagy `manual`. |
+
+Ha egy bizonylatból hiányzik ezek közül valamelyik, a napló `TypeError`-t dob, nem rögzít nullát.
+
+## A műveletek
+
+**`record(eventOrDocument)`** egy `onDocument` eseményt vagy egy `Document`-et rögzít. Azonosító szerint idempotens, soha nem ír felül. A piszkozatot kihagyja (a `copy` piszkozatát is), a díjbekérőt rögzíti. A sztornó és a módosító saját bejegyzés, az eredeti későbbi állapotáról (fizetve, sztornózva) a `reconcile` szól.
+
+**`track(vendorId, run)`** a kiállítás köré: lefoglalja a `vendorId`-t (függő tétel a mai budapesti nappal), lefuttatja a `run`-t, rögzíti a visszakapott bizonylatot vagy `createOnce` eredményt, és törli a foglalást. Végleges `BillingoError` esetén a saját foglalását törli. Bizonytalan hiba (`network`, `timeout`, `server`, `unexpected_response`), `in_progress`, `store_unavailable`, `vendorId` keresési hiba, bármilyen más hiba vagy összeomlás után a foglalás megmarad, mert a bizonylat létrejöhetett. Ha a `run` sikerült, de a rögzítés nem, `JournalWriteError { vendorId, result, cause }` jön, és a foglalás megmarad: a bizonylat létezik, ne állítsd ki újra. Üres `vendorId` `RangeError`.
+
+**`settle(tarca, { range?, releaseNotFound? })`** a függő foglalásokat zárja le: mindegyiket megkeresi a `findByVendorId`-val, a meglévőt rögzíti (`source: 'settle'`), és törli a foglalást. A nem található tétel függőben marad, hacsak nem adod meg a `releaseNotFound`-ot. Eredmény: `{ recorded, notFound, failed }`, egy keresési hiba csak azt a tételt rontja el. Futtasd időzítve, például óránként.
+
+**`reconcile(tarca, { from, to, dryRun?, graceSeconds?, signal? })`** a Billingo listáját (`documents.all`, 100-as lapokkal, piszkozatok nélkül) azonosító szerint veti össze a naplóval:
+
+| Eredmény | Jelentés |
+| --- | --- |
+| `added` | Csak a Billingóban van. Rögzíti (`source: 'reconcile'`), hacsak nem `dryRun`. |
+| `missing` | Csak a naplóban van, és több mint `graceSeconds` (alapból 120) másodperce rögzült, mert a lista 15–30 másodpercet késik. Mivel kiállított bizonylatot nem lehet törölni, ez rossz kulcsot vagy profilt jelent. A listából hiányzó díjbekérőt előbb `documents.get`-tel nézi meg, mert az archivált díjbekérő kikerül a listából. |
+| `mismatched` | A `number`, `type`, `grossTotal` vagy `currency` eltér: `{ id, fields, journal, billingo }`. |
+| `changed` | A rögzítés óta fizetve vagy sztornózva: `{ id, number, cancelled, recordedPaymentStatus, paymentStatus }`. A bejegyzés nem íródik át. |
+| `matched` | Az eltérés nélküli bizonylatok száma. |
+
+**`entries({ from, to, type? })`** kelte, majd sorszám szerint rendezve adja a bejegyzéseket. A `reserve(vendorId)`, `release(vendorId)` és `pending(range?)` (alapból az utolsó 30 budapesti nap) a foglalásokat kezeli kézzel. Minden tartomány budapesti `ÉÉÉÉ-HH-NN` dátum, legfeljebb 366 nap (`MAX_JOURNAL_RANGE_DAYS`), más `RangeError`.
+
+<Callout type="info" title="Az elveszett válasz is a naplóba kerül">
+  Ha egy sztornó vagy módosító válasza elveszett, és a tárca később megtalálta, a Billingótól nem
+  kapott bizonylatot, így `onDocument` esemény sem jött. Ezt a `reconcile` pótolja (`added`).
+</Callout>
+
+A tömeges számlázás a `journal` opcióval minden tételt a `track`-en keresztül állít ki, lásd [Tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas).

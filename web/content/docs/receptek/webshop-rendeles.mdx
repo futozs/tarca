@@ -1,0 +1,182 @@
+---
+title: Webshop rendelésből számla
+description: Fizetett webshop rendelésből pontosan egy számla a Billingóban, akárhányszor fut le a kód. A rendelés azonosítója a vendorId, a createOnce kezeli a duplikációt és az elveszett választ.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Egy fizetett rendelés számláját több helyről is elindíthatja a rendszered: a fizetési webhook, a rendelési sor feldolgozója, vagy egy éjszakai cron, amely összeszedi a lemaradt rendeléseket. Ez a recept egyetlen függvény. Bárhonnan és akárhányszor hívhatod, egy rendelésre akkor is egy számla lesz.
+
+Ezt a `vendorId` biztosítja: a rendelés saját azonosítójából képzett kulcs, amelyet a Billingo cégenként egyedinek tart. A `documents.createOnce()` előbb ezzel keres, és csak akkor állít ki számlát, ha még nincs ilyen. A részletek a [Pontosan egyszer](/docs/alapok/pontosan-egyszer) oldalon vannak.
+
+## A számlázó függvény
+
+```ts twoslash title="lib/szamlazas.ts"
+// @filename: tarca.d.ts
+declare module '@/lib/tarca' {
+  export const tarca: import('tarcajs').Tarca
+}
+// @filename: szamlazas.ts
+// ---cut---
+import type { Billingo } from 'tarcajs'
+import { tarca } from '@/lib/tarca'
+
+export interface Rendeles {
+  readonly id: number
+  readonly szam: string
+  readonly email: string
+  readonly szamlazas: {
+    readonly nev: string
+    readonly orszag: Billingo.Country
+    readonly iranyitoszam: string
+    readonly varos: string
+    readonly utca: string
+    readonly adoszam?: string
+  }
+  readonly tetelek: readonly {
+    readonly megnevezes: string
+    readonly mennyiseg: number
+    readonly bruttoEgysegar: number
+  }[]
+}
+
+export async function szamlazdARendelest(rendeles: Rendeles) {
+  const { szamlazas } = rendeles
+  const { document, created } = await tarca.documents.createOnce({
+    vendorId: `WEB-${rendeles.id}`,
+    partner: {
+      name: szamlazas.nev,
+      address: {
+        countryCode: szamlazas.orszag,
+        postCode: szamlazas.iranyitoszam,
+        city: szamlazas.varos,
+        address: szamlazas.utca,
+      },
+      emails: [rendeles.email],
+      ...(szamlazas.adoszam
+        ? { taxcode: szamlazas.adoszam, taxType: 'HAS_TAX_NUMBER' as const }
+        : { taxType: 'NO_TAX_NUMBER' as const }),
+    },
+    items: rendeles.tetelek.map((tetel) => ({
+      name: tetel.megnevezes,
+      quantity: tetel.mennyiseg,
+      grossUnitPrice: tetel.bruttoEgysegar,
+      vat: 27,
+    })),
+    paymentMethod: 'bankcard',
+    sendEmail: true,
+    orderNumber: rendeles.szam,
+  })
+  return { id: document.id, szamlaszam: document.invoiceNumber, created }
+}
+```
+
+A hívás lépései:
+
+1. `GET /documents/vendor/WEB-1001`: van-e már számla ezzel a kulccsal. Ha van, a tárca `created: false`-szal visszaadja, és nem ír semmit.
+2. A partnert a [`partners.findOrCreate()`](/docs/partnerek/kereses-vagy-letrehozas) név szerint keresi, és csak akkor használja a meglévőt, ha minden megadott mezője egyezik. Különben újat hoz létre, így a számlára nem kerülhet régi cím. Az első számla előtt a kliens a számlatömbök listáját is lekéri, egyszer.
+3. `POST /documents` a `vendor_id`-val. A tételek bruttó árak, az áfát a Billingo bontja ki. A `sendEmail: true` miatt a Billingo a partner e-mail-címére elküldi a számlát, az `orderNumber` pedig a rendelésszám mezőbe kerül.
+
+A számlatömb, a fizetési határidő és az elektronikus jelző a [közös kliens](/docs/receptek/kozos-kliens) `defaults` beállításából jön.
+
+## Mi megy a dróton
+
+<Example slug="webshop-rendeles" operation="CreateDocument" />
+
+Az Elküldött kérések fülön a `CreateDocument` törzsében nézd meg a `vendor_id`-t, a `settings.should_send_email` és a `settings.order_number` mezőt. A második futás csak egy `GetDocumentByVendorId` kérést küld, és ugyanazt a számlát kapja vissza.
+
+## Hívás a feldolgozóból
+
+```ts twoslash title="lib/rendeles-feldolgozo.ts"
+// @filename: modulok.d.ts
+declare module '@/lib/szamlazas' {
+  export interface Rendeles {
+    readonly id: number
+  }
+  export function szamlazdARendelest(
+    rendeles: Rendeles,
+  ): Promise<{ id: number | undefined; szamlaszam: string | undefined; created: boolean }>
+}
+declare module '@/lib/rendelesek' {
+  import type { FieldError } from 'tarcajs'
+  import type { Rendeles } from '@/lib/szamlazas'
+  export function rendelesBetoltese(id: number): Promise<Rendeles>
+  export function szamlaMentese(id: number, szamla: { id: number | undefined }): Promise<void>
+  export function kezziFeldolgozasra(id: number, hibak: readonly FieldError[]): Promise<void>
+}
+// @filename: rendeles-feldolgozo.ts
+// ---cut---
+import { isBillingoError } from 'tarcajs'
+import { kezziFeldolgozasra, rendelesBetoltese, szamlaMentese } from '@/lib/rendelesek'
+import { szamlazdARendelest } from '@/lib/szamlazas'
+
+export async function fizetettRendeles(rendelesId: number): Promise<void> {
+  const rendeles = await rendelesBetoltese(rendelesId)
+  try {
+    const szamla = await szamlazdARendelest(rendeles)
+    await szamlaMentese(rendelesId, szamla)
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'validation') {
+      await kezziFeldolgozasra(rendelesId, error.fieldErrors)
+      return
+    }
+    throw error
+  }
+}
+```
+
+A `@/lib/rendelesek` a saját adatbázis-rétegedet jelöli. A `validation` hibát nem érdemes újrapróbálni: a bemenet rossz, és ha a tárca helyben fogta meg (például `items.0.vat`), kérés sem ment ki. Ezt embernek kell megnéznie. Minden más hibát dobj tovább, hogy a sor vagy a webhook később az egész függvényt futtassa újra.
+
+## Hibák és újrapróbálás
+
+| Kategória | Mit jelent | Mit tegyél |
+| --- | --- | --- |
+| `validation` | Hibás bemenet. A `fieldErrors` magyarul mondja meg, melyik mező (`items.0.vat`, `dueDate`). | Ne próbáld újra, javítsd az adatot. |
+| `network`, `timeout`, `server`, `unexpected_response` | Bizonytalan: lehet, hogy a számla elkészült. A `createOnce` ilyenkor kétszer visszakeresi a `vendorId`-t, és ha megtalálja, `created: true`-val visszaadja. | Ha így is dob, futtasd újra később az egész `szamlazdARendelest`-t. |
+| `rate_limit` | Elfogyott a percenkénti 300 kérés. | Várj egy percet, utána ugyanígy újra. |
+| `in_progress` | Egy másik példány épp ugyanezt a rendelést számlázza (csak `createOnceLock` mellett). | Később újra, akkor a kész számlát kapod. |
+| `auth`, `forbidden`, `subscription` | Rossz kulcs, csak olvasási jog vagy hiányzó előfizetés. | Beállítás kell, újrapróbálás nem segít. |
+
+<Callout type="warning" title="Soha ne hívd a documents.create()-et újrapróbálásban">
+  A tárca írást nem ismétel. Ha egy `create` hívást te teszel ciklusba, egy elveszett válasz után
+  második számla születik, amelyet a Billingo éles profilon beküld a NAV-nak, és csak sztornózni
+  lehet. Az újrapróbálás mindig az egész `szamlazdARendelest` legyen, a `createOnce`-szal.
+</Callout>
+
+## Buktatók
+
+<Callout type="warning" title="A vendorId a rendelésből jöjjön, ne az időből">
+  A kulcsot a saját rendelés- vagy fizetési azonosítódból képezd. Időbélyeg vagy véletlen érték
+  minden futásnál más, és akkor a `createOnce` semmit nem véd ki. A `vendorId` sztornó után is
+  foglalt marad: ha egy sztornózott rendelést újra kell számlázni, új kulcs kell, például
+  `WEB-1001-2`.
+</Callout>
+
+<Callout type="info" title="A created: false nem hiba">
+  `created: false` azt jelenti, hogy a számlát egy korábbi futás vagy egy párhuzamos példány már
+  kiállította. Kezeld ugyanúgy, mint az újat. Ha ugyanebben a hívásban veszett el a válasz, és a
+  `createOnce` a visszakereséssel találta meg a számlát, az eredmény `created: true`, mert ez a
+  hívás állította ki. Ha a számlát közben sztornózták, a `document.cancelled` mezője `true`.
+</Callout>
+
+<Callout type="info" title="Friss partner, második rendelés">
+  A Billingo partnerkeresője késik: egy most létrehozott partner akár egy percig sem jelenik meg a
+  találatok között. Ha ugyanaz a vevő ennyi időn belül újra rendel, a `findOrCreate` egy
+  második, azonos adatú partnert hoz létre. A számla ettől helyes marad.
+</Callout>
+
+## Kapcsolódó
+
+<Cards>
+  <Card title="Pontosan egyszer" href="/docs/alapok/pontosan-egyszer">
+    A vendorId, a createOnce és a bizonytalan hibák fogalma.
+  </Card>
+  <Card title="createOnce referencia" href="/docs/bizonylatok/pontosan-egyszer">
+    Az opciók, a zár és a visszakeresés lépései.
+  </Card>
+  <Card title="Tételek és áfa" href="/docs/bizonylatok/kiallitas/szabalyok/tetelek-es-afa">
+    Nettó és bruttó ár, áfakulcsok, termékre hivatkozó tétel.
+  </Card>
+  <Card title="Stripe webhook" href="/docs/receptek/stripe-webhook">
+    Ha a fizetés Stripe-on megy, a webhook ezt helyetted elvégzi.
+  </Card>
+</Cards>

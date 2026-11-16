@@ -1,0 +1,40 @@
+---
+title: "nav_unavailable: nincs NAV-kapcsolat"
+description: "A nav_unavailable kategória: a funkcióhoz élő NAV-kapcsolat kell, a profilnak nincs. Az adószám-ellenőrzés a fejlesztői teszt profilon mindig ezt adja, érvényes kulccsal is."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | 401 vagy 403, a NAV-kapcsolatról szóló üzenettel |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false` |
+
+## Mikor jön elő
+
+Az adószám-ellenőrzés (`utils.checkTaxNumber`) a Billingón keresztül a NAV-ot kérdezi. A fejlesztői teszt profilnak nincs NAV-kapcsolata, és nem is lehet, ezért ott a Billingo érvényes kulccsal is 401-et ad:
+
+```text
+401 {"error":{"message":"To use this feature, please ensure you have a live connection to NAV (not available in sandbox mode)"}}
+```
+
+A státusz alapján ez `auth` lenne, de a kulcs jó. A tárca ezért a 401-es vagy 403-as válasz üzenetét is megnézi: ha a NAV-ról és a kapcsolatról szól, `nav_unavailable` kategóriát ad `A funkcióhoz élő NAV kapcsolat kell, ennek a Billingo profilnak nincs.` üzenettel, és a `hint` elmagyarázza, hogy ez nem kulcshiba. Éles profilon akkor jön, ha a NAV Online Számla összekötés nincs beállítva.
+
+## Mi a teendő
+
+Teszt profilon semmi: ott ez a funkció nem érhető el, a kódod viselkedjen úgy, mintha az ellenőrzés nem futott volna le. Éles profilon a Billingo felületén állítsd be a NAV Online Számla összekötést technikai felhasználóval.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+try {
+  console.log(await tarca.utils.checkTaxNumber('12345678-2-42'))
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'nav_unavailable') throw error
+  console.log('Az adószám-ellenőrzés ezen a profilon nem érhető el.')
+}
+```
+
+A tárca az adószám alakját kérés előtt ellenőrzi: a 8 jegyű törzsszám vagy egy hibás alak `validation` hiba, kérés nélkül. Az MCP szerver `check_tax_number` eszköze teszt profilon szintén `nav_unavailable` hibát ad, és a `doctor` parancs `nav` ellenőrzése is jelzi, hogy a profilon nincs NAV-kapcsolat.

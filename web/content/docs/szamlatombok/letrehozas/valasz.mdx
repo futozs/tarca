@@ -1,0 +1,74 @@
+---
+title: Válasz
+description: A documentBlocks.create() 201-es válasza a teljes tömbbel és a Billingo alapértékeivel, a sorszám formája és a létrehozás hibái.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/CreateDocumentBlock
+---
+
+A spec szerint a létrehozás válaszának nincs törzse. Élőben a Billingo 201-gyel és a teljes tömbbel válaszol, a tárca ezt `Billingo.DocumentBlockSchema` objektumként adja vissza. A mezőket a [Lekérés](/docs/szamlatombok/lekeres) oldal írja le.
+
+Egy új tömb a meg nem adott mezőkben ezeket az értékeket kapja (élőben mért):
+
+| Mező | Érték |
+| --- | --- |
+| `customField1`, `customField2`, `senderName` | `''` |
+| `templateId`, `normalNotificationId`, `proformaNotificationId` | `0` |
+| `picPath`, `senderEmail`, `bccEmail`, `bankAccountId` | `null` |
+| `invoiceNumberFormat` | `'default'` |
+| `financialFulfillmentHighlight` | `'basic'` |
+| a többi jelző | `false` |
+
+## A sorszám
+
+A tömb előtagja a számlaszám elejére kerül. Élőben a `TRCE` előtagú tömb első számlája `TRCE / 2026-000001` lett, az előtag nélküli `Számlák` tömbé `2026-1`. A számlát a tömbbe a `blockId` mezővel teszed:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const tomb = await tarca.documentBlocks.create({ name: 'Webshop', prefix: 'WEB', type: 'invoice' })
+
+const szamla = await tarca.documents.create({
+  blockId: tomb.id ?? 0,
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 1, netUnitPrice: 15_000, vat: 27 }],
+})
+
+console.log(szamla.invoiceNumber)
+```
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Üres név, vagy a név nem csak betűből, számból és szóközből áll. Nincs kérés. |
+| 422 | `validation` | Hiányzik az előtag vagy a típus. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs. |
+| 5xx | `server` | Billingo hiba. Nem tudni, létrejött-e a tömb. |
+| – | `network`, `timeout` | Nincs válasz. Nem tudni, létrejött-e a tömb. |
+
+Bizonytalan hiba után nézd meg a listát, mielőtt újra létrehoznád. Egy profilnak általában kevés tömbje van, az `all()` ezért egy kéréssel végez:
+
+```ts twoslash
+import { createTarca, isBillingoError, type DocumentBlockInput } from 'tarcajs'
+
+const tarca = createTarca()
+
+const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+
+async function tombLetrehozasa(input: DocumentBlockInput) {
+  try {
+    return (await tarca.documentBlocks.create(input)).id
+  } catch (error) {
+    if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+    for await (const tomb of tarca.documentBlocks.all({ type: input.type })) {
+      if (tomb.name === input.name && tomb.prefix === input.prefix) return tomb.id
+    }
+    return (await tarca.documentBlocks.create(input)).id
+  }
+}
+```

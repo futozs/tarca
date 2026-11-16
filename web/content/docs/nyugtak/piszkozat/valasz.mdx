@@ -1,0 +1,28 @@
+---
+title: Válasz
+description: A receipts.finalizeDraft() a kész nyugtát adja ugyanazzal az azonosítóval és új NYT sorszámmal. Élőben 201, a spec 200-at ír. A hibák.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceiptFromDraft
+---
+
+A véglegesített nyugta `Billingo.Document`, a [kiállításnál](/docs/nyugtak/kiallitas/valasz) leírt mezőkkel.
+
+| Mező | Piszkozaton | Véglegesítés után |
+| --- | --- | --- |
+| `id` | `1` | `1`, ugyanaz marad |
+| `type` | `draft` | `receipt` |
+| `invoiceNumber` | `''` | a nyugtatömb következő sorszáma, például `NYT-2026-1` |
+| `paymentStatus` | – | `paid` |
+
+<Callout type="info" title="201, nem 200">
+  Élőben a `PUT /documents/receipt/{id}` 201-gyel válaszolt, a spec 200-at ír. A tárca mindkettőt
+  elfogadja.
+</Callout>
+
+Az `onDocument` hook `finalized` eseményt kap.
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Hibás bemenet vagy `type: 'draft'`, kérés előtt. |
+| 403 | `forbidden` | Ismeretlen azonosító, vagy csak olvasó kulcs. |
+| 422 | `validation` | A Billingo elutasított egy mezőt, például `electronic` nélkül (a tárca mindig küldi). |
+| – | `network`, `timeout`, `server`, `unexpected_response` | Nem tudni, lefutott-e. Kérd le a `documents.get(id)`-vel: ha a `type` már `receipt`, a nyugta kész. |

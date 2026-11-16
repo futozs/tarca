@@ -1,0 +1,65 @@
+---
+title: Kérés
+description: A documents.createModification() bemenete. Különbözeti tételek a számla tételformátumában, megjegyzés, határidő, fizetési mód és a pénzügyi teljesítés nélküli módosítás.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateModificationDocument
+---
+
+```ts
+tarca.documents.createModification(id: number, input: ModificationInput, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+```
+
+A tárca `POST /documents/{id}/create-modification-document` kérést küld. Az `id` az eredeti számla azonosítója.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+const modosito = await tarca.documents.createModification(szamlaId, {
+  items: [{ name: 'Webfejlesztés', quantity: -2, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+  comment: 'Két óra jóváírása.',
+})
+
+console.log(modosito.invoiceNumber, modosito.grossTotal)
+```
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `items` | `items` | – | **Kötelező**, legalább egy különbözeti tétel, a [számla tételformátumában](/docs/bizonylatok/kiallitas/szabalyok/tetelek-es-afa). |
+| `comment` | `comment` | – | A módosító számla megjegyzése. |
+| `dueDate` | `due_date` | – | A módosító számla határideje, `Date` vagy `'YYYY-MM-DD'`. |
+| `paymentMethod` | `payment_method` | – | Fizetési mód. |
+| `withoutFinancialFulfillment` | `without_financial_fulfillment` | – | Pénzügyi teljesítés nélküli módosítás. |
+
+A hamis Billingo a fenti hívásra ezt rögzítette:
+
+```json
+{
+  "comment": "Két óra jóváírása.",
+  "items": [
+    {
+      "name": "Webfejlesztés",
+      "quantity": -2,
+      "unit": "óra",
+      "vat": "27%",
+      "unit_price": 15000,
+      "unit_price_type": "net"
+    }
+  ]
+}
+```
+
+## Különbözeti tételek
+
+A tétel azt írja le, mennyivel változik az eredeti. Két módon adhatod meg ugyanazt a csökkentést:
+
+- negatív mennyiséggel: `{ quantity: -2, netUnitPrice: 15_000 }`,
+- negatív árral: `{ quantity: 1, netUnitPrice: -30_000 }`.
+
+Élőben a negatív egységáras alakot mértük (`unit_price: -1000`). Növelésnél pozitív a tétel, egy új tételt pedig a teljes mennyiséggel veszel fel.
+
+Ugyanazok a szabályok érvényesek, mint a kiállításnál: pontosan egy ár, ismert áfakulcs, nem üres név. A hibás bemenet kérés nélkül `validation` hibát ad (`items`, `items.0.vat`, `dueDate`, `paymentMethod`, `withoutFinancialFulfillment`).
+
+A módosító számla írás: a tárca hiba után nem ismétli meg.

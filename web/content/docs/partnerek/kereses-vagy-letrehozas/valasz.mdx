@@ -1,0 +1,63 @@
+---
+title: Válasz
+description: A partners.findOrCreate() eredménye, a késleltetett keresőindex hatása és a hibák, amelyek a keresésnél vagy a létrehozásnál jöhetnek.
+---
+
+A `findOrCreate()` egy objektumot ad vissza:
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `partner` | `Billingo.Partner` | A meglévő vagy az új partner, ahogy a Billingo tárolja. A mezőit a [Lekérés](/docs/partnerek/lekeres) oldal írja le. |
+| `created` | `boolean` | `true`, ha a tárca most hozta létre; `false`, ha egy meglévő partner minden megadott mezőben egyezett. |
+
+A `partner.id` kell a számlához, ha a partnert azonosítóval adod át. A `documents.create()` partner adatokkal hívva ezt magától elvégzi.
+
+## A késleltetett index
+
+A Billingo partnerkeresője nem azonnal látja az új adatokat. Élőben a létrehozott vagy átnevezett partner 20–60 másodpercig gyakran hiányzott a `list({ query })` találatai közül. Ha két `findOrCreate()` ugyanarra a vevőre ennél gyorsabban fut egymás után, a második nem találja az elsőt, és létrehoz egy második, azonos adatú partnert.
+
+Ez ártalmatlan: a számlára mindkét esetben a helyes adatok kerülnek, csak a partnerlistában lesz egy ismétlődő sor. A tárca szándékosan nem próbálja kivárni az indexet, mert a késés hossza nem ismert, és a számlázást nem akarja percekre megakasztani.
+
+<Callout type="info" title="A hamis Billingóban nincs késés">
+  A `tarcajs/testing` hamis Billingója azonnal megtalálja az új partnert, ezért a tesztjeidben a
+  második `findOrCreate()` mindig `created: false`-t ad. Élőben ez nem garantált.
+</Callout>
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Üres név. A tárca nem küld kérést. |
+| 422 | `validation` | A létrehozásnál hiányzik a cím egyik kötelező mezője. A `fieldErrors` a Billingo mezőneveit adja (`address.post_code`). |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs: a lista lefut, a létrehozás nem. |
+| 429, 5xx | `rate_limit`, `server` | A listát a tárca magától újrapróbálja, a létrehozást nem. |
+| – | `network`, `timeout` | Ha a létrehozás közben jön, nem tudni, elkészült-e a partner. |
+
+A létrehozás írás, ezért a tárca soha nem ismétli magától. Bizonytalan hiba után hívd újra a `findOrCreate()`-et: ha az első kérés mégis létrehozta a partnert, és az index már látja, megkapod; ha még nem látja, egy második partner jön létre. Rossz adat egyik esetben sem kerül a számlára.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const vevo = {
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+}
+
+async function partnerId(): Promise<number | undefined> {
+  try {
+    return (await tarca.partners.findOrCreate(vevo)).partner.id
+  } catch (error) {
+    if (isBillingoError(error) && (error.category === 'network' || error.category === 'timeout')) {
+      return (await tarca.partners.findOrCreate(vevo)).partner.id
+    }
+    throw error
+  }
+}
+
+console.log(await partnerId())
+```
+
+A hibák kategóriáiról a [Hibakezelés](/docs/alapok/hibakezeles) oldal szól részletesen.

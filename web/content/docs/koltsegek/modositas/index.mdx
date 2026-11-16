@@ -1,0 +1,23 @@
+---
+title: Módosítás
+description: Költség módosítása a spendings.update() metódussal. Teljes csere PUT kéréssel, ugyanazokkal a kötelező mezőkkel, mint a létrehozásnál, és a fizetés napjának beírása.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingUpdate
+---
+
+A `spendings.update()` PUT kéréssel a teljes költséget cseréli, ugyanazokkal a kötelező mezőkkel, mint a létrehozás. Élőben a kihagyott `comment` üres szöveg lett, ezért a megtartandó mezőket is küldd vissza.
+
+```ts
+const koltseg = await tarca.spendings.update(id, { ...adatok, paidAt: new Date() })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/koltsegek/modositas/keres">
+    A teljes `SpendingInput`, és a fizetés napjának beírása.
+  </Card>
+  <Card title="Válasz" href="/docs/koltsegek/modositas/valasz">
+    A 200-as válasz, a csere hatása a kihagyott mezőkre és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/koltsegek/modositas/minta">
+    Költség rögzítése, a fizetés napjának beírása, majd törlés.
+  </Card>
+</Cards>

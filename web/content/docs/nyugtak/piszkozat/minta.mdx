@@ -1,0 +1,9 @@
+---
+title: Minta
+description: Nyugta piszkozat, majd véglegesítése kártyás fizetéssel ugyanazzal az azonosítóval, a ténylegesen elküldött PUT törzzsel.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceiptFromDraft
+---
+
+A piszkozat az 1-es azonosítót kapja, sorszám nélkül. A véglegesítés után ugyanez az azonosító `receipt` típusú, `NYT-2026-1` sorszámú és fizetett. Az **Elküldött kérések** fülön a `PUT /documents/receipt/1` törzsében a teljes nyugta megy, a `payment_method` már `bankcard`.
+
+<Example slug="nyugta-piszkozat" />

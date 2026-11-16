@@ -1,0 +1,15 @@
+---
+title: Minta
+description: Futtatható számla nettó és bruttó árú tétellel, két áfakulccsal, a ténylegesen elküldött kérésekkel és a Billingo válaszával.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+A példa egy új partnernek állít ki számlát: egy nettó árú tételt 27%-kal és egy bruttó árú tételt 5%-kal. Az **Elküldött kérések** fülön a négy kérés sorrendjét látod, a `POST /documents` törzsében pedig azt, hogyan lett a `netUnitPrice`-ból `unit_price` és `unit_price_type: "net"`, és hogyan került az `orderNumber` a `settings` alá.
+
+<Example slug="szamla-beallitasokkal" />
+
+A végösszeg 198 900 Ft: 150 000 Ft nettó és 40 500 Ft áfa a webfejlesztésre, 8 400 Ft bruttó a két tankönyvre. A tankönyv nettó egységára a válaszban `4000.000001`, ez a Billingo [kerekítési modellje](/docs/bizonylatok/kiallitas/szabalyok/kerekites).
+
+## A legrövidebb számla
+
+<Example slug="szamla" />

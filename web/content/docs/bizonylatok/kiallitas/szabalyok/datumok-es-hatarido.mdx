@@ -1,0 +1,50 @@
+---
+title: Dátumok és határidő
+description: A teljesítés napja, a számla kelte és a fizetési határidő a tárcában. Date vagy YYYY-MM-DD, budapesti nap, dueDate vagy dueInDays, és mit ellenőriz a tárca a kérés előtt.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+Egy számlán három dátum van, ebből kettőt te adsz meg:
+
+| Dátum | Mező | Ki adja? | Alapérték |
+| --- | --- | --- | --- |
+| Kelte | `invoiceDate` | a Billingo, a kiállítás napja | – |
+| Teljesítés | `fulfillmentDate` | te | ma, Budapesten |
+| Fizetési határidő | `dueDate` vagy `dueInDays` | te | ma + `defaults.dueInDays` (8 nap) |
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.create({
+  partner: 1,
+  items: [{ name: 'Tanácsadás', quantity: 2, unit: 'óra', netUnitPrice: 20_000, vat: 27 }],
+  fulfillmentDate: '2026-11-10',
+  dueDate: new Date('2026-11-30T23:30:00Z'),
+})
+
+console.log(szamla.invoiceDate, szamla.fulfillmentDate, szamla.dueDate)
+```
+
+## Date vagy szöveg
+
+Minden dátum lehet `'YYYY-MM-DD'` szöveg vagy `Date` érték. A `Date`-et a tárca a budapesti naptárnapra váltja, így a fenti `2026-11-30T23:30:00Z` a dróton `2026-12-01` lesz: Budapesten akkor már december 1. van. A `toISOString().slice(0, 10)` ilyenkor az UTC szerinti napot adná, ezért éjfél körül egy nappal elcsúszna. A részletek: [Dátumok](/docs/alapok/datumok).
+
+A szöveges dátumot a tárca ellenőrzi: a `2026-02-30` vagy a `2026.11.16.` kérés nélkül `validation` hibát ad a mező nevével (`fulfillmentDate`, `dueDate`).
+
+## A határidő: dueDate vagy dueInDays
+
+- `dueDate`: pontos nap.
+- `dueInDays`: napok száma a mai budapesti naptól. A `0` azt jelenti, hogy a határidő ma van.
+- Egyik sem: a `defaults.dueInDays`, amely alapból 8.
+
+A kettő együtt nem adható meg: `validation` hiba jön `dueDate` mezővel („A dueDate és a dueInDays közül csak az egyiket add meg.”). A `dueInDays` nemnegatív egész szám, más érték `dueInDays` mezőhibát ad.
+
+A `dueInDays` a kiállítás napjától számol, nem a teljesítéstől, mert a Billingo a kelte napját a kiállítás napjára teszi.
+
+## Amit a Billingo ad hozzá
+
+- A kelte (`invoiceDate`) mindig a kiállítás napja, a tárcán keresztül nem állítható.
+- A `paidDate` élőben kifizetetlen számlán is ki van töltve a kelte napjával. Hogy fizetett-e, azt a `paymentStatus` mutatja.
+- Nyugtán a határidő mindig a kiállítás napja, lásd [Nyugták](/docs/nyugtak/kiallitas/valasz).

@@ -1,0 +1,23 @@
+---
+title: Lista és keresés
+description: Partnerek listája és névkeresés a partners.list() és a partners.all() metódussal. A query csak a névben keres, a szavak elejére illesztve, és a frissen létrehozott partnert késve találja.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/ListPartner
+---
+
+A `partners.list()` egy oldalt ad vissza, a `partners.all()` végiglapozza a teljes listát. A `query` csak a partner nevében keres, a szavak elejére illesztve. Adószámra és e-mail címre nem talál.
+
+```ts
+const oldal = await tarca.partners.list({ query: 'Vevő' })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/partnerek/lista/keres">
+    A paraméterek, a névkeresés szabályai és a lapozás.
+  </Card>
+  <Card title="Válasz" href="/docs/partnerek/lista/valasz">
+    A `Page` boríték, a partnerek mezői és a lista élő eltérései.
+  </Card>
+  <Card title="Minta" href="/docs/partnerek/lista/minta">
+    Névkeresés szó elejére, szó közepére és adószámra, majd a teljes lista.
+  </Card>
+</Cards>

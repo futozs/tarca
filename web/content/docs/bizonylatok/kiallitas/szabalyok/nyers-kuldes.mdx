@@ -1,0 +1,76 @@
+---
+title: Nyers küldés
+description: A documents.createRaw() a generált Billingo.DocumentInsert típust küldi el változtatás nélkül. Mikor érdemes, és mit nem végez el ilyenkor a tárca.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+```ts
+tarca.documents.createRaw(insert: Billingo.DocumentInsert, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+```
+
+A `createRaw()` a spec `DocumentInsert` sémáját várja camelCase alakban, és snake_case-re alakítva elküldi. Akkor hasznos, ha a Billingo egy mezőt tud, amit a `DocumentInput` nem fed le, vagy ha egy meglévő integrációból már ilyen alakban jön az adat.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.createRaw({
+  partnerId: 1,
+  blockId: 1,
+  type: 'invoice',
+  fulfillmentDate: '2026-11-16',
+  dueDate: '2026-11-24',
+  paymentMethod: 'cash',
+  language: 'hu',
+  currency: 'HUF',
+  electronic: false,
+  items: [
+    {
+      name: 'Javítás',
+      unitPrice: 1_000,
+      unitPriceType: 'net',
+      quantity: 1,
+      unit: 'db',
+      vat: '27%',
+    },
+  ],
+})
+
+console.log(szamla.invoiceNumber, szamla.grossTotal)
+```
+
+A hamis Billingo ezt a törzset rögzítette:
+
+```json
+{
+  "partner_id": 1,
+  "block_id": 1,
+  "type": "invoice",
+  "fulfillment_date": "2026-11-16",
+  "due_date": "2026-11-24",
+  "payment_method": "cash",
+  "language": "hu",
+  "currency": "HUF",
+  "electronic": false,
+  "items": [
+    {
+      "name": "Javítás",
+      "unit_price": 1000,
+      "unit_price_type": "net",
+      "quantity": 1,
+      "unit": "db",
+      "vat": "27%"
+    }
+  ]
+}
+```
+
+## Amit a createRaw nem végez el
+
+- **Nincs alapérték.** A `defaults` nem érvényes: a `blockId`, a dátumok, a fizetési mód, a nyelv és a pénznem kötelező, és neked kell megadnod.
+- **Nincs partnerkeresés.** Csak `partnerId` adható meg, partneradat nem.
+- **Nincs helyi ellenőrzés.** A hibás mezőt a Billingo utasítja el 422-vel, például árfolyam nélküli devizás számlánál: `conversion_rate` „The conversion rate field is required unless currency is in HUF.” A `fieldErrors` ilyenkor a Billingo snake_case mezőneveit tartalmazza.
+- **Nincs számátalakítás.** Az áfa itt kód (`'27%'`), nem szám, az ár `unitPrice` és `unitPriceType`.
+
+Ami ugyanúgy működik, mint a `create()`-nél: a `POST` sosem ismétlődik, a válasz a teljes `Billingo.Document`, és az `onDocument` hook `created` eseményt kap. Pontosan egyszeri kiállításhoz a `createRaw()`-nak nincs `Once` párja: adj `vendorId`-t, és bizonytalan hiba után keresd vissza a `findByVendorId()`-val.

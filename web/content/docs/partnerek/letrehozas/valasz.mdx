@@ -1,0 +1,64 @@
+---
+title: Válasz
+description: A partners.create() által visszaadott partner a Billingo alapértékeivel, a 201-es válasz, a 422-es hibák és a teendő bizonytalan hiba után.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/CreatePartner
+---
+
+A Billingo 201-gyel és a teljes, mentett partnerrel válaszol. A tárca ezt `Billingo.Partner` objektumként adja vissza, camelCase mezőkkel. A kihagyott mezők a Billingo alapértékeivel jönnek vissza: üres szövegek, üres `emails` lista, `partnerShowType: 'show_all'`, és csupa `null` a `customBillingSettings` alatt.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | Az új partner azonosítója. Ezt add át a számlának vagy a `get()`, `update()`, `delete()` hívásnak. |
+| `name`, `address` | `string`, `Billingo.Address` | Ahogy elküldted. Az `address.countryCode` `'HU'`, ha nem adtál meg országot. |
+| `taxType` | `Billingo.PartnerTaxType` | A tárolt adózási típus. Ha kisbetűvel küldenéd, itt `''` állna. |
+| `customBillingSettings` | `Billingo.PartnerCustomBillingSettings` | A meg nem adott beállítások `null` értékűek. |
+
+A többi mezőt a [Lekérés](/docs/partnerek/lekeres) oldal sorolja fel.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 422 | `validation` | Hiányzik a név vagy a cím egyik kötelező mezője. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs. |
+| 429 | `rate_limit` | Túl sok kérés. A tárca írást nem próbál újra. |
+| 5xx | `server` | Billingo hiba. Nem tudni biztosan, létrejött-e a partner. |
+| – | `network`, `timeout` | Nincs válasz. Nem tudni, létrejött-e a partner. |
+
+A 422 törzse Laravel-stílusú, a tárca a `fieldErrors` mezőbe teszi. Hiányzó címre a hamis Billingo ezt adja, ugyanabban az alakban, mint az élő API:
+
+```json
+{
+  "message": "Validation Failed",
+  "errors": [
+    { "field": "address.post_code", "message": "The address.post code field is required." },
+    { "field": "address.city", "message": "The address.city field is required." },
+    { "field": "address.address", "message": "The address.address field is required." }
+  ]
+}
+```
+
+## Bizonytalan hiba után
+
+Ha a létrehozás `network`, `timeout` vagy `server` hibával áll meg, a partner létrejöhetett. Ne hívd újra a `create()`-et vakon. Ha a partner egy számlához kell, hívd a `findOrCreate()`-et: az megtalálja a már létrejött partnert, vagy a késleltetett index miatt egy második, azonos adatú partnert hoz létre. Hibás adat egyik esetben sem kerül a számlára.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const adatok = {
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+}
+
+try {
+  await tarca.partners.create(adatok)
+} catch (error) {
+  const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+  if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+  const { partner, created } = await tarca.partners.findOrCreate(adatok)
+  console.log(partner.id, created)
+}
+```

@@ -1,0 +1,78 @@
+---
+title: NAV-állapot
+description: A bizonylat NAV Online Számla beküldésének állapota a documents.navStatus() metódussal. Közvetlenül a kiállítás után null, a teszt profilon no_online_szamla_settings.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/GetOnlineSzamlaStatus
+---
+
+Éles profilon a Billingo minden számlát, sztornót és módosító számlát beküld a NAV Online Számla rendszerébe. A `navStatus()` megmutatja, hol tart ez egy bizonylatnál.
+
+<Operation id="GetOnlineSzamlaStatus" methods={['documents.navStatus']} />
+
+## Kérés
+
+```ts
+tarca.documents.navStatus(id: number, options?: { signal?: AbortSignal }): Promise<Billingo.OnlineSzamlaStatus | null>
+```
+
+A tárca `GET /documents/{id}/online-szamla` kérést küld. Lekérdezés, hiba után újrapróbálja.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+const nav = await tarca.documents.navStatus(szamlaId)
+
+if (nav === null) {
+  console.log('Még nincs NAV rekord, nézd meg később.')
+} else {
+  console.log(nav.status, nav.messages?.map((uzenet) => uzenet.humanReadableMessage))
+}
+```
+
+## Válasz
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `transactionId` | `string` | A NAV tranzakció azonosítója. A teszt profilon `''`. |
+| `status` | `string` | A beküldés állapota, például `done`, `aborted`, `no_online_szamla_settings`. |
+| `messages` | `{ validationResultCode, validationErrorCode, humanReadableMessage }[]` | A NAV üzenetei. |
+
+A fejlesztői teszt profilon nincs NAV kapcsolat. Élőben egy kiállított számlára ezt kaptuk:
+
+```json
+{
+  "transaction_id": "",
+  "status": "no_online_szamla_settings",
+  "messages": [
+    {
+      "validation_result_code": "",
+      "validation_error_code": "",
+      "human_readable_message": "NAV Online Számla összeköttetés nincs beállítva."
+    }
+  ]
+}
+```
+
+### Mikor null?
+
+Közvetlenül a kiállítás után a Billingónak még nincs NAV rekordja: élőben három másodpercen belül 404 `NavOnlineSzamla is not found.` jött, 17 másodperc múlva már volt rekord. Akkor is 404 jön, ha a bizonylatot sosem küldték be (a hivatalos Billingo MCP piszkozatból véglegesített számlán mérte). Ez nem hiba, ezért a tárca `null`-t ad. Minden más hibát továbbdob.
+
+| Státusz | Eredmény | Mikor? |
+| --- | --- | --- |
+| 200 | `OnlineSzamlaStatus` | Van NAV rekord. |
+| 404 `NavOnlineSzamla is not found.` | `null` | Még nincs, vagy nem is lesz NAV rekord. |
+| 403 | `forbidden` hiba | Ismeretlen azonosító. |
+| 429, 5xx | `rate_limit`, `server` hiba | A tárca újrapróbálta, de nem sikerült. |
+
+### A bizonylat saját mezője
+
+A bizonylatnak is van NAV-mezője, az `onlineSzamlaStatus`: friss számlán `processing`, piszkozaton `not_checked`. Ha csak gyors képet akarsz, ez is elég; a részletes NAV üzeneteket a `navStatus()` adja.
+
+## Minta
+
+A példa kiállít egy számlát, és azonnal lekéri a NAV-állapotot. A hamis Billingo is késik: a kiállítás utáni első 10 másodpercben 404-et ad, ezért az eredmény `null`.
+
+<Example slug="nav-statusz" />

@@ -1,0 +1,95 @@
+---
+title: Élő eltérések
+description: Ahol a Billingo élő API-ja másképp viselkedik, mint ahogy a hivatalos spec vagy az útmutató írja. Null mezők, más státuszkódok és tartalomtípusok, élőben kötelező mezők, nem dokumentált útvonalak, és mit tesz velük a tárca.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14
+---
+
+A tárca típusai a Billingo hivatalos OpenAPI specifikációjából készülnek. A spec néhány helyen nem azt írja, amit az élő API válaszol. Ezeket a fejlesztői teszt profilon mértük ki (2026. november 15.), vagy a hivatalos Billingo MCP élő tesztjei rögzítik. Egy közös táblázat javítja a spec-et, így a típusok, a tárca saját ellenőrzése és a tesztek ugyanazt a valóságot látják.
+
+A tárca ezeket kezeli, neked nem kell velük foglalkoznod. Akkor nézd meg ezt az oldalt, ha a Billingo válaszát saját kóddal dolgozod fel, vagy ha egy mező nem úgy néz ki, ahogy a spec alapján várnád.
+
+## Mezők, amelyek null értékkel jönnek
+
+A spec ezeket nem engedi `null`-nak, élőben mégis az. A `Billingo` típusokban `| null` szerepel, ezért `!= null`-lal vizsgáld őket.
+
+| Hol? | Mezők | Mikor null? |
+| --- | --- | --- |
+| Minden lista | `prev_page_url`, `next_page_url` | Az első és az utolsó oldalon. A tárca `Page` borítéka ezeket nem adja tovább. |
+| Bizonylat | `discount`, `recurringId` | Kedvezmény és ismétlődés nélkül. |
+| Bizonylat tétele | `entitlement`, `sku`, `ean`, `dataEraserCodes` | Termék nélküli tételen. |
+| Partner | `customBillingSettings.dueDays`, `customBillingSettings.documentCurrency` | Egyedi számlázási beállítás nélkül. |
+| Termék | `entitlement`, `connectProductId`, `purchasePrice` | Ha nem adtad meg. A létrehozás és a módosítás válaszában `purchasePrice: null`, a lekérésben `0`. |
+| Költség | `partner` | Partner nélküli költségen. |
+| Számlatömb | `picPath`, `bankAccountId` | Logó és bankszámla nélkül. |
+
+## Más mezőnév
+
+| Hol? | A spec szerint | Élőben |
+| --- | --- | --- |
+| Költség lekérése és listája | `is_created_by_nav` | `created_by_nav`, a tárcában `createdByNav` |
+
+## Élőben kötelező mezők
+
+| Mire? | Mezők | A spec szerint |
+| --- | --- | --- |
+| Nyugta | `electronic` | opcionális, alapértéke `false`. A tárca mindig elküldi. |
+| Költség | `conversionRate` (forintnál is `1`), `invoiceNumber`, `invoiceDate`, `dueDate` | opcionális. A tárca típusa kötelezőnek írja. |
+| Partner | `name`, `address` | a 3.0.15-ben nincs kötelező mező. |
+| Számlatömb | `name`, `prefix` (lehet `''`, de jelen kell lennie), `type` | nincs kötelező mező. |
+| Bizonylat | `items` | nem kötelező. |
+
+## Más státuszkód
+
+| Művelet | A spec szerint | Élőben |
+| --- | --- | --- |
+| Piszkozat véglegesítése (`PUT /documents/{id}`) | 200 | 201 |
+| Nyugta piszkozat véglegesítése (`PUT /documents/receipt/{id}`) | 200 | 201 |
+| Bizonylat lekérése ismeretlen vagy törölt azonosítóval | 404 | 403 |
+| Bizonylat lekérése ismeretlen `vendorId`-val | nincs dokumentálva | 404 `Document is not found.` |
+| Befizetések törlése | az útmutató szerint 204 | 200 `[]` |
+| Számlatömb létrehozása | 201 törzs nélkül | 201 a teljes tömbbel |
+
+A sikeres létrehozások többsége 201, a másolás (`copy`) és a sztornó (`cancel`) viszont 200, ahogy a spec is írja. A tárca a kettő között nem tesz különbséget: a 202 kivételével minden 2xx választ sikernek vesz.
+
+## Más tartalomtípus
+
+| Művelet | A spec szerint | Élőben |
+| --- | --- | --- |
+| Blokknyomtatós PDF (`posPdf`) | `application/pdf` | `application/octet-stream`, a tartalom PDF |
+| Export letöltése | `application/*` | `text/csv; charset=UTF-8`, UTF-8 BOM-mal, pontosvesszővel |
+
+A tárca bináris válasznál nem a tartalomtípust nézi: a PDF-nél a `%PDF` aláírást ellenőrzi.
+
+## Az útmutató hibás metódusai
+
+| Művelet | Az útmutató szerint | Élőben |
+| --- | --- | --- |
+| Sztornó | `PUT /documents/{id}/cancel` | 405; a helyes a `POST` |
+| Befizetés hozzáadása | `POST /documents/{id}/payments`, egy objektummal | 405; a helyes a `PUT` csupasz tömbbel, teljes cserével |
+
+## Nem dokumentált útvonalak
+
+Három számlatömb-művelet egyik spec-ben sem szerepel, mégis működik. A tárca mindhármat ismeri, és az e2e teszt élőben futtatja őket:
+
+| Útvonal | tárca | Viselkedés |
+| --- | --- | --- |
+| `GET /document-blocks/{id}` | `documentBlocks.get()` | A teljes tömb. Ismeretlen vagy törölt tömbre 403. |
+| `PUT /document-blocks/{id}` | `documentBlocks.update()` | Teljes csere. A `null` `senderEmail` és `bccEmail` 422-t ad, ezért a tárca kihagyja. |
+| `DELETE /document-blocks/{id}` | `documentBlocks.delete()` | 204, utána a tömb nincs a listában. Bizonylatot tartalmazó tömbön nem próbáltuk. |
+
+Lásd [Számlatömbök](/docs/szamlatombok).
+
+## Viselkedés, amit a spec nem ír le
+
+- **A lista késik.** Egy friss bizonylat 15–30 másodperc múlva jelent meg a `GET /documents` listában.
+- **A partnerkereső késik.** Egy frissen létrehozott vagy átnevezett partnert nagyjából egy percig nem talált; törlés után a `total` percekig a régi. A `query` csak a név szavainak elejére illeszt.
+- **A `guess` nem keresés.** A `POST /partners/guess` pontos névegyezésen kívül mindig új partnert hoz létre, és mindig 201-et ad.
+- **A PDF készülhet.** Kiállítás után a letöltés 202-t adhat; élőben 1,6 másodperc múlva kész volt.
+- **NAV-állapot.** Közvetlenül a kiállítás után 404 `NavOnlineSzamla is not found.`; a tárca `null`-t ad.
+- **Rate limit fejlécek.** JSON válaszon nincs egy sem, bináris válaszon csak `x-ratelimit-limit` és `x-ratelimit-remaining`.
+- **`paidDate`.** Kifizetetlen számlán is ki van töltve a kelte napjával.
+- **Bruttó egységárú tétel.** A válaszban a nettó egységár hat tizedesre számolt, például 1270 Ft bruttó 27%-kal `1000.000001`.
+
+## Ha a Billingo javít valamit
+
+A tárca változásfigyelője hetente összeveti a spec-et, a fejlesztői changelogot és a hivatalos MCP-t a rögzített állapottal, és jelzi, ha egy javítás már feleslegessé vált vagy egy új eltérés jelent meg. Ilyenkor a táblázat és a típusok egy új kiadással követik a változást.

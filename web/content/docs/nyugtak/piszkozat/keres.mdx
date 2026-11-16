@@ -1,0 +1,44 @@
+---
+title: Kérés
+description: A receipts.finalizeDraft() a nyugta piszkozatot a teljes nyugtával írja felül. A bemenet ugyanaz, mint a kiállításnál, a type csak receipt lehet.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceiptFromDraft
+---
+
+```ts
+tarca.receipts.finalizeDraft(id: number, input: ReceiptFinalizeInput, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+```
+
+A tárca `PUT /documents/receipt/{id}` kérést küld a teljes `ReceiptInsert` törzzsel. A Billingo nem a piszkozat tárolt adataiból dolgozik: amit kihagysz, az alapértéket kapja, nem a piszkozat értékét.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const tetelek = [{ name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 }]
+
+const piszkozat = await tarca.receipts.create({ type: 'draft', items: tetelek })
+const nyugta = await tarca.receipts.finalizeDraft(piszkozat.id ?? 0, {
+  items: tetelek,
+  paymentMethod: 'bankcard',
+})
+
+console.log(nyugta.id === piszkozat.id, nyugta.invoiceNumber)
+```
+
+A `ReceiptFinalizeInput` a [kiállítás bemenete](/docs/nyugtak/kiallitas/keres), egy eltéréssel: a `type` csak `'receipt'` lehet, és az az alapérték is. A `'draft'` kérés nélkül `validation` hibát ad.
+
+A fenti véglegesítés törzse a hamis Billingóban:
+
+```json
+{
+  "type": "receipt",
+  "payment_method": "bankcard",
+  "currency": "HUF",
+  "electronic": false,
+  "items": [{ "name": "Kávé", "unit_price": 600, "vat": "27%", "quantity": 2, "unit": "db" }],
+  "block_id": 2
+}
+```
+
+A véglegesítés írás, a tárca hiba után nem ismétli meg.

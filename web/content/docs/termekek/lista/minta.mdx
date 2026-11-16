@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Két termék nettó és bruttó árral, majd keresés a névben és a teljes lista mindkét árral a hamis Billingo ellen.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/ListProduct
+---
+
+A példa létrehoz egy nettó és egy bruttó árú terméket, megkeresi a kávét, végül az `all()` hívással kiírja mindkettőt. A listában minden terméknek mindkét ára megvan, és a `purchasePrice` `0`.
+
+<Example slug="termek-lista" />
+
+Az **Elküldött kérések** fülön a két `CreateProduct` törzsében csak egy-egy ár szerepel. A **Billingo válasz** fülön a `ListProduct` már mindkét árat hozza, a létrehozás `null` beszerzési ára helyett `0`-val.

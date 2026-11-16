@@ -1,0 +1,86 @@
+---
+title: Megfigyelhetőség
+description: A tarcajs/observe a kliens hookjaiból strukturált naplót, OpenTelemetry-kompatibilis spanokat és Prometheus metrikákat készít, alapból kitakarva. Függőség nélkül, és soha nem küld semmit sehova.
+---
+
+Az `observe()` hookokat ad, amelyeket a `createTarca({ hooks })` kap meg. Minden Billingo kérésről naplósort, spant és metrikát készít, a bizonylateseményekről is. Függősége nincs, és semmit nem küld el: a naplót a te loggered, a spanokat a te tracered, a metrikákat a te `/metrics` végpontod adja tovább.
+
+<Example slug="naplozas-es-metrikak" />
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+import { combineHooks, createMetricsRegistry, observe, type ObserveTracer } from 'tarcajs/observe'
+
+declare const tracer: ObserveTracer
+
+const metrics = createMetricsRegistry()
+const tarca = createTarca({
+  hooks: combineHooks(
+    observe({ logger: console, tracer, metrics, refSalt: process.env.REF_SALT }),
+    {
+      onDocument: (event) => console.log('új bizonylat', event.document.invoiceNumber),
+    },
+  ),
+})
+
+export function GET(): Response {
+  return new Response(metrics.renderPrometheus(), {
+    headers: { 'content-type': 'text/plain; version=0.0.4' },
+  })
+}
+```
+
+A `tracer` lehet az `@opentelemetry/api` `trace.getTracer('tarcajs')` eredménye: az `ObserveTracer` szerkezeti típus, így a tárca nem függ a csomagtól.
+
+## Opciók
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `logger` | nincs | Bármi `{ debug?, info?, warn?, error? }` metódusokkal, `(data, message)` sorrendben: pino, console. |
+| `tracer` | nincs | OpenTelemetry-kompatibilis tracer. |
+| `metrics` | nincs | `createMetricsRegistry()`. |
+| `redact` | `true` | Kitakarás, lásd lent. |
+| `refSalt` | folyamatonként véletlen | A `vendorId` kivonatának sója. Ugyanaz a só több folyamatban ugyanazt a kivonatot adja. |
+| `logRequests` | `false` | Egy `debug` sor minden kérés indulásakor is. |
+
+## Napló
+
+| Esemény | Szint | Mezők |
+| --- | --- | --- |
+| `tarca.request` | `info` sikernél, `warn` hibánál | `operation`, `method`, `path` (sablon), `attempt`, `requestId`, `outcome`, `durationMs`, `willRetry`, hibánál `errorCategory`, `status`, `retryable`, `traceId`, `fields` |
+| `tarca.request.start` | `debug`, csak `logRequests` mellett | a kérés adatai |
+| `tarca.warning` | `warn` | `hook`, `operation` |
+| `tarca.document` | `info` | `type`, `action`, `documentId`, `number`, `vendorRef` |
+
+A `path` sablon, értékek nélkül: `/documents/vendor/{vendor_id}`. Egy sikertelen `vendorId` keresés például `tarca: GetDocumentByVendorId sikertelen (not_found)` üzenetű `warn` sor, és ez egy `createOnce` első lépésénél a rendes menet része.
+
+## Kitakarás
+
+A `redact` alapból be van kapcsolva. Az API kulcs soha nem kerül eseménybe. Hibánál csak a `errorCategory`, `status`, `traceId`, `retryable` és `fields` (a hibás mezők neve) kerül a naplóba, az üzenet, a `hint`, az `apiMessage` és a mezőüzenetek nem, mert ezek idézhetnek `vendorId`-t, nevet vagy e-mail címet. A figyelmeztetés hibájából csak a neve (`errorName`) marad. A `vendorId` helyett `vendorRef: 'hmac:<16 hexa>'` jelenik meg, a `refSalt`-tal képzett HMAC-SHA-256.
+
+A `redact: false` mindent nyíltan naplóz, és a spanok is a valódi hibát kapják. Csak fejlesztői gépen kapcsold ki.
+
+## Spanok
+
+Próbálkozásonként egy span, `billingo <operationId>` névvel, kliens típussal. Attribútumok: `billingo.operation`, `http.request.method`, `url.template`, `billingo.attempt`, `billingo.request_id`, `http.response.status_code`, hibánál `billingo.error.category`, `billingo.trace_id`, egy kitakart kivétel és `SPAN_STATUS_ERROR` állapot. A megszakított kérés spanja is lezárul. Legfeljebb `MAX_OPEN_SPANS` (1000) span lehet nyitva, efölött a legrégebbi zárul le.
+
+## Metrikák
+
+| Metrika | Címkék |
+| --- | --- |
+| `tarca_requests_total` | `operation`, `outcome` (`success` vagy a hibakategória) |
+| `tarca_request_duration_ms` (hisztogram) | `operation` |
+| `tarca_retries_total` | `operation` |
+| `tarca_rate_limited_total` | `operation` |
+| `tarca_unexpected_response_total` | `operation` |
+| `tarca_lock_errors_total` | a `createOnceLock` figyelmeztetései |
+| `tarca_warnings_total` | `hook` |
+| `tarca_documents_total` | `type`, `action`, az `onDocument` eseményekből |
+
+A `createMetricsRegistry(buckets?)` regisztrációt ad `counter(name, labels?, value?)`, `histogram(name, value, labels?)`, `renderPrometheus()` (0.0.4-es szöveges formátum `# HELP` sorokkal, kumulatív vödrökkel) és `reset()` függvénnyel. Saját metrikát is felvehetsz. Érvénytelen név vagy címke (`le` és `__…` foglalt), negatív számlálónövelés, nem véges érték, vagy egy név számlálóként és hisztogramként is: `TypeError`.
+
+## Hookok egyesítése
+
+A `combineHooks(...hooks)` minden hook kulcsot összefűz, a később hozzáadottakat is. Az eseményhookok sorban futnak: ha egy kezelő dob, a többi akkor is lefut, és utána az első hiba megy tovább (egy aszinkron hiba a tárca `onWarning`-jához jut). Az `onDocument` kezelők egymás után futnak, megvárva egymást. Az `onDocumentError` beállítás, így az utolsó megadott érvényes. Az `undefined` argumentumokat kihagyja.
+
+Egy dobó tracer, logger vagy metrika soha nem ront el kérést. Egy teljes beállítás pinóval és `/metrics` végponttal: [Naplózás és metrikák recept](/docs/receptek/naplozas-es-metrikak).

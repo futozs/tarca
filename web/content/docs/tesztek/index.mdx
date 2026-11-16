@@ -1,36 +1,57 @@
 ---
 title: Tesztelés
-description: A tarcajs/testing memóriában futó, hamis Billingót ad a Billingo összes műveletével. A saját kódod tesztje ugyanazt a validációt, sorszámozást és kerekítést látja, mint élesben, kérés nélkül.
+description: A tarcajs/testing memóriában futó, hamis Billingót ad mind az 57 művelettel. A saját kódod tesztje ugyanazt a validációt, sorszámozást és kerekítést látja, mint élesben, API kulcs és hálózat nélkül.
 ---
 
-A `tarcajs/testing` egy memóriában futó Billingót ad. A valódi kliens fut fölötte, így a saját kódod tesztje ugyanazt a validációt, sorszámozást és kerekítést látja, mint élesben, csak kérés nem megy ki. Ezen fut a [sandbox](/sandbox) is.
-
-## Mock kliens
-
-<Example slug="mock-kliens" />
-
-- A `createMockTarca()` a valódi `Tarca` kliens egy friss hamis Billingón, plusz `calls` (a hívásnapló), `billingo` (a hamis Billingo), `failNext()` és `reset()`.
-- A `failNext(metódus)` a következő hívást egyszer hibára futtatja, alapból hálózati hibával. Az `afterSuccess` esetén a művelet a hamis Billingóban lefut, a hívó mégis hibát kap: így tesztelheted az elveszett választ.
-- A `createMockTarca()` a `createTarca()` `defaults` beállítását is elfogadja, így ugyanazzal a konfigurációval tesztelhetsz, mint élesben.
-
-## Hamis Billingo a saját kliensed alatt
+A `tarcajs/testing` egy memóriában futó Billingót ad egy `fetch` függvény mögött. A valódi kliens fut fölötte, így a saját kódod tesztje ugyanazt a validációt, sorszámozást, kerekítést és ugyanazokat a hibákat látja, mint élesben, csak kérés nem megy ki. Ezen fut a weboldal [sandboxa](/sandbox) is. A modul futtatókörnyezet-független és függőség nélküli, a `tarcajs` gyökér nem importálja.
 
 ```ts twoslash
-import { createTarca } from 'tarcajs'
-import { createFakeBillingoFetch } from 'tarcajs/testing'
+import { createMockTarca } from 'tarcajs/testing'
 
-const billingo = createFakeBillingoFetch({ hufRates: { EUR: 390 } })
-const tarca = createTarca({ apiKey: 'teszt-kulcs', fetch: billingo.fetch, retryDelayMs: 0 })
+const tarca = createMockTarca()
 
-billingo.fail('network', { operation: 'CreateDocument', afterSuccess: true })
-
-const { created } = await tarca.documents.createOnce({
-  vendorId: 'WEB-1',
-  partner: { name: 'Vevő Kft.', address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' } },
-  items: [{ name: 'Webfejlesztés', quantity: 1, netUnitPrice: 15_000, vat: 27 }],
+const { document } = await tarca.documents.createOnce({
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
 })
 
-console.log(created, billingo.data.documents.size)
+console.log(document.invoiceNumber, document.grossTotal, tarca.billingo.count('CreateDocument'))
 ```
 
-A hamis Billingo a valódi drótformátumot beszéli: snake_case JSON, Laravel lapozás, a Billingo hibaüzenetei, sorszámozás tömbönként, és a mért kerekítés. Hálózati hibát, időtúllépést, 202-t és tetszőleges státuszt is tud szimulálni. Az elküldött kéréseket a `billingo.requests` tartalmazza.
+A számla `2026-1` sorszámot kap, a bruttó végösszeg `190500`, a hamis Billingo egy kiállító kérést kapott.
+
+## Melyiket mikor?
+
+| | `createMockTarca()` | `createFakeBillingoFetch()` |
+| --- | --- | --- |
+| Mit ad? | Kész `Tarca` klienst a hamis Billingón | Egy `fetch` függvényt, amelyet te adsz a saját `createTarca()` hívásodnak |
+| Mikor jó? | A saját függvényed kapja a klienst paraméterként | A kódod maga hozza létre a klienst, vagy a beállításait (`timeoutMs`, `hooks`) is tesztelnéd |
+| Hívásnapló | `calls`: metódusnév és argumentumok | nincs |
+| Kérésnapló | `billingo.requests` | `requests` |
+| Hiba szimulálása | `failNext(metódus)` a kliens szintjén, és `billingo.fail()` | `fail()` a drót szintjén |
+
+Mindkettő a [hamis Billingón](/docs/tesztek/hamis-billingo) fut, ugyanazzal az állapottal és ugyanazokkal a [hibákkal](/docs/tesztek/hibak-szimulalasa).
+
+<Callout type="info" title="A tesztek ne hívják az éles API-t">
+  A hamis Billingónak nem kell API kulcs, és nem megy ki tőle kérés. Ha a valódi Billingón is
+  kipróbálnád a kódodat, arra a fejlesztői teszt profil való, külön kulccsal. Lásd [Telepítés](/docs/alapok/telepites).
+</Callout>
+
+<Cards>
+  <Card title="Mock kliens" href="/docs/tesztek/mock-tarca">
+    createMockTarca: hívásnapló, egyszeri hiba, alapértékek és hookok.
+  </Card>
+  <Card title="Hamis Billingo" href="/docs/tesztek/hamis-billingo">
+    createFakeBillingoFetch: a drótformátum, az útválasztás és a beállítások.
+  </Card>
+  <Card title="Hibák szimulálása" href="/docs/tesztek/hibak-szimulalasa">
+    Hálózati hiba, időtúllépés, 202 és tetszőleges státusz, elveszett válasz.
+  </Card>
+  <Card title="Kérések és állapot" href="/docs/tesztek/keresek-es-allapot">
+    requests, count, counts és data: mit küldött a kódod, mi lett belőle.
+  </Card>
+</Cards>

@@ -1,0 +1,49 @@
+---
+title: Kérés
+description: A currencies.rate() bemenete, a ConversionRateQuery mezői és a GET /currencies query paraméterei, a dátum budapesti naptári napként.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Currency/GetConversionRate
+---
+
+```ts
+tarca.currencies.rate(query: ConversionRateQuery, options?: RequestOptions): Promise<ConversionRate>
+```
+
+## ConversionRateQuery
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `from` | `from` | – | **Kötelező.** A forrás pénznem, például `'EUR'`. A lehetséges értékek a `Billingo.Currency` típusban. |
+| `to` | `to` | – | **Kötelező.** A cél pénznem, például `'HUF'`. |
+| `date` | `date` | a Billingo dönt | A nap, amelyre az árfolyam kell, `Date` vagy `YYYY-MM-DD`. Ha kihagyod, a tárca nem küld `date` paramétert, és a napot a Billingo választja (a hamis Billingo a mai budapesti napot). A válasz `date` mezője mondja meg, melyik napé az árfolyam. |
+
+## A dátum budapesti nap
+
+A `Date` értéket a tárca a budapesti naptári napra váltja, nem az UTC napra. Ez éjfél körül számít: a `2026-11-14T23:30:00Z` időpont UTC szerint még november 14., Budapesten viszont már november 15., 0:30. A `toISOString().slice(0, 10)` az előbbit adná, a tárca az utóbbit küldi.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const ejfelUtan = new Date('2026-11-14T23:30:00Z')
+
+const arfolyam = await tarca.currencies.rate({ from: 'EUR', to: 'HUF', date: ejfelUtan })
+
+console.log(arfolyam.date)
+```
+
+A kérésben ezért `date=2026-11-15` megy ki, és a válasz `date` mezője is ez. A szövegként megadott dátumot a tárca nem váltja át, csak ellenőrzi. A szabály részletei a [Dátumok](/docs/alapok/datumok) oldalon vannak.
+
+## Helyi ellenőrzés
+
+A tárca csak a dátumot ellenőrzi. Hibás formátumra vagy nem létező napra (`'2026-13-01'`) `RangeError`-t dob, és kérést nem küld. A pénznemeket a `Billingo.Currency` típus fogja meg.
+
+## A dróton
+
+A kérésnek nincs törzse, minden a query-ben megy:
+
+```text
+GET /currencies?from=EUR&to=HUF&date=2026-11-13
+```
+
+A Billingo válaszát a [Minta](/docs/arfolyam/minta) oldal mutatja.

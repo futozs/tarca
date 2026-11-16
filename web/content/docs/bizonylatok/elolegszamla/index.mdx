@@ -1,0 +1,57 @@
+---
+title: Előleg- és végszámla
+description: Előlegszámla kiállítása type advance értékkel, majd végszámla, amelyről a Billingo levonja az előleget. Az advanceInvoiceIds mező, a negatív előlegsor és a sztornó sorrendje.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+Az előleg- és a végszámlának nincs külön Billingo művelete: mindkettő a [Kiállítás](/docs/bizonylatok/kiallitas) `create()` metódusa.
+
+1. **Előlegszámla**: `type: 'advance'`, a tételben az előleg összegével.
+2. **Végszámla**: `type: 'invoice'`, a teljes tételekkel, és az `advanceInvoiceIds` mezőben az előlegszámlák azonosítójával.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const partner = {
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+}
+
+const eloleg = await tarca.documents.create({
+  type: 'advance',
+  partner,
+  items: [{ name: 'Előleg', quantity: 1, netUnitPrice: 50_000, vat: 27 }],
+})
+
+const vegszamla = await tarca.documents.create({
+  partner,
+  items: [{ name: 'Konyhabútor', quantity: 1, netUnitPrice: 200_000, vat: 27 }],
+  advanceInvoiceIds: [eloleg.id ?? 0],
+})
+
+console.log(eloleg.grossTotal, vegszamla.grossTotal)
+```
+
+## Mit csinál a Billingo a végszámlával?
+
+- A dróton az `advanceInvoiceIds` az `advance_invoice` tömb.
+- A Billingo magától hozzáad egy negatív előlegsort a végszámlához. A fenti példában a végszámla tételei: Konyhabútor 254 000 Ft bruttó és Előleg −63 500 Ft, a végösszeg 190 500 Ft.
+- A végszámla `relatedDocuments` mezője az előlegszámlára mutat.
+
+Élőben ugyanezt mértük: 3 810 Ft bruttó tételekből a Billingo levont egy 1 270 Ft-os előleget, így a végszámla végösszege 2 540 Ft lett.
+
+Az előlegszámla ugyanolyan számla, mint a többi: NAV-hoz megy, befizetést rögzíthetsz rá, és nem törölhető.
+
+<Callout type="warning" title="Sztornó fordított sorrendben">
+  Ha mindkettőt sztornóznod kell, előbb a végszámlát sztornózd, utána az előleget. A végszámla
+  sztornójának `relatedDocuments` mezője az előleget és a végszámlát is tartalmazza. A hivatalos
+  Billingo MCP élő tesztje is ebben a sorrendben takarít.
+</Callout>
+
+<Cards>
+  <Card title="Minta" href="/docs/bizonylatok/elolegszamla/minta">
+    Előlegszámla és végszámla a hamis Billingóval, a ténylegesen elküldött kérésekkel.
+  </Card>
+</Cards>

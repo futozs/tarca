@@ -1,0 +1,61 @@
+---
+title: Válasz
+description: A nyugta a Billingo Document objektuma. NYT előtagú sorszám, mindig fizetett, a határidő a kiállítás napja, partner nélkül a közös Magánszemély partner. A hibák és a bizonytalan kimenet.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateReceipt
+---
+
+A `receipts.create()` a nyugtát `Billingo.Document`-ként adja vissza, ugyanazokkal a mezőkkel, mint egy számla ([Kiállítás: Válasz](/docs/bizonylatok/kiallitas/valasz)). A Billingo 201-gyel válaszol. A `createOnce()` eredménye `{ document, created }`, lásd [Pontosan egyszer: Válasz](/docs/bizonylatok/pontosan-egyszer/valasz).
+
+## Ami a nyugtán más
+
+| Mező | Érték |
+| --- | --- |
+| `type` | `receipt` |
+| `invoiceNumber` | A nyugtatömb sorszáma, egy friss teszt profilon `NYT-2026-1`. |
+| `paymentStatus` | `paid`, mindig. Befizetést ne rögzíts rá. |
+| `dueDate` | A kiállítás napja, ugyanaz, mint az `invoiceDate`. |
+| `kobakReceiptStatus` | A NAV nyugta-adatszolgáltatás állapota, kezdetben `pending`. |
+| `partner` | Partner nélkül a Billingo közös „Magánszemély” partnere, üres címmel. |
+
+<Callout type="info" title="A Magánszemély partner">
+  Élőben partner nélküli nyugtánál a Billingo létrehozott egy „Magánszemély” nevű partnert, és a
+  következő partner nélküli nyugtán is ugyanazt használta. A küldött `name` nem jelent meg a
+  nyugtán. Ha a vevő nevét a nyugtán akarod látni, adj meg `partner`-t.
+</Callout>
+
+A nyugta összegeit is a Billingo számolja, a bruttó egységárból visszafelé: egy 1270 Ft-os, 27%-os tétel nettó egységára élőben `1000.000001`. Lásd [Kerekítés](/docs/bizonylatok/kiallitas/szabalyok/kerekites#nyugta).
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | A helyi ellenőrzés elbukott. Semmi nem jött létre. |
+| – | `configuration` | Nincs `receipt` típusú tömb a fiókban, és `blockId` sincs. |
+| 400 | `validation` | `Duplicate vendor id. (id:…)`: ez a `vendorId` foglalt, akár egy számla miatt. |
+| 402 | `subscription` | Éles profilon nincs API kiegészítő. |
+| 403 | `forbidden` | Csak olvasó kulcs, vagy másik cég azonosítója. |
+| 422 | `validation` | A Billingo elutasított egy mezőt, például számlatömb a `block_id`-ban. |
+| – | `network`, `timeout`, `server`, `unexpected_response` | Nem tudni, elkészült-e a nyugta. |
+
+Bizonytalan hiba után a `createOnce()` két visszakereséssel eldönti, elkészült-e a nyugta. Ha `create()`-et használtál `vendorId`-val, a `documents.findByVendorId()` megtalálja:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+const vendorId = 'POS-1001'
+
+try {
+  await tarca.receipts.create({
+    vendorId,
+    items: [{ name: 'Kávé', quantity: 2, grossUnitPrice: 600, vat: 27 }],
+  })
+} catch (error) {
+  const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+  if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+  const meglevo = await tarca.documents.findByVendorId(vendorId)
+  if (meglevo === null) throw error
+  console.log('A nyugta mégis elkészült:', meglevo.invoiceNumber)
+}
+```

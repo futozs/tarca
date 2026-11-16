@@ -1,0 +1,118 @@
+---
+title: Lekérés
+description: Egy számlatömb minden beállítása a documentBlocks.get() hívással. Nem dokumentált, élőben ellenőrzött útvonal, ismeretlen tömbre 403.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/DocumentBlock/ListDocumentBlock
+---
+
+<Operation id="GetDocumentBlock" methods={['documentBlocks.get']} />
+
+<Callout type="info" title="Nem dokumentált útvonal">
+  A `GET /document-blocks/{id}` egyik Billingo specben sincs benne. A tárca élőben, a fejlesztői
+  teszt profilon ellenőrizte (2026. november 15.), és a válasz alakját a saját eltéréstáblájában
+  rögzítette. Az `official` link ezért a lista műveletére mutat.
+</Callout>
+
+## Kérés
+
+```ts
+tarca.documentBlocks.get(id: number, options?: { signal?: AbortSignal }): Promise<Billingo.DocumentBlockSchema>
+```
+
+Az egyetlen bemenet a tömb azonosítója: `GET /v3/document-blocks/{id}`, törzs nélkül. Olvasás, ezért a tárca 429, 5xx, hálózati hiba és időtúllépés után újrapróbálja.
+
+## Válasz
+
+A Billingo 200-zal és a teljes tömbbel válaszol. Ez több, mint amit a lista ad: a lista csak hat mezőt hoz.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A tömb azonosítója. |
+| `name`, `prefix`, `type` | `string`, `string`, `Billingo.DocumentBlockType` | Név, előtag, típus. |
+| `customField1`, `customField2` | `string \| null` | Egyedi mezők. |
+| `templateId` | `number` | Számlakép azonosítója, alapból `0`. |
+| `picPath` | `string \| null` | A logó útvonala, logó nélkül `null`. |
+| `normalNotificationId`, `proformaNotificationId` | `number` | Értesítő sablonok, alapból `0`. |
+| `generated` | `boolean` | Csak olvasható jelző. |
+| `invoiceNumberFormat` | `'default' \| 'short_with_hyphen'` | A sorszám formája. |
+| `senderName` | `string` | A feladó neve. |
+| `senderEmail`, `bccEmail` | `string \| null` | Feladó és titkos másolat, beállítás nélkül `null`. |
+| `bankAccountId` | `number \| null` | A tömb bankszámlája, beállítás nélkül `null`. |
+| `createInvoiceFromPaidProforma`, `fulfillmentDateFromProformaPaymentDate`, `attachXmlToInvoicePdf`, `advancePaidInstant`, `entitlementsInDocumentComment` | `boolean` | Jelzők, alapból `false`. |
+| `financialFulfillmentHighlight` | `'basic' \| 'highlighted' \| 'paid_stamp'` | Alapból `'basic'`. |
+
+A `picPath` és a `bankAccountId` élőben `null`, holott a spec nem engedi. A `Billingo` típus ezt már tudja.
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 403 | `forbidden` | Ismeretlen vagy törölt tömb. Nem 404. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból összesen három kísérlettel. |
+
+Élőben a törölt tömbre ez jött:
+
+```json
+{
+  "error": {
+    "message": "You do not have permission for this operation. Or any ID in request is invalid or you do not have permission."
+  }
+}
+```
+
+A `nullIfNotFound()` ezt nem fordítja `null`-ra, mert 403. Ha egy tömb létezését akarod ellenőrizni, keresd a listában:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+async function letezik(tombId: number): Promise<boolean> {
+  for await (const tomb of tarca.documentBlocks.all()) {
+    if (tomb.id === tombId) return true
+  }
+  return false
+}
+
+console.log(await letezik(1))
+```
+
+## Minta
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const tomb = await tarca.documentBlocks.get(1)
+console.log(tomb.name, tomb.prefix, tomb.senderEmail, tomb.financialFulfillmentHighlight)
+```
+
+A friss teszt profil `Számlák` tömbjének válasza a hamis Billingóból, a dróton ahogy jön:
+
+```json
+{
+  "id": 1,
+  "name": "Számlák",
+  "prefix": "",
+  "type": "invoice",
+  "custom_field1": "",
+  "custom_field2": "",
+  "template_id": 0,
+  "pic_path": null,
+  "normal_notification_id": 0,
+  "proforma_notification_id": 0,
+  "generated": false,
+  "invoice_number_format": "default",
+  "sender_email": null,
+  "sender_name": "",
+  "bcc_email": null,
+  "create_invoice_from_paid_proforma": false,
+  "fulfillment_date_from_proforma_payment_date": false,
+  "attach_xml_to_invoice_pdf": false,
+  "advance_paid_instant": false,
+  "financial_fulfillment_highlight": "basic",
+  "entitlements_in_document_comment": false,
+  "bank_account_id": null
+}
+```

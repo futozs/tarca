@@ -1,0 +1,112 @@
+---
+title: Stripe
+description: Stripe Checkout és Payment Intent fizetésből nyugta vagy számla, visszatérítésből sztornó vagy módosító számla a tarcajs/payments/stripe webhookkezelővel, Stripe SDK nélkül.
+official: https://docs.stripe.com/webhooks
+---
+
+A `stripeWebhook()` ellenőrzi a `Stripe-Signature` fejlécet, a Stripe eseményéből `PaymentEvent`-et készít, és meghívja az `onPayment` függvényedet. A Stripe SDK nem kell hozzá, a kezelő `(request: Request) => Promise<Response>`, így Next.js App Routerben, Cloudflare Workersben, Denóban és Bunban közvetlenül futtatható.
+
+## Beállítás
+
+1. A Stripe Dashboardon a **Developers → Webhooks** alatt vegyél fel egy végpontot, például `https://bolt.example.hu/api/stripe/webhook`.
+2. Iratkozz fel ezekre: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded` és `charge.refund.updated`. Checkout nélkül (saját Payment Element) a `payment_intent.succeeded` és a `payment_intent.payment_failed` kell a Checkout események helyett, és ilyenkor az API-kulcs is.
+3. Másold ki a végpont aláíró titkát (`whsec_…`).
+
+```dotenv title=".env.local"
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_SECRET_KEY=rk_live_...
+```
+
+```ts twoslash title="app/api/stripe/webhook/route.ts"
+import { createTarca } from 'tarcajs'
+import { issueForPayment } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+
+const tarca = createTarca()
+
+export const POST = stripeWebhook({
+  secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+  apiKey: process.env.STRIPE_SECRET_KEY,
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+Üres `secret` mellett a `stripeWebhook()` már létrehozáskor `TypeError`-t dob, így a hiányzó környezeti változó az első kérés előtt kiderül.
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `secret` | nincs | Az aláíró titok. Kulcsváltáskor tömbként a régit és az újat is megadhatod. |
+| `apiKey` | nincs | Titkos vagy korlátozott (restricted) kulcs a tételek, a Checkout Session és a visszatérítések lekéréséhez. |
+| `toleranceSeconds` | `300` | Ennél régebbi aláírást elutasít, a visszajátszás ellen. |
+| `shippingItemName` | `Szállítási díj` | A Checkout szállítási díjából készülő tétel neve. |
+| `method` | `stripe` | A bizonylatra kerülő Billingo fizetési mód. |
+| `apiUrl`, `fetch`, `now` | Stripe API, `globalThis.fetch`, `Date.now` | Tesztekhez. |
+
+A többi opció (`onPayment`, `onError`, `onWarning`, `dedupe`, `maxBodyBytes`) mind az öt szolgáltatónál közös, lásd [Webhook beállítások](/docs/fizetesek/webhook-beallitasok).
+
+## Próbáld ki
+
+<Example slug="stripe-webhook" />
+
+Ugyanaz az aláírt esemény kétszer egy nyugtát ad: az újraküldés 200-at kap, kiállító kérés nem megy ki. A hamis aláírású kérés 400-at kap, és az `onPayment` nem fut.
+
+## Események
+
+| Stripe esemény | `kind` |
+| --- | --- |
+| `checkout.session.completed`, `payment_status: 'paid'` | `paid` |
+| `checkout.session.completed`, `payment_status: 'no_payment_required'` | `other` |
+| `checkout.session.async_payment_succeeded` | `paid` |
+| `checkout.session.async_payment_failed` | `failed` |
+| `payment_intent.succeeded` | `paid` API-kulccsal, `other` nélküle |
+| `payment_intent.payment_failed` | `failed` |
+| `charge.refunded` | `refunded` vagy `partially-refunded` |
+| `charge.refund.updated`, `refund.updated`, `refund.failed` `failed` vagy `canceled` állapottal | `refund-failed` |
+| vékony (thin, v2) esemény | `other` |
+
+Más eseményre a kezelő 200-at ad, és nem hívja meg az `onPayment`-et. A fizetés azonosítója (`id`) a Payment Intent (ha a Checkout Sessionnek nincs ilyen, a Session azonosítója), így a `charge.refunded` ugyanahhoz a `vendorId`-hoz jut, mint a fizetés.
+
+<Callout type="info" title="Payment Intent API-kulcs nélkül">
+  A `payment_intent.succeeded` nem hoz vevőadatot, és a Checkout eseményhez képest bármelyik jöhet
+  előbb. Ha a korábbi döntene nyugta és számla között, a cégnek járó számla helyett is nyugta
+  készülhetne. API-kulcs nélkül ezért a tárca `other`-ként adja tovább, és bizonylat nem készül.
+  API-kulccsal megkeresi a hozzá tartozó Checkout Sessiont, és abból veszi a vevőt és a tételeket.
+</Callout>
+
+## Mit tölt ki az API-kulcs?
+
+- **Tételek:** a Checkout Session `line_items` listáját lapozva lekéri, a szállítási díjat külön tételként adja hozzá.
+- **Payment Intent → Checkout:** a `payment_intent.succeeded` eseményhez a Checkout Sessiont keresi meg.
+- **Visszatérítések száma:** ha egy töltést több részletben térítettél vissza, a teljes összeg elérésekor sem sztornóz, hanem `partially-refunded` eseményt ad, mert a korábbi részekre már módosító számla készülhetett.
+
+## Vevő és rendelésszám
+
+A vevőt a Checkout `customer_details` mezőjéből veszi: név (cégnév, ha van), e-mail, telefon, cím és adószám. A magyar adószám (`hu_tin`) a `taxNumber`, az uniós (`eu_vat`) az `euTaxNumber` mezőbe kerül, és cégnévnél vagy bármelyik adószámnál a vevőt cégnek tekinti, ezért számla készül. Kapcsold be a Checkoutban a számlázási cím (`billing_address_collection: 'required'`) és az adószám (`tax_id_collection`) bekérését. A vevőből partner a [Vevő adatai](/docs/fizetesek/vevo-adatai) szerint lesz.
+
+A saját rendelésazonosítódat a `client_reference_id` mezőben vagy a `metadata` `orderRef`, `order_ref`, `orderId`, `order_id`, `orderNumber` vagy `order` kulcsán add át. A `PaymentEvent` `orderRef` mezőjében kapod vissza.
+
+## Visszatérítések
+
+A Stripe `charge.refunded` eseményének `previous_attributes.amount_refunded` mezőjéből a tárca kiszámolja, mennyi volt a mostani visszatérítés. A visszatérítés azonosítója `<charge>:<összes visszatérített összeg>`, így ugyanarról a visszatérítésről szóló két esemény egy azonosítót kap. A teljes visszatérítés sztornót ad ([Visszatérítés](/docs/fizetesek/visszaterites)), a részleges módosító számlát vagy javaslatot ([Részleges visszatérítés](/docs/fizetesek/reszleges-visszaterites)).
+
+Ha egy visszatérítés a `charge.refunded` után meghiúsul, a `charge.refund.updated` `refund-failed` eseményt ad. A tárca ilyenkor nem ír, hanem `{ kind: 'refund-failed', document, reason }` eredményt ad: a már kiállított sztornót vagy módosítót kézzel kell rendezni.
+
+<Callout type="info" title="Forint a Stripe-ban">
+  A Stripe a forintot fillérben adja (`1270000` = 12 700 Ft), ugyanúgy, mint az ISO 4217. Ahol a
+  Stripe eltér az ISO-tól (például az izlandi koronánál), a tárca átváltja, így a `PaymentEvent`
+  összegei mindig az ISO szerinti váltóegységben vannak, lásd [Összegek](/docs/fizetesek/osszegek).
+</Callout>
+
+<Callout type="warning" title="Ne olvasd be előre a törzset">
+  Az aláírás a nyers törzsre szól. Ha egy middleware JSON-ként beolvassa a kérést, az ellenőrzés
+  elbukik. Expressben a webhook útvonalat az `express.json()` elé tedd, és a `tarcajs/node`
+  `toNodeHandler()` függvényével csatold, lásd [Node, Express](/docs/kiegeszitok/node-express).
+</Callout>
+
+<Callout type="warning" title="Teszt- és éles mód">
+  A Stripe teszt- és éles módja külön végpontot és titkot használ. A teszt módú végpont mellé a
+  Billingo fejlesztői teszt profiljának kulcsa tartozzon, különben valódi, NAV-hoz jelentett
+  bizonylatok készülnek.
+</Callout>
+
+Egy teljes Next.js útvonal ismétlés-szűrővel és hibajelzéssel: [Stripe webhook recept](/docs/receptek/stripe-webhook).

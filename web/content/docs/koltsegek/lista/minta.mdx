@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Két havi bérleti díj rögzítése, az egyik kifizetve, majd a fizetetlen költségek listája dátum és kategória szerint, a ténylegesen elküldött kérésekkel.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Spending/SpendingList
+---
+
+A példa két bérleti díjat rögzít, az októberit a fizetés napjával. A lista az október 1. és november 30. között kelt, irodabérlet kategóriájú, fizetetlen költségeket kéri, így csak a novemberi jön vissza.
+
+<Example slug="koltsegek-szurese" />
+
+Az **Elküldött kérések** fülön a harmadik kérés a `GET /spendings`: a query csak a megadott szűrőket tartalmazza, snake_case nevekkel és `YYYY-MM-DD` dátumokkal. A válasz `data` tömbjében a listaelemnek nincs `items` mezője, a `createdByNav` viszont ott van.

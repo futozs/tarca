@@ -1,0 +1,50 @@
+---
+title: Válasz
+description: A createModification() a módosító számlát adja, a különbözet végösszegével. Az eredeti számla correctionType mezője modified lesz, és egyik sem sztornózható többé.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateModificationDocument
+---
+
+A Billingo 201-gyel válaszol, a törzs a módosító számla (`Billingo.Document`).
+
+| Mező | Érték |
+| --- | --- |
+| `type` | `modification` |
+| `invoiceNumber` | Új sorszám ugyanabban a számlatömbben. |
+| `grossTotal` | A különbözet, például két óra jóváírásánál `-38100`. |
+| `items` | A különbözeti tételek a Billingo számolt összegeivel. |
+| `relatedDocuments` | `[{ id, invoiceNumber }]`: az eredeti számla. |
+
+Az eredeti számlán ezután `correctionType: 'modified'`. Az `onDocument` hook `modified` eseményt kap, `sourceId` az eredeti azonosítója.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Hibás különbözeti tétel vagy dátum, kérés előtt. |
+| 400 | `validation` | Sztornózott számlát próbáltál módosítani. Az üzenetet élőben nem mértük. |
+| 403 | `forbidden` | Ismeretlen azonosító, vagy csak olvasó kulcs. |
+| 422 | `validation` | A Billingo elutasított egy tételt. |
+| – | `network`, `timeout`, `server`, `unexpected_response` | A módosító elkészülhetett. |
+
+A módosító számla nem kap `vendorId`-t, ezért bizonytalan hiba után a `findByVendorId()` nem segít. Kérd le az eredetit: ha a `correctionType` `modified`, a módosító elkészült, és a [listában](/docs/bizonylatok/lista) a `partnerId` szűrővel megtalálod.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const eredetiId: number
+
+try {
+  await tarca.documents.createModification(eredetiId, {
+    items: [{ name: 'Webfejlesztés', quantity: -2, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+  })
+} catch (error) {
+  const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+  if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+  const eredeti = await tarca.documents.get(eredetiId)
+  if (eredeti.correctionType !== 'modified') throw error
+}
+```
+
+Ez csak az első módosítót ismeri fel: ha egy számlán már volt módosító, a `correctionType` előtte is `modified`. Visszatérítéseknél a `tarcajs/payments` egy `setIfAbsent` tárolóval (ledger) véd a második módosító ellen, lásd [Részleges visszatérítés](/docs/fizetesek/reszleges-visszaterites).

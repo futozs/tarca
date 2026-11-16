@@ -1,0 +1,114 @@
+---
+title: Lista
+description: A profil bankszámlái a bankAccounts.list() és a bankAccounts.all() hívással, lapozással, és a friss teszt profil üres listája.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/BankAccount/ListBankAccount
+---
+
+<Operation id="ListBankAccount" methods={['bankAccounts.list', 'bankAccounts.all']} />
+
+## Kérés
+
+```ts
+tarca.bankAccounts.list(query?: PageQuery, options?: { signal?: AbortSignal }): Promise<Page<Billingo.BankAccount>>
+```
+
+```ts
+tarca.bankAccounts.all(query?: { perPage?: number }, options?: { signal?: AbortSignal }): AsyncGenerator<Billingo.BankAccount>
+```
+
+A lista egyetlen bemenete a lapozás, szűrő nincs.
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `page` | `page` | `1` | Az oldal sorszáma. Az `all()` nem fogadja. |
+| `perPage` | `per_page` | Billingo: `25`, `all()`: `100` | Oldalanként hány bankszámla jöjjön, legfeljebb 100. |
+
+Hibás `page` vagy `perPage` értékre a tárca kérés előtt `RangeError`-t dob. A lapozás részletei: [Lapozás](/docs/alapok/lapozas).
+
+```text
+GET /v3/bank-accounts?per_page=10
+```
+
+## Válasz
+
+A `list()` egy `Page<Billingo.BankAccount>` objektumot ad vissza, az `all()` ugyanezeket egyenként.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `data` | `readonly Billingo.BankAccount[]` | Az oldal bankszámlái. A hamis Billingo a legújabbat adja elöl, az élő sorrendet nem mértük, mert a teszt profilon a lista üres volt. A mezőket a [Lekérés](/docs/bankszamlak/lekeres) írja le. |
+| `total` | `number` | Az összes bankszámla száma. |
+| `perPage` | `number` | Oldalméret. |
+| `currentPage` | `number` | Az aktuális oldal sorszáma. |
+| `lastPage` | `number` | Az utolsó oldal sorszáma. |
+
+A Billingo élő válaszában a `prev_page_url` és a `next_page_url` az első és az utolsó oldalon `null`, holott a spec szövegnek írja. A `Page` ezeket a mezőket nem adja tovább, a számokból lapozz.
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `RangeError` | Hibás `page` vagy `perPage`. Nincs kérés. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból összesen három kísérlettel. |
+| – | `network`, `timeout` | Nincs válasz. A tárca ezt is újrapróbálja. |
+
+## Minta
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+await tarca.bankAccounts.create({
+  name: 'Fő számla',
+  accountNumber: '11111111-22222222-33333333',
+  currency: 'HUF',
+})
+await tarca.bankAccounts.create({
+  name: 'Euró számla',
+  accountNumber: '11111111-22222222-44444444',
+  currency: 'EUR',
+})
+
+const oldal = await tarca.bankAccounts.list({ perPage: 10 })
+console.log(oldal.total, oldal.data.map((bankszamla) => bankszamla.name))
+
+for await (const bankszamla of tarca.bankAccounts.all()) {
+  console.log(bankszamla.id, bankszamla.currency)
+}
+```
+
+A `list()` válasza a hamis Billingóból, a dróton ahogy jön:
+
+```json
+{
+  "total": 2,
+  "per_page": 10,
+  "current_page": 1,
+  "last_page": 1,
+  "prev_page_url": null,
+  "next_page_url": null,
+  "data": [
+    {
+      "id": 2,
+      "name": "Euró számla",
+      "account_number": "11111111-22222222-44444444",
+      "account_number_iban": "",
+      "swift": "",
+      "currency": "EUR",
+      "need_qr": false
+    },
+    {
+      "id": 1,
+      "name": "Fő számla",
+      "account_number": "11111111-22222222-33333333",
+      "account_number_iban": "",
+      "swift": "",
+      "currency": "HUF",
+      "need_qr": false
+    }
+  ]
+}
+```
+
+Egy friss teszt profil válasza ugyanez üres `data` tömbbel és `"total": 0` értékkel.

@@ -3,54 +3,78 @@ title: Fizetésből bizonylat
 description: Stripe, SimplePay, Barion, Revolut és PayPal fizetésből pontosan egyszer nyugta vagy számla a tarcajs/payments csomagrésszel, visszatérítéskor sztornó vagy módosító számla.
 ---
 
-A `tarcajs/payments` a fizetési szolgáltató SDK-ja nélkül dolgozik. A webhookkezelő ellenőrzi az aláírást, az `issueForPayment()` eldönti, hogy nyugta vagy számla jár, és pontosan egyszer kiállítja a Billingóban. A bizonylat `vendorId`-ja a fizetés azonosítója, ezért az újraküldött esemény a meglévő bizonylatot adja vissza.
+A `tarcajs/payments` a fizetési szolgáltató értesítéséből Billingo bizonylatot állít ki, a szolgáltató SDK-ja nélkül. A webhookkezelő ellenőrzi az aláírást, egységes `PaymentEvent` alakra hozza az eseményt, és átadja az `onPayment` függvényednek. Ott az `issueForPayment()` eldönti, hogy nyugta vagy számla jár, és pontosan egyszer kiállítja.
 
 <Example slug="fizetesbol-bizonylat" />
 
-## Nyugta vagy számla
+A bizonylat `vendorId`-ja a fizetés azonosítójából képződik (`STRIPE-pi_3QhB7c`). Az újraküldött esemény ezért a meglévő bizonylatot kapja vissza (`created: false`), második kiállító kérés nem megy ki.
 
-- Számla jár, ha a vevő adószámot adott meg, ha az összeg eléri a 900 000 Ft-ot, vagy ha a vevő számlát kér; egyébként nyugta. Pénztárgép-köteles tevékenységnél (`cashRegisterRequired`) validációs hibát kapsz. A `document: 'invoice'` vagy `'receipt'` felülírja a döntést.
-- Számlánál a vevőből partner lesz: magyar adószámmal `HAS_TAX_NUMBER`, EU-s vagy külföldi adószámmal `FOREIGN`, magánszemélyként `NO_TAX_NUMBER`.
-- A számlát a tárca fizetettnek jelöli, a nyugta eleve fizetett.
-- Áfát a tárca nem talál ki: `vat`, `vatFor` vagy tételenkénti áfakulcs nélkül validációs hibát ad, kérés nélkül. A tételek bruttó összegének fillérre egyeznie kell a fizetett összeggel.
+## Hogyan áll össze
 
-## Stripe webhook
+1. A szolgáltató POST kérést küld a webhook címedre. A kezelő (`stripeWebhook`, `simplePayWebhook` …) a nyers törzsön ellenőrzi az aláírást. Hamis vagy hibás kérésre 400-at ad, az `onPayment` nem fut.
+2. A kezelő a szolgáltató eseményéből `PaymentEvent`-et készít. Ha kell, lekéri a szolgáltató API-jából a hiányzó részleteket (tételek, vevő, az eredeti rendelés).
+3. Az `onPayment` megkapja az eseményt. Itt hívod az `issueForPayment(tarca, payment, options)` függvényt.
+4. Ha az `onPayment` hibát dob, a válasz 500, és a szolgáltató később újraküldi az eseményt. Mivel a kiállítás a `createOnce`-ra épül, az újraküldés nem állít ki második bizonylatot.
 
-<Example slug="stripe-webhook" />
-
-A Stripe-ban a `checkout.session.completed`, a `checkout.session.async_payment_succeeded`, a `charge.refunded` és a `charge.refund.updated` eseményre iratkozz fel. Hibás aláírásra 400 a válasz, és az `onPayment` nem fut. Ha az `onPayment` dob, 500, és a Stripe később újraküldi. Egy teljes Next.js útvonal: [Stripe webhook recept](/docs/receptek/stripe-webhook).
-
-## Visszatérítés
-
-<Example slug="visszaterites" />
-
-- Teljes visszatérítéskor a tárca egyszer sztornózza a bizonylatot. Azt, hogy a sztornó megtörtént-e, a bizonylat `cancelled` jelzője dönti el, bizonytalan hiba után is.
-- Részleges visszatérítéskor számlánál visszatérítésenként egy módosító számla készül. Ehhez `setIfAbsent`-et ismerő tároló kell (`ledger`), mert a Billingo módosító számlájának nincs `vendorId`-ja. `ledger` nélkül a tárca javaslatot ad (`refund-proposal`), bizonylatot nem állít ki.
-- Nyugtánál részleges visszatérítésre mindig javaslat jön, mert nyugtához a Billingo nem ad módosító bizonylatot.
-
-## A többi szolgáltató
-
-```ts twoslash
+```ts twoslash title="app/api/stripe/webhook/route.ts"
 import { createTarca } from 'tarcajs'
 import { issueForPayment } from 'tarcajs/payments'
-import { simplePayWebhook } from 'tarcajs/payments/simplepay'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
 
 const tarca = createTarca()
 
-export const POST = simplePayWebhook({
-  merchants: {
-    HUFKERESKEDO: process.env.SIMPLEPAY_SECRET_HUF ?? '',
-  },
+export const POST = stripeWebhook({
+  secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
   onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
 })
 ```
 
-| Szolgáltató | Belépési pont | Aláírás |
-| --- | --- | --- |
-| Stripe | `tarcajs/payments/stripe` | `Stripe-Signature`, HMAC-SHA256 |
-| SimplePay | `tarcajs/payments/simplepay` | HMAC-SHA384, kereskedőnként saját kulccsal |
-| Barion | `tarcajs/payments/barion` | Nincs: a tárca a `PaymentState` végpontból olvassa ki az állapotot |
-| Revolut | `tarcajs/payments/revolut` | `Revolut-Signature`, 5 perces időablakkal |
-| PayPal | `tarcajs/payments/paypal` | A PayPal `verify-webhook-signature` végpontja |
+## Szolgáltatók
 
-Mind ugyanazt a `PaymentEvent` alakot adja. Az összeg `{ value, minor, currency }`, ahol a `minor` egész szám a pénznem váltóegységében, így minden összevetés kerekítés nélkül megy.
+| Szolgáltató | Belépési pont | Hitelesség | Fizetés azonosítója (`id`) |
+| --- | --- | --- | --- |
+| [Stripe](/docs/fizetesek/stripe) | `tarcajs/payments/stripe` | `Stripe-Signature`, HMAC-SHA256 | a Payment Intent (`pi_…`) |
+| [SimplePay](/docs/fizetesek/simplepay) | `tarcajs/payments/simplepay` | `Signature`, HMAC-SHA384, kereskedőnként saját kulccsal | a SimplePay tranzakció |
+| [Barion](/docs/fizetesek/barion) | `tarcajs/payments/barion` | nincs aláírás: a tárca a `PaymentState` végpontból olvassa ki az állapotot | a `PaymentId` |
+| [Revolut](/docs/fizetesek/revolut) | `tarcajs/payments/revolut` | `Revolut-Signature`, 5 perces időablakkal | a rendelés (visszatérítésnél az eredeti rendelés) |
+| [PayPal](/docs/fizetesek/paypal) | `tarcajs/payments/paypal` | a PayPal `verify-webhook-signature` végpontja | a capture |
+
+Mind az öt ugyanazt a `PaymentEvent` alakot adja, ugyanazokkal a [közös beállításokkal](/docs/fizetesek/webhook-beallitasok). Saját szolgáltatónál magad is összerakhatsz egy `PaymentEvent`-et, és átadhatod az `issueForPayment()`-nek.
+
+## Az esemény fajtái
+
+| `kind` | Mit csinál az `issueForPayment()`? |
+| --- | --- |
+| `paid` | Nyugtát vagy számlát állít ki, lásd [Bizonylat a fizetésből](/docs/fizetesek/bizonylat-fizetesbol). |
+| `refunded` | Sztornózza a bizonylatot, lásd [Visszatérítés](/docs/fizetesek/visszaterites). |
+| `partially-refunded` | Visszatérítésenként egy módosító számlát állít ki, vagy javaslatot ad, lásd [Részleges visszatérítés](/docs/fizetesek/reszleges-visszaterites). |
+| `refund-failed` | Nem ír semmit, jelzi, hogy a már kiállított sztornót vagy módosítót kézzel kell rendezni (csak Stripe). |
+| `failed`, `other` | Kihagyja (`kind: 'skipped'`). |
+
+<Callout type="warning" title="Ne nyeld le a hibát az onPayment-ben">
+  Ha a kiállítás nem sikerül, hagyd, hogy a webhook 500-at adjon: a szolgáltató újraküldi az
+  eseményt, a `createOnce` pedig a meglévő bizonylatot adja vissza. Kivétel a `validation` hiba
+  (hiányzó áfakulcs, eltérő összeg), mert az újraküldéstől nem javul: ezt jelezd embernek. A
+  `refund-proposal` nem hiba, hanem eredmény, de szintén emberi döntést kér.
+</Callout>
+
+<Cards>
+  <Card title="Bizonylat a fizetésből" href="/docs/fizetesek/bizonylat-fizetesbol">
+    Az issueForPayment beállításai, a vendorId és a visszaadott eredmény.
+  </Card>
+  <Card title="Nyugta vagy számla" href="/docs/fizetesek/nyugta-vagy-szamla">
+    A chooseDocument döntése és a 900 000 Ft-os határ.
+  </Card>
+  <Card title="Összegek" href="/docs/fizetesek/osszegek">
+    PaymentAmount: egész szám a pénznem váltóegységében.
+  </Card>
+  <Card title="Vevő adatai" href="/docs/fizetesek/vevo-adatai">
+    partnerFromCustomer: a vevőből Billingo partner adószámmal.
+  </Card>
+  <Card title="Webhook beállítások" href="/docs/fizetesek/webhook-beallitasok">
+    Ismétlés-szűrő, törzsméret, válaszkódok, naplózás.
+  </Card>
+  <Card title="Visszatérítés" href="/docs/fizetesek/visszaterites">
+    Sztornó egyszer, ledgerrel több folyamat között is.
+  </Card>
+</Cards>

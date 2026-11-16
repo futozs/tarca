@@ -1,0 +1,64 @@
+---
+title: Barion
+description: Barion fizetésből nyugta vagy számla a tarcajs/payments/barion kezelővel. A callback nem aláírt, ezért a tárca a Barion PaymentState végpontjából olvassa ki a fizetés valódi állapotát.
+official: https://docs.barion.com/Callback_mechanism
+---
+
+A Barion callbackje csak a fizetés azonosítóját (`paymentId`) küldi, aláírás nélkül. A `barionWebhook()` ezért nem a kérés tartalmában bízik: a `POSKey`-jel lekéri a `GET /v4/Payment/{paymentId}/PaymentState` végpontot, és a Barion válaszából készíti a `PaymentEvent`-et. Egy hamisított callback így legfeljebb egy valódi fizetés állapotát kéri le újra.
+
+## Beállítás
+
+```dotenv title=".env.local"
+BARION_POS_KEY=...
+```
+
+```ts twoslash title="app/api/barion/callback/route.ts"
+import { createTarca } from 'tarcajs'
+import { issueForPayment } from 'tarcajs/payments'
+import { barionWebhook } from 'tarcajs/payments/barion'
+
+const tarca = createTarca()
+
+export const POST = barionWebhook({
+  posKey: process.env.BARION_POS_KEY ?? '',
+  onPayment: (payment) => issueForPayment(tarca, payment, { vat: 27 }),
+})
+```
+
+A fizetés indításakor (`/v2/Payment/Start`) a `CallbackUrl` legyen ez az útvonal. A tárca a `paymentId`-t a query stringből, form törzsből vagy JSON törzsből is kiolvassa, kis- és nagybetűs `PaymentId` alakban is.
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `posKey` | nincs | A bolt titkos `POSKey`-e. Üresen `TypeError` létrehozáskor. |
+| `sandbox` | `false` | Az `api.test.barion.com` címet használja. |
+| `method` | `barion` | A bizonylat fizetési módja. Banki átutalásnál (`FundingSource: 'BankTransfer'`) alapból `wire_transfer`. |
+| `apiUrl`, `fetch` | | Tesztekhez. |
+
+A közös opciók: [Webhook beállítások](/docs/fizetesek/webhook-beallitasok). Sikeres feldolgozás után a válasz 200. Ha a `paymentId` hiányzik vagy nem GUID, 400; ha a Barion más fizetést ad vissza, mint amit kértünk, vagy a lekérés nem sikerül, 500, és a Barion újraküldi a callbacket.
+
+## Állapotok
+
+| Barion állapot | `kind` |
+| --- | --- |
+| `Succeeded`, visszatérítés nélkül | `paid` |
+| egy sikeres visszatérítés a teljes összegre | `refunded` |
+| több visszatérítés, vagy a teljesnél kevesebb | `partially-refunded` |
+| `Canceled`, `Failed`, `Expired` | `failed` |
+| minden más | `other` |
+
+- Az összeg a sikeres eladási tranzakciók összege. A Barion díjtranzakcióit (`…Fee`) a tárca kihagyja.
+- A tételek a tranzakciók `Items` listájából jönnek (`Name`, `Quantity`, `ItemTotal`, `Unit`, `SKU`).
+- A vevő a fizető neve (cégnév, vagy vezetéknév és keresztnév), e-mail címe és telefonszáma. Címet és adószámot a Barion nem ad, ezért cégnek szóló számlához a `partner` opció kell, lásd [Vevő adatai](/docs/fizetesek/vevo-adatai).
+- A rendelésszám (`orderRef`) a fizetés `OrderNumber` mezője.
+
+## Visszatérítés egy pillanatképből
+
+A Barion callback mindig a fizetés teljes állapotáról szól. Visszatérítés után nem jön külön fizetési esemény, a visszatérítést jelző állapot az eladás adatait is hordozza. A tárca ezt az `includesPayment: true` jelzővel adja tovább.
+
+Ha egy visszatérítéskor a fizetésnek még nincs bizonylata (például az első callback elveszett), az `issueForPayment()` előbb ugyanebből az állapotból kiállítja a fizetés bizonylatát, és utána sztornózza vagy módosítja. A többi szolgáltatónál ilyenkor `in_progress` hiba jön, mert ott a fizetés eseménye még újra megérkezhet. Lásd [Visszatérítés](/docs/fizetesek/visszaterites).
+
+<Example slug="visszaterites" />
+
+## Saját folyamatban
+
+`fetchBarionPaymentState(paymentId, { posKey, sandbox?, apiUrl?, fetch? })`, `barionPaymentId(url, body?, contentType?)` és `barionPaymentEvent(state, { method? })` külön is elérhető, például ha a vevő visszatérésekor (`RedirectUrl`) is megnéznéd a fizetés állapotát.

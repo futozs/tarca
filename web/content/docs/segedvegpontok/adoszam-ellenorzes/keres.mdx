@@ -1,0 +1,52 @@
+---
+title: Kérés
+description: A utils.checkTaxNumber() bemenete. Csak a teljes NNNNNNNN-N-NN alakú adószám, a tárca a rövid vagy hibás alakot kérés nélkül elutasítja.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Util/CheckTaxNumber
+---
+
+```ts
+tarca.utils.checkTaxNumber(taxNumber: string, options?: RequestOptions): Promise<Billingo.TaxNumberCheckResponse>
+```
+
+## A bemenet
+
+| Mező | Billingo mező (snake_case) | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `taxNumber` | `tax_number` (útvonal) | – | **Kötelező.** A teljes magyar adószám kötőjelekkel: 8 jegyű törzsszám, áfakód (1–5), 2 jegyű megyekód, például `'12345678-2-42'`. A tárca a két szélén levágja a szóközt. |
+
+A Billingo élőben csak ezt az alakot fogadta el. A 8 jegyű törzsszámra és a `00000000-0-00` alakra 422-vel válaszolt: `taxNumber`: „The tax number format is invalid.” (2026. november 15.). A spec mintája ugyanez: `^([0-9]{8})-([12345])-([0-9]{2})$`.
+
+## Helyi ellenőrzés
+
+A tárca a kérés előtt ugyanezzel a mintával ellenőriz. Ha nem illik rá, `validation` kategóriájú `BillingoError`-t dob, a `fieldErrors` egy eleme a `taxNumber` mező, és kérés nem megy ki:
+
+| Bemenet | Eredmény |
+| --- | --- |
+| `'12345678-2-42'` | Kérés megy ki. |
+| `' 12345678-2-42 '` | Kérés megy ki, szóközök nélkül. |
+| `'12345678'` | `validation`, kérés nélkül. |
+| `'12345678242'` | `validation`, kérés nélkül: a kötőjel kötelező. |
+| `'HU12345678'` | `validation`, kérés nélkül: a közösségi adószám nem ilyen alakú. |
+| `'00000000-0-00'` | `validation`, kérés nélkül: a `0` nem érvényes áfakód. |
+
+A tárca az ellenőrző számjegyet nem számolja ki, csak a formátumot nézi. Ha az űrlapon kötőjel nélkül is elfogadod az adószámot, alakítsd át hívás előtt:
+
+```ts twoslash
+function adoszamKotojellel(bevitt: string) {
+  const szamjegyek = bevitt.replace(/\D/g, '')
+  if (szamjegyek.length !== 11) return undefined
+  return `${szamjegyek.slice(0, 8)}-${szamjegyek.slice(8, 9)}-${szamjegyek.slice(9)}`
+}
+
+const adoszam = adoszamKotojellel('12345678 2 42')
+
+if (adoszam) console.log(adoszam)
+```
+
+## A dróton
+
+Az adószám az útvonalban megy, törzs és query nincs:
+
+```text
+GET /utils/check-tax-number/12345678-2-42
+```

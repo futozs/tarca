@@ -1,0 +1,54 @@
+---
+title: Értesítés és rendelésszám
+description: A Billingo e-mail értesítése (sendEmail), a rendelésszám (orderNumber), a megjegyzés és a nyers settings objektum a tárcában, és miben különbözik a vendorId a rendelésszámtól.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.create({
+  vendorId: 'ORDER-1001',
+  partner: 1,
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+  sendEmail: true,
+  orderNumber: 'ORDER-1001',
+  comment: 'Köszönjük a megrendelést.',
+  settings: { round: 'five' },
+})
+
+console.log(szamla.settings?.shouldSendEmail, szamla.settings?.orderNumber)
+```
+
+A fenti hívás `settings` mezője a dróton így néz ki (a hamis Billingo rögzítette):
+
+```json
+{ "round": "five", "should_send_email": true, "order_number": "ORDER-1001" }
+```
+
+## E-mail értesítés
+
+A `sendEmail: true` a `settings.should_send_email` beállítás: a Billingo a kiállítás után elküldi a számlát a partner e-mail címeire. Alapértéke a `defaults.sendEmail`, az pedig alapból `false`, tehát a tárca magától nem küld e-mailt. A tárca ezt a mezőt mindig elküldi, így a Billingo fiók beállítása nem írja felül.
+
+Ha nem a partner címeire, vagy később küldenéd, használd a `documents.send()`-et: [Kiküldés és emlékeztetők](/docs/bizonylatok/kuldes).
+
+<Callout type="warning" title="A teszt profil is küldhet e-mailt">
+  Nem ellenőriztük, hogy a fejlesztői teszt profilról a Billingo kézbesíti-e a leveleket.
+  Teszteléskor a partnerek e-mail címe legyen a sajátod, vagy egy `example.hu` cím.
+</Callout>
+
+## Rendelésszám
+
+Az `orderNumber` a `settings.order_number` mezőbe kerül, és megjelenik a számlán. Ez a vevőnek szól, a Billingo nem ellenőrzi az egyediségét, és nem lehet rá keresni.
+
+A `vendorId` más: a Billingo fiókon belül egyedi, a `GET /documents/vendor/{vendor_id}` megtalálja vele a bizonylatot, és a második kiállítást 400 `Duplicate vendor id.` hibával elutasítja. A dupla számla ellen a `vendorId` véd, nem a rendelésszám. A kettő lehet ugyanaz az érték.
+
+## Megjegyzés
+
+A `comment` a számla megjegyzése, szabad szöveg. A számla másolata (`copy()`) átveszi.
+
+## Nyers settings
+
+A `settings` a `Billingo.DocumentSettings` objektum, például `round` (kerekítés készpénzes fizetésnél: `'none'`, `'one'`, `'five'`, `'ten'`), `mediatedService`, `withoutFinancialFulfillment`, `onlinePayment`. A tárca a `sendEmail`-t és az `orderNumber`-t ráírja: ha a `settings`-ben is szerepel `shouldSendEmail` vagy `orderNumber`, a külön mező nyer.

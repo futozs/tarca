@@ -1,0 +1,37 @@
+---
+title: Befizetések
+description: Befizetés rögzítése egy számlán a documents.payments metódusaival. A Billingo a befizetéseket csak egyben cseréli, a számla fizetési állapota ebből lesz részleges vagy fizetett.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/UpdatePayment
+---
+
+Egy átutalásos számla `outstanding` állapotban jön létre. Amikor a pénz megérkezik, a befizetést rögzíted, és a Billingo ebből állítja a `paymentStatus`-t: `partially_paid` a végösszeg alatt, `paid` a végösszegnél.
+
+<Operation id="GetPayment" methods={['documents.payments.list', 'documents.payments.add']} />
+
+<Operation id="UpdatePayment" methods={['documents.payments.replace', 'documents.payments.add']} />
+
+<Operation id="DeletePayment" methods={['documents.payments.clear']} />
+
+```ts
+await tarca.documents.payments.add(szamla.id ?? 0, { date: new Date(), price: 63_500, paymentMethod: 'wire_transfer' })
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/befizetes/keres">
+    A PaymentInput mezői, a list, a replace, az add és a clear.
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/befizetes/valasz">
+    A befizetések tömbje, a fizetési állapot, és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/befizetes/minta">
+    Két részlet egy számlára, előbb részleges, aztán fizetett állapottal.
+  </Card>
+</Cards>
+
+<Callout type="warning" title="Egy számla befizetéseit egy folyamat írja">
+  A Billingo nem tud egy befizetést hozzáadni, csak a teljes listát lecserélni. Az `add()` ezért
+  előbb lekéri a meglévőket, és a végükre fűzi az újat. Ha két folyamat egyszerre ír ugyanarra a
+  számlára, az egyik befizetés elveszhet.
+</Callout>
+
+A díjbekérőből készült számla és a nyugta eleve fizetett. Ha ezekre is rögzítesz befizetést, kétszer számolod a pénzt.

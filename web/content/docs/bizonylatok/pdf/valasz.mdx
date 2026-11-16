@@ -1,0 +1,69 @@
+---
+title: Válasz
+description: A PDF bájtjai, tartalomtípusa és fájlneve, a POS PDF application/octet-stream típusa, a nyilvános link alakja, a rate limit fejlécek és a hibák, köztük a not_ready.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/DownloadDocument
+---
+
+## pdf() és posPdf()
+
+```ts
+interface DocumentPdf {
+  readonly bytes: Uint8Array<ArrayBuffer>
+  readonly contentType: string | undefined
+  readonly filename: string | undefined
+}
+```
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `bytes` | `Uint8Array` | A PDF tartalma. Mindig `%PDF`-fel kezdődik, a tárca ellenőrzi. |
+| `contentType` | `string \| undefined` | A `content-type` fejléc. A `pdf()`-nél `application/pdf`, a `posPdf()`-nél élőben `application/octet-stream`. |
+| `filename` | `string \| undefined` | A `content-disposition` fejlécből: a sorszám, például `2026-1.pdf`. |
+
+<Callout type="info" title="A POS PDF tartalomtípusa">
+  A Billingo a blokknyomtatós PDF-et `application/octet-stream` típussal küldi, a spec
+  `application/pdf`-et ír. A tartalom PDF (`%PDF-1.4`). A tárca ezért a tartalomtípust nem
+  ellenőrzi, csak a `%PDF` aláírást. Ha a fájlt továbbküldöd, a típust te add meg:
+  `application/pdf`.
+</Callout>
+
+A bináris válaszokon a Billingo két rate limit fejlécet küld: `x-ratelimit-limit: 300` és `x-ratelimit-remaining`. JSON válaszon egyiket sem. A tárca ezeket az `onResponse` hook `rateLimit` mezőjében adja át.
+
+## publicUrl()
+
+`Promise<string>`: a link, például `https://api.billingo.hu/document-access/<token>`. A Billingo `public_url` mezőjéből jön; ha az üres, a tárca `unexpected_response` hibát ad.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 202 | `not_ready` | A PDF a `maxWaitMs` keret alatt sem készült el. A hiba `status` mezője 202, az `apiMessage` a Billingo üzenete (`Document PDF has not generated yet.`). Hívd meg később újra. |
+| – | `validation` | `posPdf()` 58-on és 80-on kívüli `size`-zal, kérés előtt. |
+| 2xx | `unexpected_response` | A válasz nem PDF (nem `%PDF`-fel kezdődik), vagy a link üres. |
+| 403 | `forbidden` | Ismeretlen azonosító. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálta, de nem sikerült. |
+
+A `not_ready` újrapróbálható (`retryable: true`). Egy háttérfeladatban így várhatsz tovább a 30 másodpercen túl:
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+
+async function pdfLetoltes(id: number): Promise<Uint8Array> {
+  try {
+    const { bytes } = await tarca.documents.pdf(id)
+    return bytes
+  } catch (error) {
+    if (isBillingoError(error) && error.category === 'not_ready') {
+      const { bytes } = await tarca.documents.pdf(id, { maxWaitMs: 120_000 })
+      return bytes
+    }
+    throw error
+  }
+}
+
+console.log((await pdfLetoltes(szamlaId)).length)
+```

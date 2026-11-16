@@ -1,4 +1,20 @@
 {
   "title": "Receptek",
-  "pages": ["stripe-webhook", "pdf-mentese"]
+  "pages": [
+    "kozos-kliens",
+    "kulcs-ellenorzes-indulaskor",
+    "webshop-rendeles",
+    "stripe-webhook",
+    "dijbekero-fizeteskor",
+    "reszletfizetes",
+    "penztari-nyugta",
+    "pdf-mentese",
+    "havi-export",
+    "havi-elofizetes",
+    "express-nestjs-fastify",
+    "cloudflare-workers",
+    "mcp-asszisztens",
+    "egysegtesztek",
+    "naplozas-es-metrikak"
+  ]
 }

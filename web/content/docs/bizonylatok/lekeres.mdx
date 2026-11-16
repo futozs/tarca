@@ -1,0 +1,67 @@
+---
+title: Lekérés
+description: Egy bizonylat lekérése azonosítóval (documents.get) vagy a saját vendorId-ddal (getByVendorId, findByVendorId). A Billingo ismeretlen azonosítóra 403-at ad, ismeretlen vendorId-ra 404-et.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/GetDocument
+---
+
+Egy bizonylatot kétféleképpen kérhetsz le: a Billingo azonosítójával, vagy a kiállításkor megadott `vendorId`-val.
+
+<Operation id="GetDocument" methods={['documents.get']} />
+
+<Operation id="GetDocumentByVendorId" methods={['documents.getByVendorId', 'documents.findByVendorId', 'documents.createOnce']} />
+
+## Kérés
+
+```ts
+tarca.documents.get(id: number, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+tarca.documents.getByVendorId(vendorId: string, options?: { signal?: AbortSignal }): Promise<Billingo.Document>
+tarca.documents.findByVendorId(vendorId: string, options?: { signal?: AbortSignal }): Promise<Billingo.Document | null>
+```
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const szamla = await tarca.documents.findByVendorId('ORDER-1001')
+
+if (szamla === null) {
+  console.log('Ehhez a rendeléshez még nincs számla.')
+} else {
+  console.log(szamla.invoiceNumber, szamla.paymentStatus, szamla.cancelled)
+}
+```
+
+- A `get(id)` a `GET /documents/{id}` kérést küldi. Az azonosítót a kiállítás válaszának `id` mezője adja.
+- A `getByVendorId()` és a `findByVendorId()` a `GET /documents/vendor/{vendor_id}` kérést küldi. A tárca levágja a `vendorId` szélein lévő szóközöket, és URL-kódolja.
+- Üres `vendorId`, vagy a `.` és a `..` kérés nélkül `RangeError`-t ad.
+- Mindhárom lekérdezés, ezért a tárca hálózati hiba, időtúllépés, 429 és szerverhiba után újrapróbálja, legfeljebb `maxAttempts` alkalommal.
+
+Nyugtát is ugyanígy kérhetsz le: a nyugta is bizonylat, közös azonosító- és `vendorId`-térrel.
+
+## Válasz
+
+Mindhárom metódus a teljes `Billingo.Document`-et adja, ugyanazokkal a mezőkkel, mint a kiállítás ([Válasz](/docs/bizonylatok/kiallitas/valasz)). Élőben a `GET /documents/{id}` mezői pontosan megegyeztek a `POST /documents` válaszáéval.
+
+A lekérés friss állapotot ad: a sztornózott számlán `cancelled: true`, a befizetett számlán `paymentStatus: 'paid'`.
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 403 | `forbidden` | `get()`: ismeretlen, törölt vagy másik céghez tartozó azonosító. A Billingo itt nem 404-et ad. |
+| 404 | `not_found` | `getByVendorId()`: nincs ilyen `vendorId` (`Document is not found.`). A `findByVendorId()` ilyenkor `null`-t ad. |
+| 401 | `auth` | Érvénytelen API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálta, de nem sikerült. |
+
+<Callout type="info" title="403 a 404 helyett">
+  Egy törölt piszkozat vagy egy nem létező azonosító lekérésére a Billingo 403-at ad: „You do not
+  have permission for this operation. Or any ID in request is invalid or you do not have
+  permission.” Ezért a `nullIfNotFound(tarca.documents.get(id))` nem ad `null`-t, hanem `forbidden`
+  hibát dob. Ha azt akarod tudni, létezik-e egy bizonylat, keress a `vendorId`-ra a
+  `findByVendorId()`-val.
+</Callout>
+
+## Minta
+
+A példa kiállít egy számlát `ORDER-1001` azonosítóval, majd lekéri az `id`-jével és a `vendorId`-jával, végül egy nem létező `vendorId`-ra is rákérdez. Az utolsó kérésre 404 a válasz, a hívás eredménye `null`.
+
+<Example slug="bizonylat-lekerese" />

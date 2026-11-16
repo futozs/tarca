@@ -1,0 +1,35 @@
+---
+title: Piszkozat
+description: Piszkozat létrehozása a documents.create() hívással draft típussal, véglegesítése számlává a finalizeDraft() metódussal, és törlése a deleteDraft() metódussal.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocumentFromDraft
+---
+
+A piszkozat sorszám nélküli bizonylat: nem megy a NAV-hoz, és törölhető. Akkor hasznos, ha a számlát valaki még átnézi a Billingo felületén, vagy ha a végleges adatok később érkeznek.
+
+<Operation id="CreateDocumentFromDraft" methods={['documents.finalizeDraft']} />
+
+<Operation id="DeleteDocument" methods={['documents.deleteDraft']} />
+
+```ts
+const piszkozat = await tarca.documents.create({ type: 'draft', partner, items })
+const szamla = await tarca.documents.finalizeDraft(piszkozat.id ?? 0, { partner, items })
+```
+
+A piszkozatot a [Kiállítás](/docs/bizonylatok/kiallitas) `create()` metódusa hozza létre `type: 'draft'` értékkel. A [Másolás](/docs/bizonylatok/masolas) is piszkozatot ad.
+
+<Cards>
+  <Card title="Kérés" href="/docs/bizonylatok/piszkozat/keres">
+    A finalizeDraft() teljes bemenete és a deleteDraft().
+  </Card>
+  <Card title="Válasz" href="/docs/bizonylatok/piszkozat/valasz">
+    201 a véglegesítésre, ugyanaz az azonosító, és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/bizonylatok/piszkozat/minta">
+    Piszkozatból számla, majd egy másik piszkozat törlése.
+  </Card>
+</Cards>
+
+<Callout type="info" title="A piszkozat is írás">
+  Éles profilon a piszkozat létrehozása is beleszámít a havi API keretbe, és legalább Basic
+  alapcsomag kell hozzá. Csak törölni lehet, kiállított számlát nem: azt sztornózni kell.
+</Callout>

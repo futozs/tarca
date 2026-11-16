@@ -1,0 +1,50 @@
+---
+title: Fizetés és megjelenés
+description: Fizetési mód, nyelv, e-számla, bankszámla és számlatömb a Billingo számlán, az alapértékekkel és azzal, honnan veszi a tárca a számlatömböt.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocument
+---
+
+Ezek a mezők arról szólnak, hogyan néz ki a számla, és hogyan fizet a vevő. Mindegyiknek van alapértéke, a kliens `defaults` beállításából vagy a tárcából.
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca({ defaults: { bankAccountId: 1, electronic: true } })
+
+const szamla = await tarca.documents.create({
+  partner: 1,
+  items: [{ name: 'Webfejlesztés', quantity: 10, unit: 'óra', netUnitPrice: 15_000, vat: 27 }],
+  paymentMethod: 'bankcard',
+  language: 'en',
+})
+
+console.log(szamla.paymentMethod, szamla.language, szamla.electronic)
+```
+
+| Mező | Billingo mező | Alapérték | Leírás |
+| --- | --- | --- | --- |
+| `paymentMethod` | `payment_method` | `defaults.paymentMethod`, különben `'wire_transfer'` | Fizetési mód. |
+| `language` | `language` | `defaults.language`, különben `'hu'` | `hu`, `en`, `de`, `fr`, `hr`, `it`, `ro`, `sk`, `us`. |
+| `electronic` | `electronic` | `defaults.electronic`, különben `false` | `true`: e-számla. |
+| `bankAccountId` | `bank_account_id` | `defaults.bankAccountId` | A számlán feltüntetett bankszámla. |
+| `blockId` | `block_id` | `defaults.blockId`, különben az első `invoice` tömb | A számlatömb, ebből jön a sorszám. |
+
+## Fizetési mód
+
+A `Billingo.PaymentMethod` értékei közül a leggyakoribbak: `'wire_transfer'` (átutalás), `'cash'` (készpénz), `'bankcard'` (bankkártya), `'online_bankcard'`, `'cash_on_delivery'` (utánvét), `'paypal'`, `'stripe'`, `'barion'`, `'simple_pay'`, `'revolut'`, `'szep_card'`. Ismeretlen értékre a tárca kérés nélkül `validation` hibát ad `paymentMethod` mezővel.
+
+A fizetési mód nem rögzít befizetést. Élőben az átutalásos számla `outstanding` állapottal jött létre (más fizetési módot nem mértük), a befizetést a [Befizetések](/docs/bizonylatok/befizetes) oldal szerint rögzíted.
+
+## E-számla
+
+Az `electronic: true` e-számlát kér. Éles profilon az e-számlához és a díjbekérőhöz legalább Basic alapcsomag kell az „API + Tömeges” kiegészítő mellé; nélküle a Billingo 402-t ad (`subscription`).
+
+## Bankszámla
+
+Átutalásos számla bankszámla nélkül is kiállítható: élőben ilyenkor a válaszban `organization.bankAccount.id` értéke `null`. A bankszámlák azonosítóját a [Bankszámlák](/docs/bankszamlak) oldalon kérdezheted le.
+
+## Számlatömb
+
+Ha sem a hívás, sem a `defaults` nem ad `blockId`-t, a tárca lekéri az `invoice` típusú számlatömböket (`GET /document-blocks?type=invoice&per_page=100`), és az elsőt használja. A Billingo a tömböket növekvő azonosító szerint adja, így ez a legrégebbi számlatömb. A lekérdezés kliensenként egyszer fut, a sikeres eredményt a tárca megjegyzi, a sikertelent nem.
+
+Ha a fiókban nincs `invoice` típusú tömb, `configuration` hiba jön, és a `hint` megmondja, hogyan hozz létre egyet. A sorszám formáját a tömb előtagja adja: előtag nélkül `2026-1`, `TRCE` előtaggal `TRCE / 2026-000001`. Lásd [Számlatömbök](/docs/szamlatombok).

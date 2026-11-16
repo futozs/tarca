@@ -1,0 +1,23 @@
+---
+title: Módosítás
+description: Termék módosítása a products.update() metódussal. A PUT teljes csere pontosan egy árral, ezért a lekért termékből az egyik árat el kell hagyni.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Product/UpdateProduct
+---
+
+A `products.update()` PUT kéréssel a teljes terméket cseréli, és pontosan egy árat fogad el. A lekért termékben mindkét ár benne van, ezért visszaküldés előtt az egyiket hagyd el.
+
+```ts
+const termek = await tarca.products.update(id, adatok)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/termekek/modositas/keres">
+    A teljes `ProductInput`, és melyik árat hagyd el.
+  </Card>
+  <Card title="Válasz" href="/docs/termekek/modositas/valasz">
+    A termék a csere után, az újraszámolt ár és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/termekek/modositas/minta">
+    Árváltozás bruttó árral, majd egy csonka PUT, amely kiüríti a megjegyzést és a cikkszámot.
+  </Card>
+</Cards>

@@ -1,0 +1,11 @@
+---
+title: Minta
+description: Két partner létrehozása, majd névkeresés szó elejére, szó közepére és adószámra, végül a teljes lista az all() hívással.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/ListPartner
+---
+
+A példa létrehoz két partnert, aztán háromféleképpen keres. A `'vev'` a „Vevő” szó eleje, ezért talál; az `'evő'` szó közepe, az adószám pedig nem a név része, ezért ezek üresek. A végén az `all()` név szerinti sorrendben adja az összes partnert.
+
+<Example slug="partner-lista" />
+
+Az **Elküldött kérések** fülön a három `ListPartner` kérés query stringjét nézd: a tárca csak a megadott paramétereket küldi, az `all()` pedig `per_page=100`-zal lapoz. A hamis Billingo keresőindexe nem késik, élőben a két friss partner egy ideig hiányozhatna a találatok közül.

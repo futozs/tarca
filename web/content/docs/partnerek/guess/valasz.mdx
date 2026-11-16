@@ -1,0 +1,47 @@
+---
+title: Válasz
+description: A partners.guess() válasza mindig 201, a taxType mindig üres szöveg. Hogyan különböztesd meg a meglévő és az új partnert.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.15#/Partners/PartnerGuess
+---
+
+A `guess()` egy `Billingo.Partner` objektumot ad vissza, ugyanazokkal a mezőkkel, mint a [Lekérés](/docs/partnerek/lekeres). Két dologban tér el attól, amit a neve alapján várnál: a `taxType` mindig üres, a státusz pedig mindig 201.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A meglévő vagy az új partner azonosítója. |
+| `taxType` | `Billingo.PartnerTaxType` | **Mindig `''`**, akkor is, ha a tárolt érték `'HAS_TAX_NUMBER'`. A tárolt érték nem változik, csak a válasz hiányos. |
+| többi mező | | A tárolt partner adatai. Meglévő partnernél nem a te bemeneted. |
+
+## Mindig 201
+
+A Billingo akkor is 201-et ad, ha nem hozott létre semmit, csak visszaadta a meglévő partnert. A státuszból tehát nem derül ki, hogy új partner született-e, és a tárca sem ad erről jelzést. Ha tudnod kell, a `findOrCreate()` `created` mezője megmondja, lásd [Keresés vagy létrehozás](/docs/partnerek/kereses-vagy-letrehozas/valasz).
+
+A valódi adózási típusért kérd le a partnert:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const tipp = await tarca.partners.guess({
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  taxcode: '12345678-2-42',
+  taxType: 'HAS_TAX_NUMBER',
+})
+
+const partner = await tarca.partners.get(tipp.id ?? 0)
+console.log(tipp.taxType, partner.taxType)
+```
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 422 | `validation` | Hiányzik a név vagy a cím egyik kötelező mezője. |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 403 | `forbidden` | Csak olvasó kulcs. |
+| 5xx | `server` | Billingo hiba. Új partner létrejöhetett. |
+| – | `network`, `timeout` | Nincs válasz. Új partner létrejöhetett. |
+
+Bizonytalan hiba után a `guess` megismétlése a már létrejött partnert adja, ha az index már látja. Ha még nem, második partner jön létre ugyanazzal a névvel.

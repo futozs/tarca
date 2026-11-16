@@ -1,0 +1,70 @@
+---
+title: Lapozás
+description: A Billingo listái oldalanként legfeljebb 100 elemet adnak. A list() egy oldalt ad a Page borítékkal, az all() aszinkron iterátorral végigmegy az összesen. A lista késése és a total megbízhatósága.
+official: https://developers.billingo.hu/post/api-v3
+---
+
+Minden listázó erőforrásnak két metódusa van:
+
+- `list(query)`: egy oldal, `Page<T>` borítékban.
+- `all(query)`: `AsyncGenerator<T>`, amely sorban lekéri az oldalakat, és elemenként adja vissza őket.
+
+| Erőforrás | `list()` | `all()` |
+| --- | --- | --- |
+| Bizonylatok | `documents.list()` | `documents.all()` |
+| Partnerek | `partners.list()` | `partners.all()` |
+| Termékek | `products.list()` | `products.all()` |
+| Számlatömbök | `documentBlocks.list()` | `documentBlocks.all()` |
+| Bankszámlák | `bankAccounts.list()` | `bankAccounts.all()` |
+| Költségek | `spendings.list()` | `spendings.all()` |
+
+## Egy oldal
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+const oldal = await tarca.partners.list({ query: 'Vevő', page: 2, perPage: 50 })
+
+console.log(oldal.data.length, oldal.total, oldal.currentPage, oldal.lastPage)
+```
+
+| Mező | Leírás |
+| --- | --- |
+| `data` | Az oldal elemei. |
+| `total` | Az összes találat. |
+| `perPage` | Elemek oldalanként. |
+| `currentPage` | Ez az oldal, 1-től. |
+| `lastPage` | Az utolsó oldal. |
+
+- A `page` legalább 1 egész szám, a `perPage` 1 és 100 közötti egész. Más értékre a tárca kérés nélkül `RangeError`-t dob. A `MAX_PER_PAGE` export 100.
+- `perPage` nélkül a Billingo 25 elemet ad.
+- A Billingo `prev_page_url` és `next_page_url` mezője az első és az utolsó oldalon `null`; a tárca nem adja tovább, a `currentPage` és a `lastPage` elég.
+
+## Minden oldal
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+for await (const invoice of tarca.documents.all({
+  type: 'invoice',
+  paymentStatus: 'outstanding',
+})) {
+  console.log(invoice.invoiceNumber, invoice.grossTotal, invoice.dueDate)
+}
+```
+
+Az `all()` 100-as oldalakkal megy (más `perPage` is megadható), és addig kér, amíg el nem éri a `lastPage`-et, vagy üres oldalt nem kap. A `page` mezőt nem fogadja. Ha egy oldal lekérése hibázik, a hibát a következő `for await` lépés dobja; a tárca előtte a szokásos módon újrapróbálja a GET-et.
+
+Ha a ciklusból `break`-kel kilépsz, a tárca nem kér le több oldalt.
+
+Minden oldal egy kérés, és beleszámít a percenkénti 300-as korlátba. Nagy listánál szűrj (`startDate`, `paymentStatus`, `lastModifiedDate`), ahelyett hogy mindent bejárnál.
+
+## Amire figyelj
+
+- **A lista később konzisztens.** Egy frissen kiállított bizonylat 15–30 másodperc múlva jelenik meg a `documents.list()`-ben. A partnerkereső egy frissen létrehozott vagy átnevezett partnert nagyjából egy percig nem talál.
+- **A `total` törlés után nem megbízható.** Élőben egy partner törlése után a `total` és a `lastPage` percekig a régi értéket mutatta, miközben a `data` már helyes volt. Ne a `total`-ra építs ciklust, hanem az `all()`-ra.
+- **A sorrend erőforrásonként más.** A bizonylatok a legújabbal kezdődnek, a partnerek név szerint rendezettek, a számlatömbök növekvő azonosító szerint.

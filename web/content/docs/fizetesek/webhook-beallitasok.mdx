@@ -1,0 +1,81 @@
+---
+title: Webhook beállítások
+description: A tarcajs/payments öt webhookkezelőjének közös beállításai. Ismétlés-szűrő tárolóval, törzsméret-korlát, hibanaplózás, fizetési mód, és hogy melyik helyzetben milyen HTTP választ kap a szolgáltató.
+---
+
+Mind az öt kezelő (`stripeWebhook`, `simplePayWebhook`, `barionWebhook`, `revolutWebhook`, `payPalWebhook`) ugyanazokat a közös beállításokat ismeri, és ugyanúgy válaszol. Mindegyik `(request: Request) => Promise<Response>` függvényt ad, amelyet Next.js App Routerben `POST`-ként exportálsz, Cloudflare Workersben vagy Denóban közvetlenül hívsz, Node alatt a [`toNodeHandler()`](/docs/kiegeszitok/node-express) csatol.
+
+```ts twoslash
+import { createTarca, isBillingoError, type KeyValueStore } from 'tarcajs'
+import { issueForPayment, type PaymentEvent } from 'tarcajs/payments'
+import { stripeWebhook } from 'tarcajs/payments/stripe'
+
+declare const store: KeyValueStore
+declare function jelezdEmbernek(payment: PaymentEvent, error: unknown): Promise<void>
+
+const tarca = createTarca()
+
+export const POST = stripeWebhook({
+  secret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+  dedupe: store,
+  dedupeTtlSeconds: 3 * 86_400,
+  maxBodyBytes: 256 * 1024,
+  method: 'stripe',
+  onError: (error) => console.error('Stripe webhook hiba', error),
+  onWarning: (warning) => console.warn(warning.message),
+  onPayment: async (payment) => {
+    try {
+      return await issueForPayment(tarca, payment, { vat: 27, ledger: store })
+    } catch (error) {
+      if (isBillingoError(error) && error.category === 'validation') {
+        return jelezdEmbernek(payment, error)
+      }
+      throw error
+    }
+  },
+})
+```
+
+## A közös opciók
+
+| Opció | Alapérték | Leírás |
+| --- | --- | --- |
+| `onPayment(payment)` | kötelező | A feldolgozó függvényed. Ha dob, a válasz 500, és a szolgáltató újraküldi az eseményt. Hiányában `TypeError` létrehozáskor. |
+| `onError(error)` | rövid összefoglaló a konzolra | A 500-as válaszhoz vezető hibák. Nélküle a konzolra csak egy összefoglaló kerül: `BillingoError`-nál a neve, kategóriája, státusza és művelete, az üzenete nem. A szolgáltató API-jának hibájánál (`PaymentProviderError`) az üzenete is, ezt a tárca állítja össze. |
+| `onWarning(warning)` | `console.warn` | Az ismétlés-szűrő tárolójának hibái (`{ kind: 'dedupe', operation: 'get' \| 'set', message, error }`). |
+| `dedupe` | nincs | `KeyValueStore`: ide jegyzi fel a feldolgozott eseményeket. |
+| `dedupeTtlSeconds` | `604800` (7 nap) | Meddig emlékszik egy eseményre. Legalább 1. |
+| `maxBodyBytes` | `1048576` (1 MiB) | A törzs legnagyobb mérete. A `Content-Length` fejlécet és az olvasás közbeni méretet is nézi. |
+| `method` | szolgáltatónként | A bizonylatra kerülő Billingo fizetési mód (`stripe`, `simple_pay`, `barion`, `revolut`, `paypal`, vagy bármelyik másik Billingo érték). Ismeretlen érték `TypeError`. |
+| `fetch` | `globalThis.fetch` | A szolgáltató API-jának hívásaihoz (Stripe, SimplePay, Barion, Revolut, PayPal), nem a Billingóhoz. |
+
+Az érvénytelen beállítás (üres titok, nem pozitív `maxBodyBytes`, ismeretlen `method`) már a kezelő létrehozásakor `TypeError`-t dob, nem az első kérésnél.
+
+## Válaszok
+
+| Helyzet | Válasz | Fut az `onPayment`? |
+| --- | --- | --- |
+| Rendben feldolgozva, vagy nem érdekes esemény | 200 (Revolut: 204, SimplePay: az aláírt IPN visszaigazolás) | igen, illetve nem |
+| Már feldolgozott esemény az ismétlés-szűrő szerint | ugyanaz, mint a rendben feldolgozottnál | nem |
+| Hiányzó vagy hamis aláírás, lejárt időbélyeg, hibás JSON, túl nagy törzs | 400, magyar szöveggel | nem |
+| Az `onPayment` vagy a szolgáltató API-hívása hibát dob | 500 | igen, vagy el sem jutott odáig |
+
+A 400-as válasz `WebhookVerificationError`-ból jön (`provider`, `reason`: `missing_signature`, `invalid_signature`, `timestamp_out_of_range`, `invalid_payload`, `payload_too_large`, `verification_failed`). A szolgáltató API-jának hibája `PaymentProviderError` (`provider`, `status`), ez 500-at ad. A hibaüzenetekben, a figyelmeztetésekben és az alapértelmezett konzolnaplóban nincs titok, aláírás, törzs és e-mail cím.
+
+## Ismétlés-szűrő
+
+A szolgáltatók ugyanazt az eseményt többször is elküldhetik. A `createOnce` ettől már megvéd: a második kézbesítés a meglévő bizonylatot kapja vissza. A `dedupe` tároló egy lépéssel korábban szűr. A `tarca:evt:<szolgáltató>:<eseményazonosító>` kulcsot olvassa, és ha megvan, az `onPayment` nem fut le, Billingo kérés sem megy ki.
+
+- A kulcsot csak sikeres `onPayment` után írja be. Ha az `onPayment` dob, az újraküldött esemény újra feldolgozásra kerül.
+- A tároló hibája nem állítja meg a webhookot: olvasási hibánál feldolgozza az eseményt, írási hibánál továbblép, mindkettőről `onWarning` szól.
+- Ehhez bármelyik [tároló](/docs/kiegeszitok/tarolok) jó, a Cloudflare KV is, mert itt nem kell atomikus írás. A részleges visszatérítés `ledger`-éhez viszont `setIfAbsent` kell, lásd [Részleges visszatérítés](/docs/fizetesek/reszleges-visszaterites).
+
+<Callout type="warning" title="Csak a validation hibát nyeld le">
+  A példa `onPayment` függvénye csak a `validation` hibát kezeli le: hiányzó áfakulcs vagy eltérő
+  összeg újraküldéstől nem javul. Minden más hibát engedj tovább, hogy a webhook 500-at adjon, és a
+  szolgáltató újraküldje az eseményt.
+</Callout>
+
+## Saját kezelő
+
+Ha saját szolgáltatót kötsz be, a közös építőkockák külön is elérhetők: `readRawBody(request, provider, maxBytes)` a méretkorláttal olvas, `deliverPayment(options, payment)` az ismétlés-szűrővel hívja az `onPayment`-et, `respondToWebhook(options, run)` a fenti válaszkódokat adja, `webhookDedupeKey(payment)` a szűrő kulcsát.

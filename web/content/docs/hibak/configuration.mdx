@@ -1,0 +1,37 @@
+---
+title: "configuration: hibás beállítás"
+description: "A configuration kategória: hiányzó API kulcs, érvénytelen kliensbeállítás vagy createOnce opció. A tárca kérés nélkül jelzi, többnyire már a createTarca() hívásakor."
+---
+
+| | |
+| --- | --- |
+| HTTP | nincs |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false` |
+
+## Mikor jön elő
+
+| Mikor | Példa |
+| --- | --- |
+| `createTarca()` hívásakor | hiányzik az API kulcs (sem `apiKey`, sem `BILLINGO_API_KEY`), `timeoutMs: 0`, `maxAttempts: 0`, negatív `retryDelayMs`, érvénytelen `defaults`, ismeretlen `onDocumentError` |
+| `createOnce` hívásakor | érvénytelen `lockTtlSeconds`, `lockWaitMs`, `lockFailure`, `recoveryDelayMs` |
+| kiegészítőknél | `setIfAbsent` nélküli tároló a visszatérítés `ledger`-eként, `increment` nélküli tároló a `kvJournal`-nak, hiányzó `authorize` vagy `confirmationSecret` az MCP HTTP kezelőnél, érvénytelen `runBatch` opció |
+
+A hiányzó kulcsnál a tárca üzenete `Hiányzik a Billingo API kulcs. Add meg az apiKey opciót, vagy állítsd be a BILLINGO_API_KEY környezeti változót.`
+
+## Mi a teendő
+
+A hiba a kódodban vagy a környezetedben van, javítsd a beállítást. Mivel a kliensbeállítás hibája a `createTarca()` hívásakor kiderül, a kliens létrehozása az alkalmazás indulásakor jelzi a hibát, nem az első számlánál.
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+try {
+  createTarca({ timeoutMs: 0 })
+} catch (error) {
+  if (!isBillingoError(error) || error.category !== 'configuration') throw error
+  console.error(error.message)
+}
+```
+
+A fizetési webhookok hibás beállítása (üres titok, nem pozitív `maxBodyBytes`) `TypeError`, nem `BillingoError`, szintén létrehozáskor. A `npx tarcajs doctor --defaults tarca.json` a `TarcaDefaults` azonosítóit a Billingo fiókban is megkeresi, lásd [Parancssor](/docs/kiegeszitok/parancssor).

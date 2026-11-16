@@ -1,0 +1,60 @@
+---
+title: Válasz
+description: A finalizeDraft() a véglegesített bizonylatot adja ugyanazzal az azonosítóval (élőben 201), a deleteDraft() üres választ (204). A hibák és a törölt piszkozat 403-as lekérése.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/CreateDocumentFromDraft
+---
+
+## Véglegesítés
+
+A `finalizeDraft()` a kész `Billingo.Document`-et adja, ugyanazokkal a mezőkkel, mint a [kiállítás](/docs/bizonylatok/kiallitas/valasz).
+
+| Mező | Piszkozaton | Véglegesítés után |
+| --- | --- | --- |
+| `id` | `1` | `1`, ugyanaz marad |
+| `type` | `draft` | `invoice` (vagy amit a `type` megadott) |
+| `invoiceNumber` | `''` | a tömb következő sorszáma, például `2026-1` |
+| `paymentStatus` | `none` | `outstanding` |
+| `onlineSzamlaStatus` | `not_checked` | `processing` |
+
+<Callout type="info" title="201, nem 200">
+  Élőben a `PUT /documents/{id}` 201-gyel válaszol, a spec 200-at ír. A tárca mindkettőt
+  elfogadja, és a módosított spec ezt rögzíti.
+</Callout>
+
+Az `onDocument` hook `finalized` eseményt kap a véglegesített bizonylattal.
+
+## Törlés
+
+A `deleteDraft()` `Promise<void>`: a Billingo 204-gyel, törzs nélkül válaszol. Utána a `get(id)` 403-at ad (`forbidden`), nem 404-et.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | A bemenet helyi ellenőrzése elbukott, vagy `type: 'draft'`. Kérés nem ment ki. |
+| 400 | `validation` | Nem piszkozatot próbáltál törölni. Az üzenetet élőben nem mértük; a hamis Billingo `Only draft documents can be deleted.` szöveget ad. |
+| 403 | `forbidden` | Ismeretlen vagy már törölt azonosító, vagy csak olvasó kulcs. |
+| 422 | `validation` | A Billingo elutasított egy mezőt. |
+| – | `network`, `timeout`, `server`, `unexpected_response` | Nem tudni, lefutott-e. Kérd le a bizonylatot a `get(id)`-vel: ha `type` már `invoice`, a véglegesítés megtörtént; ha 403 jön, a törlés. |
+
+```ts twoslash
+import { createTarca, isBillingoError } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const id: number
+
+try {
+  await tarca.documents.deleteDraft(id)
+} catch (error) {
+  if (!isBillingoError(error) || !['network', 'timeout', 'server'].includes(error.category)) {
+    throw error
+  }
+  const megvan = await tarca.documents.get(id).then(
+    () => true,
+    (lekeresHiba: unknown) =>
+      !(isBillingoError(lekeresHiba) && lekeresHiba.category === 'forbidden'),
+  )
+  if (megvan) throw error
+}
+```

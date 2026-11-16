@@ -1,0 +1,65 @@
+---
+title: Válasz
+description: A befizetések tömbje a Billingo kiegészítésével, a számla fizetési állapotának változása, a DELETE 200-as válasza, és mit tegyél bizonytalan hiba után.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Document/GetPayment
+---
+
+A `list()`, a `replace()` és az `add()` a számla teljes befizetéslistáját adja, csupasz tömbként (`Billingo.PaymentHistory[]`):
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `date` | `string` | A befizetés napja, `YYYY-MM-DD`. |
+| `price` | `number` | Az összeg. |
+| `paymentMethod` | `Billingo.PaymentMethod` | Fizetési mód. |
+| `voucherNumber` | `string` | Élőben `''`, ha nem adtad meg. |
+| `conversionRate` | `number` | Élőben `1`, ha nem adtad meg. |
+
+A `clear()` `Promise<void>`. Élőben a `DELETE` 200-at és `[]` törzset ad, az útmutató 204-et ír. A tárca mindkettőt elfogadja.
+
+## A számla fizetési állapota
+
+A Billingo a befizetések összegéből állítja a számla `paymentStatus` mezőjét:
+
+| Befizetések összege | `paymentStatus` |
+| --- | --- |
+| nincs befizetés | `outstanding` |
+| a végösszeg alatt | `partially_paid` |
+| eléri a végösszeget | `paid` |
+
+A `clear()` után a számla újra `outstanding`. A befizetés a számla módosítási idejét is frissíti, így a [lista](/docs/bizonylatok/lista/keres) `lastModifiedDate` szűrője megtalálja.
+
+## Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| – | `validation` | Hibás `PaymentInput`, kérés előtt. |
+| 403 | `forbidden` | Ismeretlen azonosító, vagy csak olvasó kulcs. |
+| 422 | `validation` | A Billingo elutasított egy mezőt. |
+| – | `network`, `timeout`, `server`, `unexpected_response` | A `PUT` lefuthatott. |
+
+A `replace()` teljes csere, ezért ugyanazzal a listával biztonságosan megismételhető: ha az első kérés lefutott, a második ugyanazt írja be. Az `add()` nem ilyen: ha az első `PUT` lefutott, a második hívás újra hozzáfűzi a befizetést. Bizonytalan hiba után előbb kérd le a listát:
+
+```ts twoslash
+import { createTarca, isBillingoError, type PaymentInput } from 'tarcajs'
+
+const tarca = createTarca()
+
+declare const szamlaId: number
+const befizetes: PaymentInput = {
+  date: '2026-11-16',
+  price: 63_500,
+  paymentMethod: 'wire_transfer',
+  voucherNumber: 'UTALAS-2026-0042',
+}
+
+try {
+  await tarca.documents.payments.add(szamlaId, befizetes)
+} catch (error) {
+  const bizonytalan = ['network', 'timeout', 'server', 'unexpected_response']
+  if (!isBillingoError(error) || !bizonytalan.includes(error.category)) throw error
+  const meglevok = await tarca.documents.payments.list(szamlaId)
+  if (!meglevok.some((sor) => sor.voucherNumber === befizetes.voucherNumber)) throw error
+}
+```
+
+Ehhez adj egyedi `voucherNumber`-t, például a banki tranzakció azonosítóját.

@@ -1,0 +1,39 @@
+---
+title: "timeout: időtúllépés"
+description: "A timeout kategória: a Billingo nem válaszolt a timeoutMs időn belül. GET-nél a tárca újrapróbálja, írás után ugyanúgy kell eljárni, mint hálózati hibánál."
+---
+
+| | |
+| --- | --- |
+| HTTP | nincs |
+| Újrapróbálja a tárca? | GET kérést igen, írást nem |
+| `retryable` | `true` |
+
+## Mikor jön elő
+
+A válasz nem jött meg `timeoutMs` alatt (alapból 30 000 ms, próbálkozásonként). A tárca üzenete `A Billingo nem válaszolt 30000 ms alatt.` A `timeoutMs` 1 és 2 147 483 647 közötti egész szám, más érték `configuration` hiba a `createTarca()` hívásakor.
+
+## Mit tesz a tárca
+
+Ugyanazt, mint a [hálózati hibánál](/docs/hibak/network): a GET-et újrapróbálja, az írást nem, a `createOnce` a `vendorId` alapján keres utána. Írásnál ez a legkellemetlenebb eset: a Billingo elvégezheti a műveletet, csak a válasz nem érkezik meg időben.
+
+## Mi a teendő
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca({ timeoutMs: 15_000 })
+
+const { document, created } = await tarca.documents.createOnce({
+  vendorId: 'ORDER-1001',
+  partner: {
+    name: 'Vevő Kft.',
+    address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+  },
+  items: [{ name: 'Webfejlesztés', quantity: 10, netUnitPrice: 15_000, vat: 27 }],
+})
+
+console.log(document.invoiceNumber, created)
+```
+
+Ha a válasz időtúllépés miatt elveszett, de a számla elkészült, a `createOnce` megtalálja, és `created: true`-t ad: ez a hívás küldte a kiállító kérést. Serverless környezetben a függvény saját időkorlátja legyen hosszabb, mint a `timeoutMs` és a helyreállítás együtt, lásd [Serverless és edge](/docs/kiegeszitok/serverless-es-edge).

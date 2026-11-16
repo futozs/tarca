@@ -1,0 +1,22 @@
+---
+title: Keresés vagy létrehozás
+description: Partner keresése vagy létrehozása számlázás előtt a partners.findOrCreate() metódussal. Az egyezés szabályai, a késő keresőindex és a kérések, amelyeket a tárca küld.
+---
+
+A `findOrCreate()` a tárca saját hívása, a Billingónak nincs ilyen művelete. Név szerint keres a partnerlistában, és ha nem talál olyan partnert, amely minden megadott mezőben egyezik, létrehoz egy újat. A `documents.create()` és a `createOnce()` is ezt hívja, ha partner adatait kapja azonosító helyett.
+
+```ts
+const { partner, created } = await tarca.partners.findOrCreate(vevo)
+```
+
+<Cards>
+  <Card title="Kérés" href="/docs/partnerek/kereses-vagy-letrehozas/keres">
+    Az egyezés szabályai és a kérések, amelyeket a tárca a Billingónak küld.
+  </Card>
+  <Card title="Válasz" href="/docs/partnerek/kereses-vagy-letrehozas/valasz">
+    Az eredmény, a késő keresőindex hatása és a hibák.
+  </Card>
+  <Card title="Minta" href="/docs/partnerek/kereses-vagy-letrehozas/minta">
+    Háromszor ugyanaz a vevő, azonos és megváltozott adatokkal.
+  </Card>
+</Cards>

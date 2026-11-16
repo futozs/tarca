@@ -1,0 +1,41 @@
+---
+title: "auth: érvénytelen API kulcs"
+description: "Az auth kategória: a Billingo 401-gyel utasította el az API kulcsot. Mikor jön elő, mit küld a Billingo, és hogyan ellenőrizd a kulcsot induláskor."
+official: https://developers.billingo.hu/post/api-v3
+---
+
+| | |
+| --- | --- |
+| HTTP | 401 |
+| Újrapróbálja a tárca? | Nem |
+| `retryable` | `false` |
+
+## Mikor jön elő
+
+Bármelyik műveletnél, ha a kulcs hiányzik a kérésből, elírtad, törölték, vagy nem V3 kulcs. A Billingo válasza:
+
+```text
+401 {"error":{"message":"Authorization information (Header: X-API-KEY or X-TOKEN) is missing or invalid."}}
+```
+
+A tárca üzenete `A Billingo nem fogadta el az API kulcsot.`, utána zárójelben a Billingo üzenete, a `hint` pedig a `BILLINGO_API_KEY` ellenőrzésére és az új kulcs helyére (`app.billingo.hu/api-key`) mutat. Ha a kulcs egyáltalán nincs megadva, a tárca kérést sem küld, és `configuration` hibát ad, lásd [Hibás beállítás](/docs/hibak/configuration).
+
+A 401 nem mindig kulcshiba: az adószám-ellenőrzés a fejlesztői teszt profilon érvényes kulccsal is 401-et kap, a NAV-kapcsolatról szóló üzenettel. Ezt a tárca `nav_unavailable` kategóriának adja, lásd [Nincs NAV-kapcsolat](/docs/hibak/nav-unavailable).
+
+## Mi a teendő
+
+Újrapróbálni nincs értelme. Hozz létre új kulcsot a Billingóban (**Beállítások → API kulcsok**), és figyelj rá, hogy a kulcs a megfelelő cég profiljához tartozzon: egy kulcs egy céghez szól. Az alkalmazás indulásakor egy olcsó hívással ellenőrizheted:
+
+```ts twoslash
+import { createTarca } from 'tarcajs'
+
+const tarca = createTarca()
+
+if (!(await tarca.verifyCredentials())) {
+  throw new Error('A BILLINGO_API_KEY nem érvényes: hozz létre új V3 kulcsot a Billingóban.')
+}
+```
+
+A `verifyCredentials()` egy `GET /organization` kérés, `auth` hibára `false`-t ad, minden más hibát továbbdob. A `npx tarcajs verify` parancs ugyanezt teszi a terminálban, a `npx tarcajs doctor` pedig a kulcs hosszát is kiírja (magát a kulcsot soha), lásd [Parancssor](/docs/kiegeszitok/parancssor).
+
+A [tömeges számlázás](/docs/kiegeszitok/tomeges-szamlazas) `auth` hibánál megáll, a hátralévő tételeket kihagyja.

@@ -1,0 +1,122 @@
+---
+title: Lekérés
+description: Egy partner lekérése azonosító alapján a partners.get() hívással, a Partner mezői és a 404-es válasz törölt partnerre.
+official: https://app.swaggerhub.com/apis/Billingo/Billingo/3.0.14#/Partner/GetPartner
+---
+
+<Operation id="GetPartner" methods={['partners.get']} />
+
+## Kérés
+
+```ts
+tarca.partners.get(id: number, options?: { signal?: AbortSignal }): Promise<Billingo.Partner>
+```
+
+Az egyetlen bemenet a partner azonosítója, a tárca az útvonalba írja: `GET /v3/partners/{id}`. Törzs nincs. Olvasás, ezért a tárca 429, 5xx, hálózati hiba és időtúllépés után magától újrapróbálja.
+
+Ez a végpont csak a 3.0.14-es specben szerepel, a 3.0.15-ösből kimaradt, élőben viszont működik.
+
+## Válasz
+
+A Billingo 200-zal és a teljes partnerrel válaszol.
+
+| Mező | Típus | Leírás |
+| --- | --- | --- |
+| `id` | `number` | A partner azonosítója. |
+| `name` | `string` | Név. |
+| `address` | `Billingo.Address` | `countryCode`, `postCode`, `city`, `address`. |
+| `emails` | `string[]` | E-mail címek, üres lista, ha nincs. |
+| `taxcode` | `string` | Adószám, `''`, ha nincs. |
+| `taxType` | `'' \| 'HAS_TAX_NUMBER' \| 'NO_TAX_NUMBER' \| 'FOREIGN'` | Adózási típus. |
+| `phone`, `iban`, `swift`, `accountNumber` | `string` | Elérhetőség és bankadatok, `''`, ha nincs. |
+| `generalLedgerNumber` | `string` | Főkönyvi szám. |
+| `groupMemberTaxNumber` | `string \| null` | Csoporttag adószáma. |
+| `internalComment` | `string \| null` | Belső megjegyzés. |
+| `customBillingSettings` | `Billingo.PartnerCustomBillingSettings` | Partnerre szabott fizetési mód, határidő, pénznem, nyelv, kedvezmény. Beállítás nélkül minden mezője `null`. |
+| `giroSettings` | `Billingo.PartnerGiroSettings \| null` | GIRO beállítások. |
+| `partnerShipping` | `Billingo.PartnerShipping \| null` | Szállítási adatok. |
+| `partnerShowType` | `Billingo.PartnerShowType \| null` | `'show_all'`, `'show_incoming'` vagy `'show_outgoing'`. |
+
+A `customBillingSettings.dueDays` és a `documentCurrency` élőben `null` is lehet, holott a spec ezt nem engedi. A `Billingo` típus ezt már tudja, `!= null` feltétellel vizsgáld.
+
+### Hibák
+
+| Státusz | Kategória | Mikor? |
+| --- | --- | --- |
+| 404 | `not_found` | Nincs ilyen partner, vagy törölték. A Billingo üzenete: `Partner is not found.` |
+| 401 | `auth` | Hibás vagy hiányzó API kulcs. |
+| 429, 5xx | `rate_limit`, `server` | A tárca újrapróbálja, alapból összesen három kísérlettel. |
+
+A partner a ritka kivételek egyike: ismeretlen azonosítóra 404-et ad. A bizonylatok és a számlatömbök ugyanerre 403-at, lásd [Élő eltérések](/docs/alapok/eles-elteresek). Mivel itt 404 jön, a `nullIfNotFound()` működik.
+
+## Minta
+
+```ts twoslash
+import { createTarca, nullIfNotFound } from 'tarcajs'
+
+const tarca = createTarca()
+
+const uj = await tarca.partners.create({
+  name: 'Vevő Kft.',
+  address: { postCode: '1111', city: 'Budapest', address: 'Fő utca 1.' },
+})
+
+const partner = await tarca.partners.get(uj.id ?? 0)
+console.log(partner.name, partner.taxType)
+
+await tarca.partners.delete(uj.id ?? 0)
+const torolt = await nullIfNotFound(tarca.partners.get(uj.id ?? 0))
+console.log(torolt)
+```
+
+A `get()` válasza a hamis Billingóból, a dróton ahogy jön (snake_case):
+
+```json
+{
+  "id": 1,
+  "name": "Vevő Kft.",
+  "address": {
+    "country_code": "HU",
+    "post_code": "1111",
+    "city": "Budapest",
+    "address": "Fő utca 1."
+  },
+  "emails": [],
+  "taxcode": "",
+  "iban": "",
+  "swift": "",
+  "account_number": "",
+  "phone": "",
+  "general_ledger_number": "",
+  "tax_type": "",
+  "custom_billing_settings": {
+    "payment_method": null,
+    "document_form": null,
+    "due_days": null,
+    "document_currency": null,
+    "template_language_code": null,
+    "discount": null,
+    "custom_label": null
+  },
+  "group_member_tax_number": "",
+  "giro_settings": {
+    "giro_default_settings": true,
+    "giro_payment_request_enabled": false,
+    "giro_different_amount_allowed": false
+  },
+  "partner_shipping": {
+    "match": true,
+    "name": "",
+    "mode": "none",
+    "address": { "country_code": "HU", "post_code": "", "city": "", "address": "" }
+  },
+  "internal_comment": "",
+  "partner_show_type": "show_all"
+}
+```
+
+A törlés utáni `get()` 404-et kap, a `nullIfNotFound()` ezt `null`-ra fordítja:
+
+```json
+{ "error": { "message": "Partner is not found." } }
+```
