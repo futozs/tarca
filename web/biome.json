@@ -28,6 +28,16 @@
   },
   "overrides": [
     {
+      "includes": ["components/site/structured-data.tsx"],
+      "linter": {
+        "rules": {
+          "security": {
+            "noDangerouslySetInnerHtml": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["components/landing/hero-snippet.ts"],
       "formatter": {
         "enabled": false
