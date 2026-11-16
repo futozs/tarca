@@ -14,7 +14,7 @@ import { useSearch } from './search-context'
 const linkClass =
   'inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-2 text-sm font-[550] whitespace-nowrap transition-colors duration-[var(--dur-micro)] ease-out'
 
-export function Navbar({ tree, wide = false }: { tree?: PageTree.Root; wide?: boolean }) {
+export function Navbar({ tree }: { tree?: PageTree.Root }) {
   const pathname = usePathname()
   const { openSearch } = useSearch()
   const shortcut = useShortcutLabel().mod
@@ -27,12 +27,7 @@ export function Navbar({ tree, wide = false }: { tree?: PageTree.Root; wide?: bo
       >
         Ugrás a tartalomra
       </a>
-      <div
-        className={cn(
-          'flex h-full items-center gap-2 lg:gap-6',
-          wide ? 'px-2 sm:px-4' : 'container',
-        )}
-      >
+      <div className="flex h-full items-center gap-2 px-2 sm:px-4 lg:gap-6">
         <MobileMenu tree={tree} />
         <Link
           href="/"

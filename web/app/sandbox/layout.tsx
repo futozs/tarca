@@ -5,7 +5,7 @@ import './sandbox.css'
 export default function SandboxLayout({ children }: { children: ReactNode }) {
   return (
     <>
-      <Navbar wide />
+      <Navbar />
       <main id="tartalom">{children}</main>
     </>
   )
