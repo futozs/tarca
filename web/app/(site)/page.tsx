@@ -17,7 +17,7 @@ import { OPERATION_COUNT, SPEC_SPLIT, siteDescription } from '@/lib/operations'
 import { site } from '@/lib/site'
 
 export const metadata: Metadata = {
-  title: { absolute: 'tárca: Billingo npm csomag és API v3 kliens TypeScripthez' },
+  title: { absolute: 'tárca: független Billingo API v3 kliens TypeScripthez (npm: tarcajs)' },
   description: siteDescription,
   alternates: { canonical: '/' },
 }

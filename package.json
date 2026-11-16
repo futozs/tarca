@@ -193,7 +193,7 @@
   "bugs": {
     "url": "https://github.com/futozs/tarca/issues"
   },
-  "description": "Billingo API v3 client for TypeScript and Node.js (Billingo npm csomag): számla, nyugta, díjbekérő, sztornó, partnerek, termékek, export, fizetési webhookok, MCP. 0 függőség, Node, Bun, Deno és Edge.",
+  "description": "Independent Billingo API v3 client for TypeScript and Node.js: számla, nyugta, díjbekérő, sztornó, partnerek, termékek, export, fizetési webhookok, MCP. 0 függőség. Független projekt, nem a Billingo terméke.",
   "engines": {
     "node": ">=22"
   },

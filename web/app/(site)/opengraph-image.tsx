@@ -4,7 +4,7 @@ import { loadOgFonts } from '@/lib/og-fonts'
 import { docsOgImage } from '@/lib/og-image'
 import { siteDescription } from '@/lib/operations'
 
-export const alt = 'tárca: Billingo npm csomag és API v3 kliens TypeScripthez'
+export const alt = 'tárca: független Billingo API v3 kliens TypeScripthez'
 export const size = OG_IMAGE_SIZE
 export const contentType = 'image/png'
 

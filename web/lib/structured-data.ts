@@ -18,7 +18,7 @@ export function siteStructuredData(): string {
       '@id': `${site.url}/#software`,
       name: 'tarcajs',
       alternateName: 'tárca',
-      description: `Billingo npm csomag: TypeScript kliens a Billingo API v3-hoz, mind ${OPERATION_COUNT} művelettel.`,
+      description: `Független, nyílt forráskódú TypeScript kliens a Billingo API v3-hoz (npm: tarcajs), mind ${OPERATION_COUNT} művelettel. Nem a Billingo terméke.`,
       url: site.url,
       codeRepository: site.repo,
       programmingLanguage: ['TypeScript', 'JavaScript'],

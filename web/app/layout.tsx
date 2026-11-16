@@ -31,7 +31,7 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(site.url),
   title: {
-    default: 'tárca: Billingo npm csomag TypeScripthez',
+    default: 'tárca: Billingo API kliens TypeScripthez (npm: tarcajs)',
     template: '%s · tárca',
   },
   description: siteDescription,
